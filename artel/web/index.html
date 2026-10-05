@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Artel</title>
+<style>
+:root{
+  --bg:#f6f5f2;--panel:#ffffff;--ink:#1c1b19;--muted:#6b675f;--line:#e4e1da;--accent:#2f5bd3;
+  --ok:#1f8a4c;--warn:#b7791f;--bad:#c2410c;--run:#2f5bd3;--rev:#7c3aed;--chip:#efede8;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#141413;--panel:#1d1c1a;--ink:#ece9e3;--muted:#9b968c;--line:#2e2c29;--accent:#7aa2ff;
+  --ok:#4ade80;--warn:#fbbf24;--bad:#fb923c;--run:#7aa2ff;--rev:#c4a5ff;--chip:#272522;}}
+:root[data-theme="dark"]{--bg:#141413;--panel:#1d1c1a;--ink:#ece9e3;--muted:#9b968c;--line:#2e2c29;--accent:#7aa2ff;
+  --ok:#4ade80;--warn:#fbbf24;--bad:#fb923c;--run:#7aa2ff;--rev:#c4a5ff;--chip:#272522;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+button,input,textarea{font:inherit;color:inherit}
+button{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+textarea,input{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;width:100%}
+.app{display:grid;grid-template-columns:260px 1fr 360px;height:100vh}
+aside,.feed{background:var(--panel);border-right:1px solid var(--line);overflow:auto;padding:16px}
+.feed{border-right:0;border-left:1px solid var(--line);display:flex;flex-direction:column;padding:0}
+main{overflow:auto;padding:16px 20px;min-width:0}
+h1{font-size:18px;margin:0 0 12px}h2{font-size:13px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);margin:18px 0 8px}
+.proj{padding:8px 10px;border-radius:8px;cursor:pointer;margin-bottom:4px}
+.proj:hover,.proj.sel{background:var(--chip)}
+.proj small{display:block;color:var(--muted)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:6px;background:var(--muted)}
+.dot.live{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.head{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:6px}
+.head .title{font-size:20px;font-weight:600;flex:1;min-width:200px}
+.stat{color:var(--muted);font-size:13px}
+.badge{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--chip);border:1px solid var(--line)}
+.team{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
+.worker{min-width:200px;max-width:240px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
+.worker b{display:block}.worker .role{color:var(--muted);font-size:12px}
+.worker .now{font-size:12px;margin-top:6px;color:var(--run)}
+.board{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;align-items:start}
+.card .t{overflow-wrap:anywhere}
+.col{background:color-mix(in srgb,var(--chip) 60%,transparent);border-radius:12px;padding:8px;min-height:120px}
+.col h3{font-size:12px;margin:2px 4px 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between}
+.card{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
+.card.running{border-left-color:var(--run)}.card.review{border-left-color:var(--rev)}.card.done{border-left-color:var(--ok)}
+.card.blocked{border-left-color:var(--bad)}.card.ready{border-left-color:var(--warn)}
+.card .t{font-weight:550}.card .m{font-size:12px;color:var(--muted);margin-top:4px;display:flex;gap:8px;flex-wrap:wrap}
+.human{color:var(--bad);font-weight:600}
+.goal{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin:10px 0 14px}
+.feedhead{padding:12px 14px;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center}
+.feedhead input{flex:1}
+#events{overflow:auto;flex:1;padding:6px 10px;font-size:12.5px}
+.ev{padding:5px 4px;border-bottom:1px dashed var(--line);word-break:break-word}
+.ev .k{font-family:var(--mono);font-size:11px;color:var(--muted)}
+.ev .a{font-weight:600}
+.ev.err{color:var(--bad)}.ev.good{color:var(--ok)}
+dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);width:min(820px,94vw);max-height:88vh;padding:0}
+dialog::backdrop{background:rgba(0,0,0,.35)}
+.dlg{padding:18px 20px;overflow:auto;max-height:84vh}
+pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(--chip);padding:10px;border-radius:8px;overflow:auto;max-height:340px}
+.tabs{display:flex;gap:6px;margin:8px 0}
+.tabs button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.files a{display:block;color:var(--accent);cursor:pointer;padding:2px 0}
+.empty{color:var(--muted);padding:40px;text-align:center}
+.mobile-tabs{display:none}
+@media (max-width:1100px){.app{grid-template-columns:220px 1fr}.feed{display:none}.feed.show{display:flex;position:fixed;inset:0;z-index:5}}
+@media (max-width:720px){
+  .app{grid-template-columns:1fr;height:auto}aside{border-right:0;border-bottom:1px solid var(--line);max-height:none}
+  main{padding:12px 16px}.board{grid-template-columns:1fr}.col{min-height:0}.mobile-tabs{display:flex;gap:6px}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside>
+    <h1>Artel</h1>
+    <textarea id="goal" rows="4" placeholder="Цель. Например: Сделай CLI-утилиту на Python, которая конвертирует CSV в JSON, с тестами и README"></textarea>
+    <div style="display:flex;gap:6px;margin-top:6px"><button class="primary" id="start" style="flex:1">Запустить</button>
+      <button id="theme" title="Тема">◐</button></div>
+    <h2>Проекты</h2>
+    <div id="projects"></div>
+    <h2>Библиотека скиллов</h2>
+    <div id="skills" class="stat"></div>
+  </aside>
+  <main id="main"><div class="empty">Поставьте цель или выберите проект.</div></main>
+  <section class="feed" id="feed">
+    <div class="feedhead"><input id="filter" placeholder="Фильтр ленты: tool, review, Ada…"><button id="closefeed" class="mobile-tabs">×</button></div>
+    <div id="events"></div>
+  </section>
+</div>
+<dialog id="dlg"><div class="dlg" id="dlgbody"></div></dialog>
+<script>
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const COLS=[['todo','Ожидают'],['ready','Готовы'],['running','В работе'],['review','Ревью'],['done','Готово'],['blocked','Блок']];
+const STATUS={planning:'планирование',running:'в работе',done:'цель достигнута',stopped:'остановлен',paused_budget:'бюджет исчерпан',waiting_human:'ждёт человека',needs_review:'нужна проверка',error:'ошибка'};
+let current=null, es=null, events=[], view=null;
+try{const t=localStorage.getItem('artel-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+$('#theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';try{localStorage.setItem('artel-theme',r.dataset.theme)}catch(e){}};
+const api=(p,o)=>fetch(p,o).then(r=>r.json());
+async function loadProjects(){
+  const ps=await api('/api/projects');
+  $('#projects').innerHTML=ps.map(p=>`<div class="proj ${p.slug===current?'sel':''}" data-s="${esc(p.slug)}"><span class="dot ${p.live?'live':''}"></span>${esc(p.name)}<small>${esc(STATUS[p.status]||p.status)}</small></div>`).join('')||'<div class="stat">пока пусто</div>';
+  document.querySelectorAll('.proj').forEach(e=>e.onclick=()=>open(e.dataset.s));
+  const sk=await api('/api/skills');
+  $('#skills').innerHTML=sk.length?sk.map(s=>`<div class="files"><a data-k="${esc(s.name)}">${esc(s.name)}</a></div>`).join(''):'пусто';
+  document.querySelectorAll('[data-k]').forEach(a=>a.onclick=()=>showSkill(a.dataset.k));
+}
+$('#start').onclick=async()=>{const g=$('#goal').value.trim();if(!g)return;const r=await api('/api/projects',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({goal:g})});$('#goal').value='';await loadProjects();open(r.slug)};
+async function open(slug){
+  current=slug;events=[];$('#events').innerHTML='';if(es)es.close();
+  await refresh();loadProjects();
+  es=new EventSource(`/api/projects/${encodeURIComponent(slug)}/events?after=0`);
+  es.onmessage=m=>{const e=JSON.parse(m.data);events.push(e);if(events.length>4000)events.shift();appendEvent(e);
+    if(/^(board|run|project|worker|review|audit|manager\/decision)/.test(e.kind))schedule()};
+}
+let pending=null;function schedule(){if(!pending)pending=setTimeout(()=>{pending=null;refresh()},400)}
+async function refresh(){
+  if(!current)return;view=await api(`/api/projects/${encodeURIComponent(current)}`);const v=view,m=v.meta,u=m.usage;
+  const tasks=v.board.tasks.filter(t=>t.kind!=='goal'),root=v.board.tasks.find(t=>t.kind==='goal');
+  const by=s=>tasks.filter(t=>t.status===s);
+  $('#main').innerHTML=`
+  <div class="head"><div class="title">${esc(m.name)}</div>
+    <span class="badge">${esc(STATUS[m.status]||m.status)}</span>
+    ${v.live?'<button id="stop">Стоп</button>':m.status==='done'?'':'<button id="resume">Продолжить</button>'}
+    <button class="mobile-tabs" id="openfeed">Лента</button></div>
+  <div class="stat">токены ${u.input_tokens.toLocaleString()} → ${u.output_tokens.toLocaleString()} · запросов ${u.requests} · раундов аудита ${m.audit_rounds||0} · задач ${by('done').length}/${tasks.length}</div>
+  <div class="goal"><b>Цель.</b> ${esc(m.goal)}${root&&root.result?`<div style="margin-top:6px;color:var(--ok)">${esc(root.result)}</div>`:''}</div>
+  <h2>Команда</h2><div class="team">${v.workers.map(w=>`<div class="worker" data-w="${esc(w.name)}"><b>${esc(w.name)}</b><span class="role">${esc(w.role)}</span>
+    <div class="now">${w.current?'▶ '+esc((tasks.find(t=>t.id===w.current)||{}).title||w.current):'<span class="stat">свободен</span>'}</div><div class="stat" style="font-size:12px">выполнено: ${w.done}</div></div>`).join('')}</div>
+  <h2>Доска</h2><div class="board">${COLS.map(([s,l])=>`<div class="col"><h3>${l}<span>${by(s).length}</span></h3>${by(s).map(card).join('')}</div>`).join('')}</div>
+  ${v.notes?`<h2>Заметки харнесса (refine)</h2><pre>${esc(v.notes)}</pre>`:''}
+  <h2>Результаты (shared/)</h2><div id="filesbox" class="files"></div>`;
+  document.querySelectorAll('.card').forEach(c=>c.onclick=()=>showTask(c.dataset.t));
+  document.querySelectorAll('.worker').forEach(c=>c.onclick=()=>showWorker(c.dataset.w));
+  const st=$('#stop');if(st)st.onclick=()=>api(`/api/projects/${current}/stop`,{method:'POST'}).then(()=>setTimeout(refresh,800));
+  const rs=$('#resume');if(rs)rs.onclick=()=>api(`/api/projects/${current}/resume`,{method:'POST'}).then(()=>setTimeout(refresh,800));
+  const of=$('#openfeed');if(of)of.onclick=()=>$('#feed').classList.add('show');
+  listFiles('shared');
+}
+function card(t){const last=(t.runs||[]).slice(-1)[0];return `<div class="card ${t.status}" data-t="${t.id}"><div class="t">${esc(t.title)}</div>
+  <div class="m"><span>@${esc(t.assignee||'—')}</span>${t.attempts?`<span>попыток ${t.attempts}</span>`:''}${last&&t.status==='running'?`<span>ход ${last.turns}</span>`:''}${t.needs_human?'<span class="human">нужен человек</span>':''}</div></div>`}
+async function listFiles(path){const r=await api(`/api/projects/${encodeURIComponent(current)}/files?path=${encodeURIComponent(path)}`);const box=$('#filesbox');if(!box||!r.items)return;
+  box.innerHTML=r.items.length?r.items.map(i=>`<a data-f="${esc(i.path)}" data-d="${i.dir}">${i.dir?'📁 ':''}${esc(i.path.replace(/^shared\//,''))}${i.dir?'':` <span class="stat">${i.size} B</span>`}</a>`).join(''):'<span class="stat">пока пусто</span>';
+  box.querySelectorAll('a').forEach(a=>a.onclick=()=>a.dataset.d==='true'?listFiles(a.dataset.f):showFile(a.dataset.f))}
+async function showFile(p){const r=await api(`/api/projects/${encodeURIComponent(current)}/files?path=${encodeURIComponent(p)}`);dlg(`<h3>${esc(r.file)}</h3><pre>${esc(r.text)}</pre>`)}
+function dlg(html){$('#dlgbody').innerHTML=html+'<div style="text-align:right;margin-top:12px"><button onclick="dlgEl.close()">Закрыть</button></div>';dlgEl.showModal()}
+const dlgEl=$('#dlg');dlgEl.addEventListener('click',e=>{if(e.target===dlgEl)dlgEl.close()});
+function showTask(id){const t=view.board.tasks.find(x=>x.id===id);if(!t)return;
+  dlg(`<h3>${esc(t.title)} <span class="badge">${esc(t.status)}</span></h3><div class="stat">${t.id} · @${esc(t.assignee||'—')} · попыток ${t.attempts} · зависит от: ${t.depends_on.join(', ')||'—'}</div>
+  <h2>Задача</h2><pre>${esc(t.body)}</pre><h2>Критерии приёмки</h2><pre>${esc(t.criteria.map(c=>'• '+c).join('\n'))}</pre>
+  ${t.checks.length?`<h2>Гейты</h2><pre>${esc(t.checks.join('\n'))}</pre>`:''}
+  ${t.result?`<h2>Результат</h2><pre>${esc(t.result)}</pre>`:''}${t.evidence?`<h2>Доказательства</h2><pre>${esc(t.evidence)}</pre>`:''}
+  <h2>Обсуждение</h2>${t.comments.map(c=>`<div class="ev"><span class="a">${esc(c.author)}</span>: ${esc(c.body)}</div>`).join('')||'<div class="stat">нет</div>'}
+  <h2>Запуски</h2>${t.runs.map(r=>`<div class="ev">#${r.id} ${esc(r.worker)} — ${esc(r.status)} · ходов ${r.turns} · тулов ${r.tool_calls} · ${esc((r.summary||'').slice(0,300))}</div>`).join('')||'<div class="stat">нет</div>'}
+  <h2>Сообщение исполнителю</h2><textarea id="cmt" rows="3" placeholder="Подсказка, решение или доступ. Снимает блок «нужен человек»."></textarea><div style="margin-top:6px"><button class="primary" id="send">Отправить</button></div>`);
+  $('#send').onclick=async()=>{const b=$('#cmt').value.trim();if(!b)return;await api(`/api/projects/${current}/tasks/${id}/comment`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({body:b})});dlgEl.close();refresh()}}
+function showWorker(name){const w=view.workers.find(x=>x.name===name);const f=w.files;let tab='SOUL.md';
+  const render=()=>{$('#wtab').innerHTML=`<pre>${esc(f[tab]||'')}</pre>`;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.f===tab))};
+  dlg(`<h3>${esc(w.name)} <span class="stat">${esc(w.role)}</span></h3><div class="tabs">${Object.keys(f).map(k=>`<button data-f="${k}">${k}</button>`).join('')}</div><div id="wtab"></div>`);
+  document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.f;render()});render()}
+async function showSkill(n){const r=await api(`/api/skills/${encodeURIComponent(n)}`);dlg(`<h3>${esc(n)}</h3><pre>${esc(r.text)}</pre><h2>История изменений</h2>${r.ledger.map(e=>`<div class="ev">${new Date(e.ts*1000).toLocaleString()} · ${esc(e.action)} · ${esc(e.actor)} · ${esc(e.reason||'')}</div>`).join('')}`)}
+function describe(e){const k=e.kind;
+  if(k==='tool/call')return [`🔧 ${e.tool}`,JSON.stringify(e.input).slice(0,220)];
+  if(k==='tool/result')return [e.is_error?'⚠ ошибка тула':'↳ результат',e.output.slice(0,220)];
+  if(k==='llm/response'){const t=e.blocks.filter(b=>b.type==='text').map(b=>b.text).join(' ');return [`💬 ход ${e.turn}`,t.slice(0,300)||'(вызов инструментов)']}
+  if(k==='board/task_moved')return ['📋 '+e.task_id,`${e.frm} → ${e.to}`];
+  if(k==='board/comment')return ['💭 '+e.author,e.body.slice(0,300)];
+  if(k==='review/verdict')return [e.passed?'✅ принято':'❌ отклонено',e.feedback.slice(0,300)];
+  if(k==='audit/verdict')return [e.complete?'🏁 цель достигнута':'🔁 аудит: не готово',e.summary];
+  if(k==='manager/decision')return ['🧭 решение: '+e.action,e.rationale];
+  if(k==='skill/mutated')return ['📚 скилл '+e.action,e.skill+' — '+(e.reason||'')];
+  if(k==='harness/edited')return ['🛠 refine',e.content];
+  if(k==='agent/start')return [`▶ ${e.role}/${e.purpose}`,e.model+' · '+e.effort];
+  if(k==='agent/continuation')return ['↻ продолжение',`без инструментов: ${e.idle_turns}`];
+  if(k==='gate/result')return [e.exit===0?'✔ гейт':'✖ гейт',`${e.command} → ${e.exit}`];
+  const r={...e};['seq','ts','kind','system','user','blocks'].forEach(x=>delete r[x]);return [k,JSON.stringify(r).slice(0,220)]}
+function appendEvent(e){const f=$('#filter').value.toLowerCase();const [h,b]=describe(e);const who=e.actor||e.worker||'';
+  const txt=`${e.kind} ${who} ${h} ${b}`.toLowerCase();if(f&&!txt.includes(f))return;
+  const cls=(e.is_error||(e.kind==='review/verdict'&&!e.passed)||e.kind.endsWith('error'))?'err':(e.kind==='audit/verdict'&&e.complete)?'good':'';
+  const d=document.createElement('div');d.className='ev '+cls;
+  d.innerHTML=`<div class="k">#${e.seq} ${new Date(e.ts*1000).toLocaleTimeString()} · ${esc(e.kind)}</div><span class="a">${esc(who)}</span> ${esc(h)} <span>${esc(b)}</span>`;
+  const box=$('#events');const stick=box.scrollTop+box.clientHeight>=box.scrollHeight-40;box.appendChild(d);if(stick)box.scrollTop=box.scrollHeight}
+$('#filter').oninput=()=>{$('#events').innerHTML='';events.forEach(appendEvent)};
+$('#closefeed').onclick=()=>$('#feed').classList.remove('show');
+loadProjects();setInterval(loadProjects,5000);
+</script>
+</body>
+</html>

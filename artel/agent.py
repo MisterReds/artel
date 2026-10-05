@@ -1,0 +1,194 @@
+"""The agent loop shared by every role.
+
+A loop ends only through a terminal tool (``task_submit``, ``review_verdict`` …).
+A turn that ends without one gets the continuation prompt (Prime Agent goal
+continuation); ``NO_PROGRESS_CAP`` consecutive turns without any tool call end the
+run as ``stalled`` so the manager can back off and retry with a fresh context.
+Every request and response is written to the event log.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import time
+from dataclasses import dataclass, field
+from typing import Any, Optional
+
+from .plugins.llm_providers import LLMError
+from .prompts import CONTINUATION
+from .tooling import ToolContext, ToolError
+
+NO_PROGRESS_CAP = 3
+_llm_lock = threading.Lock()
+
+
+@dataclass
+class Outcome:
+    status: str                      # terminal | stalled | turn_limit | refused | error | budget | stopped
+    terminal: Optional[tuple] = None
+    turns: int = 0
+    tool_calls: int = 0
+    usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0})
+    digest: list = field(default_factory=list)
+    error: str = ""
+
+    @property
+    def name(self) -> Optional[str]:
+        return self.terminal[0] if self.terminal else None
+
+    @property
+    def payload(self) -> dict:
+        return self.terminal[1] if self.terminal else {}
+
+    def digest_text(self, limit: int = 30_000) -> str:
+        text = "\n".join(self.digest)
+        return text if len(text) <= limit else text[: limit // 3] + "\n…\n" + text[-2 * limit // 3:]
+
+
+def get_llm(kernel) -> Any:
+    with _llm_lock:
+        llm = kernel.get("llm")
+        if llm is None:
+            llm = kernel.get("llm_factory")()
+            kernel.provide("llm", llm)
+        return llm
+
+
+def _short(obj: Any, n: int = 240) -> str:
+    s = obj if isinstance(obj, str) else json.dumps(obj, ensure_ascii=False)
+    return s if len(s) <= n else s[:n] + "…"
+
+
+def execute_tool(kernel, ctx: ToolContext, name: str, args: dict) -> tuple[str, bool]:
+    spec = kernel.tools.get(name)
+    if spec is None or ctx.role not in spec.roles:
+        return f"unknown tool {name!r} for role {ctx.role}", True
+    missing = [k for k in spec.input_schema.get("required", []) if k not in args]
+    if missing:
+        return f"missing required arguments: {missing}", True
+
+    def final(c: dict) -> tuple[str, bool]:
+        try:
+            return str(spec.fn(ctx, **c["args"])), False
+        except ToolError as exc:
+            return str(exc), True
+        except TypeError as exc:
+            return f"bad arguments: {exc}", True
+        except Exception as exc:  # noqa: BLE001 - tool crashes go back to the model
+            return f"tool crashed: {exc!r}", True
+
+    return kernel.waterfall("tool/execute", {"name": name, "args": args, "ctx": ctx}, final)
+
+
+def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: ToolContext, max_turns: int,
+             purpose: str, persona=None, stop_event: Optional[threading.Event] = None,
+             tool_names: Optional[list] = None) -> Outcome:
+    llm = get_llm(kernel)
+    specs = kernel.tools_for(role, tool_names)
+    tools = [s.schema() for s in specs]
+    model = project.model_for(role, persona)
+    effort = project.effort_for(role, persona)
+    max_tokens = int(kernel.config.get("max_tokens", 16000))
+    actor = persona.name if persona else role
+    task_id = (ctx.task or {}).get("id")
+    out = Outcome(status="turn_limit")
+    messages: list[dict] = [{"role": "user", "content": first_user}]
+    project.log.append("agent/start", actor=actor, role=role, purpose=purpose, task_id=task_id, model=model,
+                       effort=effort, system=system, user=first_user, tools=[t["name"] for t in tools])
+    seen_comments = len(project.board.comments(task_id)) if task_id else 0
+    idle_turns = 0
+
+    for turn in range(1, max_turns + 1):
+        if stop_event is not None and stop_event.is_set():
+            out.status = "stopped"
+            break
+        budget = kernel.get("budget")
+        reason = budget(project) if budget else None
+        if reason:
+            out.status, out.error = "budget", reason
+            break
+        req = {"system": system, "messages": messages, "tools": tools, "model": model, "effort": effort,
+               "max_tokens": max_tokens, "purpose": purpose}
+        try:
+            resp = kernel.waterfall("llm/request", req, lambda c: llm.chat(**c))
+        except LLMError as exc:
+            out.status, out.error = "error", str(exc)
+            project.log.append("llm/error", actor=actor, task_id=task_id, error=str(exc))
+            break
+        out.turns = turn
+        for k in ("input_tokens", "output_tokens"):
+            out.usage[k] += resp.usage.get(k, 0)
+        project.add_usage(resp.usage.get("input_tokens", 0), resp.usage.get("output_tokens", 0))
+        project.log.append("llm/response", actor=actor, role=role, task_id=task_id, turn=turn, model=resp.model,
+                           stop_reason=resp.stop_reason, usage=resp.usage, blocks=resp.blocks)
+        if ctx.run_id:
+            project.board.heartbeat(ctx.run_id, turns=turn, tool_calls=out.tool_calls,
+                                    tokens_in=out.usage["input_tokens"], tokens_out=out.usage["output_tokens"])
+        messages.append({"role": "assistant", "content": resp.raw_content})
+        for b in resp.blocks:
+            if b["type"] == "text" and b["text"].strip():
+                out.digest.append(f"ASSISTANT: {_short(b['text'], 600)}")
+
+        if resp.stop_reason == "refusal":
+            out.status, out.error = "refused", "model declined the request"
+            break
+
+        uses = [b for b in resp.blocks if b["type"] == "tool_use"]
+        if uses:
+            idle_turns = 0
+            results = []
+            for b in uses:
+                out.tool_calls += 1
+                project.log.append("tool/call", actor=actor, task_id=task_id, tool=b["name"], input=b["input"],
+                                   call_id=b["id"])
+                text, is_error = execute_tool(kernel, ctx, b["name"], b["input"])
+                project.log.append("tool/result", actor=actor, task_id=task_id, tool=b["name"], call_id=b["id"],
+                                   is_error=is_error, output=text[:4000])
+                out.digest.append(f"TOOL {b['name']}({_short(b['input'])}) -> {'ERROR ' if is_error else ''}"
+                                  f"{_short(text, 300)}")
+                results.append({"type": "tool_result", "tool_use_id": b["id"], "content": text, "is_error": is_error})
+            content: list[dict] = results
+            if task_id:
+                comments = project.board.comments(task_id)
+                fresh = [c for c in comments[seen_comments:] if c["author"] == "human"]
+                seen_comments = len(comments)
+                if fresh:
+                    content = results + [{"type": "text", "text": "Message from the human operator:\n" +
+                                          "\n".join(c["body"] for c in fresh)}]
+            messages.append({"role": "user", "content": content})
+            if ctx.terminal:
+                out.status, out.terminal = "terminal", ctx.terminal
+                break
+            continue
+
+        if resp.stop_reason == "max_tokens":
+            messages.append({"role": "user", "content": "Your output was cut off at the token limit. Continue, "
+                                                         "and put large content into files with tools."})
+            continue
+        idle_turns += 1
+        if idle_turns >= NO_PROGRESS_CAP:
+            out.status, out.error = "stalled", f"{idle_turns} consecutive turns without tool use"
+            break
+        project.log.append("agent/continuation", actor=actor, task_id=task_id, idle_turns=idle_turns)
+        messages.append({"role": "user", "content": CONTINUATION})
+
+    project.log.append("agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
+                       terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage, error=out.error)
+    return out
+
+
+def budget_guard(config: dict):
+    """Return a callable that names the exhausted budget, or None while within limits."""
+    b = config.get("budgets", {})
+
+    def check(project) -> Optional[str]:
+        meta = project.meta
+        u = meta["usage"]
+        if b.get("max_total_tokens") and u["input_tokens"] + u["output_tokens"] >= b["max_total_tokens"]:
+            return f"token budget {b['max_total_tokens']} exhausted"
+        if b.get("max_hours") and time.time() - meta["created_at"] >= b["max_hours"] * 3600:
+            return f"time budget {b['max_hours']}h exhausted"
+        return None
+
+    return check
