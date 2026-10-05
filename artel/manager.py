@@ -28,7 +28,7 @@ from . import prompts
 from .agent import Outcome
 from .runtimes import run_agent
 from .project import Persona, Project, persona_from_dict
-from .tooling import ToolContext
+from .tooling import ToolContext, window_text
 
 TICK_S = 0.5
 BACKOFF_BASE_S = 10
@@ -148,7 +148,7 @@ class Manager:
         for d in self.board.deps_of(task["id"]):
             dt = self.board.get(d)
             if dt and dt["status"] == "done":
-                deps.append(f"- {dt['title']} ({dt['assignee']}): {(dt['result'] or '')[:1500]}")
+                deps.append(f"- {dt['title']} ({dt['assignee']}): {window_text(dt['result'] or '', 1500)}")
         feedback = []
         if include_feedback:
             for c in self.board.comments(task["id"])[-12:]:
@@ -205,7 +205,7 @@ class Manager:
             try:
                 p = subprocess.run(cmd, shell=True, cwd=self.project.shared, capture_output=True, text=True,
                                    timeout=int(self.cfg.get("tool_timeout_s", 300)))
-                res = {"command": cmd, "exit": p.returncode, "output": (p.stdout + p.stderr)[-3000:]}
+                res = {"command": cmd, "exit": p.returncode, "output": window_text(p.stdout + p.stderr, 3000)}
             except subprocess.TimeoutExpired:
                 res = {"command": cmd, "exit": -1, "output": "timed out"}
             results.append(res)
@@ -214,7 +214,7 @@ class Manager:
 
     def job_review(self, task: dict) -> tuple[list, Outcome]:
         gates = self.run_gates(task)
-        gate_text = "\n".join(f"$ {g['command']}  -> exit {g['exit']}\n{g['output'][-1500:]}" for g in gates) \
+        gate_text = "\n".join(f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], 1500)}" for g in gates) \
             or "(no automated gates)"
         user = (f"{self.task_card(task)}\n\n<submission by=\"{task['assignee']}\">\n<summary>\n{task['result']}\n"
                 f"</summary>\n<evidence>\n{task['evidence']}\n</evidence>\n</submission>\n\n"
@@ -256,7 +256,7 @@ class Manager:
         roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster())
         user = (f"{self.task_card(task)}\n\n<runs>\n" +
                 "\n".join(f"- run {r['id']} by {r['worker']}: {r['status']} after {r['turns']} turns — "
-                          f"{(r['summary'] or '')[:600]}" for r in runs) +
+                          f"{window_text(r['summary'] or '', 600)}" for r in runs) +
                 f"\n</runs>\n\n<roster>\n{roster}\n</roster>\n\nBoard:\n" +
                 "\n".join(f"[{t['status']}] {t['id']} ({t['assignee']}) {t['title']}" for t in self.board.list()) +
                 "\n\nDecide now.")
@@ -269,7 +269,7 @@ class Manager:
         roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster())
         user = (f"<goal>\n{self.project.goal}\n</goal>\n\n<completed_tasks>\n" +
                 "\n\n".join(f"## {t['title']} ({t['assignee']})\nCriteria:\n{_fmt_list(t['criteria'])}\n"
-                            f"Result: {(t['result'] or '')[:2000]}" for t in done) +
+                            f"Result: {window_text(t['result'] or '', 2000)}" for t in done) +
                 f"\n</completed_tasks>\n\n<roster>\n{roster}\n</roster>\n\nAudit round "
                 f"{self.project.meta.get('audit_rounds', 0) + 1}. Inspect shared/ and audit now.")
         ctx = ToolContext(self.kernel, self.project, role="auditor", workspace=self.project.shared)
@@ -378,7 +378,7 @@ class Manager:
             feedback = out.payload["feedback"]
             if out.payload["passed"] and not gates_ok:
                 feedback = "Automated gates failed:\n" + "\n".join(
-                    f"$ {g['command']} -> exit {g['exit']}\n{g['output'][-800:]}" for g in gates if g["exit"] != 0)
+                    f"$ {g['command']} -> exit {g['exit']}\n{window_text(g['output'], 800)}" for g in gates if g["exit"] != 0)
         self.review_retries.pop(task_id, None)
         self.project.log.append("review/verdict", task_id=task_id, passed=passed, feedback=feedback,
                                 gates=[{"command": g["command"], "exit": g["exit"]} for g in gates])
