@@ -329,10 +329,19 @@ class Evolution:
             self.record(**e)
         summary = {"generation": gen, "champion_before": champ, "champion_after": merged or champ,
                    "candidates": len(results), "accepted": [e["branch"] for e in results if e.get("merged")]}
+        summary["published"] = self.publish()
         self.record(kind="generation", **summary)
         self.state.pop("running", None)
         self._save()
         return summary
+
+    def publish(self) -> dict:
+        """Push the champion, every evolve/* branch and the generation tags to `origin` (best-effort)."""
+        if not git(self.repo, "remote", check=False):
+            return {"pushed": False, "reason": "no remote"}
+        p = subprocess.run(["git", "push", "--quiet", "origin", self.state["main"], "refs/heads/evolve/*:refs/heads/evolve/*",
+                            "--tags"], cwd=self.repo, capture_output=True, text=True, timeout=600)
+        return {"pushed": p.returncode == 0, "detail": (p.stderr or p.stdout).strip()[-300:]}
 
     def _phase(self, phase: str) -> None:
         if "running" in self.state:
