@@ -73,8 +73,8 @@ items:
   - id: W1-output-spill
     wave: 1
     mode: evolve
-    status: planned
-    result: "gen 2 rejected at integrate: conflicts with another item; retried next generation on the new main: Auto-merging artel/plugins/builtin_tools.py\nCONFLICT (content): Merge conflict in artel/pl"
+    status: done
+    result: "evolve/gen-3 (evolve/g3-1-w1-output-spill-oversized-tool-o)"
     title: Oversized tool output spills to a file with a preview and the path
     source: {harness: OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/tool/truncate.ts]}
     target: [artel/plugins/builtin_tools.py]
@@ -93,7 +93,8 @@ items:
   - id: W1-fuzzy-edit
     wave: 1
     mode: evolve
-    status: planned
+    status: done
+    result: "evolve/gen-3 (evolve/g3-2-w1-fuzzy-edit-fuzzy-edit-applica)"
     title: Fuzzy edit application (whitespace-normalized, then block-anchor match)
     source: {harness: OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/tool/edit.ts]}
     target: [artel/plugins/builtin_tools.py]
@@ -102,7 +103,8 @@ items:
   - id: W1-post-write-diagnostics
     wave: 1
     mode: evolve
-    status: planned
+    status: done
+    result: "evolve/gen-3 (evolve/g3-3-w1-post-write-diagnostics-diagno)"
     title: Diagnostics right after a write (py_compile / configured linters)
     source: {harness: OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/tool/write.ts, packages/opencode/src/lsp/]}
     target: [artel/plugins/builtin_tools.py]
@@ -111,7 +113,8 @@ items:
   - id: W1-compaction
     wave: 1
     mode: evolve
-    status: planned
+    status: done
+    result: "evolve/gen-3 (evolve/g3-4-w1-compaction-context-compaction)"
     title: Context compaction for the native runtime — clear old tool outputs, then summarize
     source: {harness: Claude Code / OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/session/compaction.ts]}
     target: [artel/agent.py]
@@ -120,7 +123,8 @@ items:
   - id: W1-snapshots
     wave: 1
     mode: evolve
-    status: planned
+    status: done
+    result: "evolve/gen-3 (evolve/g3-5-w1-snapshots-shadow-git-snapshot)"
     title: Shadow-git snapshot per run; rejected attempt can be reverted
     source: {harness: OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/snapshot/index.ts, packages/opencode/src/session/revert.ts]}
     target: [artel/manager.py]
