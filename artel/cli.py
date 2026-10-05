@@ -310,6 +310,36 @@ def _evolve_once(args) -> int:
     return 0
 
 
+def cmd_providers(args) -> int:
+    import subprocess
+
+    from .brand import banner
+    from .providers import logout_codex, overview
+    from .runtimes.codex import codex_env, codex_settings
+
+    cfg = _cfg(args)
+    if args.action == "login" and args.name == "codex":
+        c = codex_settings(cfg)  # the CLI prints the link and the one-time code, then waits for the browser
+        return subprocess.call([c["binary"], "login", "--device-auth"], env=codex_env(c))
+    if args.action == "logout" and args.name == "codex":
+        print(logout_codex(cfg)["detail"])
+        return 0
+    o = overview(cfg)
+    print(banner("провайдеры"))
+    for key, label in (("codex", "Codex"), ("claude_code", "Claude Code")):
+        st = o[key]
+        state = ("вход выполнен" + (f" ({st['method']})" if st.get("method") else "")) if st["logged_in"] else \
+            ("не подключён" if st["installed"] else "не установлен")
+        print(f"  {label:<14} {state:<34} {st.get('version', '')}")
+    for k in o["keys"]:
+        print(f"  {k['label']:<14} {'задан' if k['set'] else 'не задан':<34} ${k['env']}")
+    loc = o["local"]
+    print(f"  {'System One':<14} {'отвечает' if loc['reachable'] else 'не запущена':<34} {loc['url']}")
+    r = o["routing"]
+    print(f"  рантайм по умолчанию: {r['runtime']}" + "".join(f"; {k}: {v}" for k, v in r["runtime_by_role"].items()))
+    return 0
+
+
 def cmd_update(args) -> int:
     from .updater import Updater, UpdateError
 
@@ -432,7 +462,7 @@ def main(argv=None) -> int:
     r.add_argument("--workdir", help="work directly in this directory (e.g. a git worktree) instead of shared/")
     r.add_argument("--ref", action="append", help="read-only source directory the team may study (repeatable)")
     r.add_argument("--seed", help="copy this directory into the deliverables directory before planning")
-    r.add_argument("--runtime", choices=["native", "claude_code"])
+    r.add_argument("--runtime", choices=["native", "claude_code", "codex"])
     r.add_argument("--port", type=int, default=8765)
     r.set_defaults(fn=cmd_run)
 
@@ -475,7 +505,7 @@ def main(argv=None) -> int:
         p.add_argument("--repo", help="Artel git repo to evolve (default: this installation)")
         p.add_argument("--tasks", help="comma-separated benchmark task ids")
         p.add_argument("--parallel-bench", type=int, default=2)
-        p.add_argument("--runtime", choices=["native", "claude_code"])
+        p.add_argument("--runtime", choices=["native", "claude_code", "codex"])
         p.add_argument("--provider", choices=["anthropic", "openai_compat", "scripted"])
 
     bn = sub.add_parser("bench", help="run the benchmark suite with hidden checks")
@@ -516,6 +546,12 @@ def main(argv=None) -> int:
     ev.add_argument("--no-wait", action="store_true",
                     help="exit when the model provider hits a limit instead of waiting for the reset and resuming")
     ev.set_defaults(fn=cmd_evolve)
+
+    pv = sub.add_parser("providers", help="subscriptions, API keys and runtimes; Codex device-code login")
+    pv.add_argument("action", nargs="?", default="status", choices=["status", "login", "logout"])
+    pv.add_argument("name", nargs="?", default="codex", choices=["codex"])
+    pv.add_argument("--config")
+    pv.set_defaults(fn=cmd_providers)
 
     upd = sub.add_parser("update", help="pull the improvements published since this installation (verified first)")
     upd.add_argument("--check", action="store_true", help="only show what is new")

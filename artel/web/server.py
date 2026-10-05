@@ -32,6 +32,9 @@ class Runner:
         from ..updater import Updater
 
         self.updater = Updater(config=config)
+        from ..providers import CodexLogin
+
+        self.codex_login = CodexLogin(config)
         self.update_state: dict = {"phase": "idle"}  # idle | checking | verifying | restart_pending | error
         self.restart_pending = False
 
@@ -212,6 +215,12 @@ def make_handler(runner: Runner):
                     self._static("/".join(parts[1:]))
                 elif parts == ["favicon.ico"] or parts == ["favicon.svg"]:
                     self._static("favicon.svg")
+                elif parts == ["api", "providers"]:
+                    from ..providers import overview
+
+                    self._json({**overview(runner.config), "codex_login": runner.codex_login.state})
+                elif parts == ["api", "providers", "codex", "login"]:
+                    self._json(runner.codex_login.state)
                 elif parts == ["api", "update"]:
                     self._json(runner.update_status(fetch=q.get("check", ["0"])[0] == "1"))
                 elif parts == ["api", "evolution"]:
@@ -295,6 +304,18 @@ def make_handler(runner: Runner):
                     if not goal:
                         return self._json({"error": "goal required"}, 400)
                     return self._json({"slug": runner.start(goal, data.get("name") or None)})
+                if parts == ["api", "providers", "codex", "login"]:
+                    return self._json(runner.codex_login.start())
+                if parts == ["api", "providers", "codex", "cancel"]:
+                    return self._json(runner.codex_login.cancel())
+                if parts == ["api", "providers", "codex", "logout"]:
+                    from ..providers import logout_codex
+
+                    return self._json(logout_codex(runner.config))
+                if parts == ["api", "providers", "routing"]:
+                    from ..providers import save_routing
+
+                    return self._json(save_routing(runner.config, data))
                 if parts == ["api", "update", "apply"]:
                     return self._json(runner.update_apply())
                 if parts == ["api", "update", "rollback"]:

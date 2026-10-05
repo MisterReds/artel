@@ -1,0 +1,206 @@
+"""What Artel can talk to, and how it is signed in — the data behind the dashboard's "Провайдеры" page.
+
+- Codex (ChatGPT subscription): device-code login driven through the official CLI (`codex login --device-auth`);
+  the code and link are shown in the dashboard, the CLI stores and refreshes the tokens itself.
+- Claude Code (Claude subscription): status of the installed CLI; login happens in the CLI.
+- API keys: only whether the configured environment variable is set — values are never read out or stored.
+- Local System One model: whether its server answers.
+- Routing: which runtime and model each role uses (saved to ARTEL_HOME/artel.yaml).
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import threading
+import time
+import urllib.request
+from pathlib import Path
+from typing import Optional
+
+import yaml
+
+from .runtimes.codex import codex_env, codex_settings
+
+ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+ROLES = ["manager", "planner", "worker", "tester", "reviewer", "auditor", "librarian", "refiner", "evolver", "absorber"]
+RUNTIMES = ["native", "claude_code", "codex"]
+KEY_VARS = {"ANTHROPIC_API_KEY": "Anthropic API", "OPENAI_API_KEY": "OpenAI API", "OPENROUTER_API_KEY": "OpenRouter",
+            "DEEPSEEK_API_KEY": "DeepSeek"}
+
+
+def _run(args: list, env: Optional[dict] = None, timeout: int = 20) -> tuple[int, str]:
+    try:
+        p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, env=env)
+        return p.returncode, ANSI.sub("", (p.stdout + p.stderr)).strip()
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        return -1, str(e)
+
+
+class CodexLogin:
+    """One device-code login at a time; the CLI process waits for the browser confirmation in the background."""
+
+    def __init__(self, config: dict):
+        self.config = config
+        self.state: dict = {"phase": "idle"}
+        self.proc: Optional[subprocess.Popen] = None
+        self.lock = threading.Lock()
+
+    def start(self, wait_s: float = 20.0) -> dict:
+        cfg = codex_settings(self.config)
+        with self.lock:
+            if self.proc and self.proc.poll() is None:
+                return self.state
+            if not shutil.which(cfg["binary"]):
+                self.state = {"phase": "error", "error": f"`{cfg['binary']}` not found: npm install -g @openai/codex"}
+                return self.state
+            self.proc = subprocess.Popen([cfg["binary"], "login", "--device-auth"], stdout=subprocess.PIPE,
+                                         stderr=subprocess.STDOUT, text=True, env=codex_env(cfg), bufsize=1)
+            self.state = {"phase": "starting", "since": time.time()}
+        found = threading.Event()
+
+        def reader():
+            text = ""
+            for line in self.proc.stdout:
+                text += ANSI.sub("", line)
+                url = re.search(r"https://\S+/device\S*", text)
+                code = re.search(r"\b([A-Z0-9]{4}-[A-Z0-9]{4,6})\b", text)
+                if url and code and self.state.get("phase") == "starting":
+                    m = re.search(r"expires in (\d+) minutes", text)
+                    self.state = {"phase": "waiting", "url": url.group(0), "code": code.group(1),
+                                  "expires_at": time.time() + 60 * int(m.group(1) if m else 15)}
+                    found.set()
+            rc = self.proc.wait()
+            if rc == 0:
+                self.state = {"phase": "done", "at": time.time()}
+            elif self.state.get("phase") != "cancelled":
+                self.state = {"phase": "error", "error": text.strip()[-600:] or f"exit {rc}"}
+            found.set()
+
+        threading.Thread(target=reader, daemon=True, name="codex-login").start()
+        found.wait(wait_s)
+        return self.state
+
+    def cancel(self) -> dict:
+        with self.lock:
+            if self.proc and self.proc.poll() is None:
+                self.state = {"phase": "cancelled"}
+                self.proc.terminate()
+        return self.state
+
+
+def codex_status(config: dict) -> dict:
+    cfg = codex_settings(config)
+    binary = shutil.which(cfg["binary"])
+    if not binary:
+        return {"installed": False, "logged_in": False, "detail": "npm install -g @openai/codex"}
+    rc, text = _run([cfg["binary"], "login", "status"], env=codex_env(cfg))
+    logged = rc == 0 and "not logged in" not in text.lower()
+    method = "ChatGPT" if "chatgpt" in text.lower() else ("API key" if "api key" in text.lower() else "")
+    _, ver = _run([cfg["binary"], "--version"])
+    ver = next((ln for ln in ver.splitlines() if ln.lower().startswith("codex")), ver.splitlines()[-1] if ver else "")
+    return {"installed": True, "version": ver, "logged_in": logged, "method": method,
+            "detail": next((ln for ln in reversed(text.splitlines()) if "WARNING" not in ln), ""), "model": cfg.get("model") or "по умолчанию аккаунта"}
+
+
+def logout_codex(config: dict) -> dict:
+    cfg = codex_settings(config)
+    rc, text = _run([cfg["binary"], "logout"], env=codex_env(cfg))
+    return {"ok": rc == 0, "detail": text}
+
+
+def claude_code_status(config: dict) -> dict:
+    cc = config.get("claude_code") or {}
+    binary = shutil.which(cc.get("binary", "claude"))
+    if not binary:
+        return {"installed": False, "logged_in": False, "detail": "npm install -g @anthropic-ai/claude-code"}
+    _, ver = _run([binary, "--version"])
+    from .runtimes.claude_code import child_env
+
+    rc, text = _run([binary, "auth", "status"], env=child_env())
+    try:
+        st = json.loads(text[text.index("{"):]) if rc == 0 else {}
+    except ValueError:
+        st = {}
+    method = {"oauth_token": "подписка Claude", "claude.ai": "подписка Claude", "api_key": "API key"}.get(
+        st.get("authMethod", ""), st.get("authMethod", ""))
+    return {"installed": True, "version": ver.splitlines()[-1] if ver else "", "logged_in": bool(st.get("loggedIn")),
+            "method": method, "model": cc.get("model", "sonnet"),
+            "detail": "вход: запустите `claude` в терминале и выполните /login"}
+
+
+def api_keys(config: dict) -> list[dict]:
+    names = dict(KEY_VARS)
+    oc = config.get("openai_compat") or {}
+    if oc.get("api_key_env"):
+        names.setdefault(oc["api_key_env"], f"OpenAI-совместимый ({oc.get('base_url', '')})")
+    dec = config.get("decide") or {}
+    if dec.get("api_key_env"):
+        names.setdefault(dec["api_key_env"], "System One (decide)")
+    return [{"env": k, "label": v, "set": bool(os.environ.get(k))} for k, v in names.items()]
+
+
+def local_status(config: dict) -> dict:
+    """The local System One: a llama.cpp server (`artel local serve`) or a local decisions endpoint."""
+    from .local import DEFAULT_PORT
+
+    dec = config.get("decide") or {}
+    url = dec.get("url") if str(dec.get("url", "")).startswith(("http://127.0.0.1", "http://localhost")) \
+        else f"http://127.0.0.1:{DEFAULT_PORT}"
+    base = re.match(r"https?://[^/]+", url).group(0)
+    ok = False
+    for probe in ("/v1/models", "/health"):
+        try:
+            with urllib.request.urlopen(base + probe, timeout=1.5) as r:
+                ok = r.status == 200
+        except Exception:  # noqa: BLE001 - not running is a normal state
+            continue
+        if ok:
+            break
+    return {"backend": dec.get("backend", "none"), "url": url, "reachable": ok}
+
+
+def routing(config: dict) -> dict:
+    return {"runtime": config.get("runtime", "native"), "runtime_by_role": config.get("runtime_by_role") or {},
+            "roles": ROLES, "runtimes": RUNTIMES,
+            "models": {"claude_code": (config.get("claude_code") or {}).get("model", "sonnet"),
+                       "codex": (config.get("codex") or {}).get("model") or ""}}
+
+
+def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
+    """Persist runtime choices to ARTEL_HOME/artel.yaml and apply them to the live config."""
+    from .project import artel_home, deep_merge
+
+    upd: dict = {}
+    if data.get("runtime") in RUNTIMES:
+        upd["runtime"] = data["runtime"]
+    if isinstance(data.get("runtime_by_role"), dict):
+        upd["runtime_by_role"] = {r: v for r, v in data["runtime_by_role"].items() if r in ROLES and v in RUNTIMES}
+    for rt in ("claude_code", "codex"):
+        m = (data.get("models") or {}).get(rt)
+        if isinstance(m, str):
+            upd[rt] = {"model": m.strip() or None}
+    path = path or artel_home() / "artel.yaml"
+    current = yaml.safe_load(path.read_text()) if path.exists() else {}
+    current = current or {}
+    if "runtime_by_role" in upd:
+        current.pop("runtime_by_role", None)  # replace, not merge: removing a role override must stick
+    merged = deep_merge(current, upd)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(merged, allow_unicode=True, sort_keys=False))
+    if "runtime_by_role" in upd:
+        config["runtime_by_role"] = upd.pop("runtime_by_role")
+    for k, v in upd.items():
+        config[k] = deep_merge(config.get(k) or {}, v) if isinstance(v, dict) else v
+    return routing(config)
+
+
+def overview(config: dict) -> dict:
+    return {"codex": codex_status(config), "claude_code": claude_code_status(config), "keys": api_keys(config),
+            "local": local_status(config), "routing": routing(config)}
+
+
+__all__ = ["CodexLogin", "overview", "save_routing", "logout_codex", "json"]

@@ -103,6 +103,15 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(-
 @media (max-width:1100px){.layout{grid-template-columns:1fr}.feed{display:none}.feed.show{display:flex;position:fixed;inset:0;z-index:5}.feedbtn{display:inline-block}}
 @media (max-width:720px){.wrap,.layout main{padding:12px 16px}header{padding:10px 16px;gap:8px}header .logo{flex:1}nav{order:3;flex:0 0 100%;flex-wrap:nowrap;overflow-x:auto}nav a{white-space:nowrap}.board{grid-template-columns:1fr}.col{min-height:0}.grid{grid-template-columns:1fr}}
 button:disabled{opacity:.45;cursor:default}
+.pv{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
+.pvc{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;display:flex;flex-direction:column;gap:8px}
+.pvc h3{margin:0;font:600 15px/1.3 var(--display);display:flex;align-items:center;gap:8px}
+.pvc .st{white-space:nowrap;font-size:12.5px;padding:2px 9px;border-radius:99px;border:1px solid var(--line);margin-left:auto;font-family:var(--text);font-weight:500}
+.pvc .st.on{color:var(--ok);border-color:var(--ok)}.pvc .st.off{color:var(--muted)}
+.devcode{font:600 28px/1.2 var(--mono);letter-spacing:.12em;color:var(--brand);background:var(--brand-soft);border-radius:10px;
+  padding:10px 14px;text-align:center;user-select:all}
+.pvroles{max-width:760px}.pvroles select{width:auto;min-width:300px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}.kv span:nth-child(odd){color:var(--muted)}
 .ri{display:inline-flex;width:15px;height:15px;vertical-align:-2px;margin-right:4px;color:var(--muted)}.ri svg{width:100%;height:100%}
 .worker .role{display:flex;align-items:center;gap:2px}.worker .ri{color:var(--brand)}
 .empty .mark{width:56px;height:56px;color:var(--line);margin:0 auto 12px;display:block}
@@ -117,6 +126,7 @@ button:disabled{opacity:.45;cursor:default}
     <a href="#/registry" data-v="registry">Реестр харнессов</a>
     <a href="#/evolution" data-v="evolution">Эволюция</a>
     <a href="#/skills" data-v="skills">Скиллы</a>
+    <a href="#/providers" data-v="providers">Провайдеры</a>
   </nav>
   <button id="updbtn" style="display:none" title="Доступно обновление Artel"></button>
   <button class="primary" id="newbtn">+ Новая цель</button>
@@ -165,7 +175,7 @@ $('#newbtn').onclick=()=>{dlg(`<h3>Новая цель → новый проек
 function route(){clearInterval(timer);if(es){es.close();es=null}
   const h=location.hash.slice(2)||'portfolio';const [v,arg]=h.split('/');
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-  ({portfolio,agents,registry,skills,evolution,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
+  ({portfolio,agents,registry,skills,evolution,providers,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
 window.addEventListener('hashchange',route);
 
 /* ---------- Портфель ---------- */
@@ -286,6 +296,54 @@ function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter
   const d=document.createElement('div');d.className='ev '+cls;
   d.innerHTML=`<div class="k">#${e.seq} ${new Date(e.ts*1000).toLocaleTimeString()} · ${esc(e.kind)}</div><span class="a">${who||e.role?ri(e.role||who):''}${esc(who)}</span> ${esc(h)} <span>${esc(b)}</span>`;
   const stick=box.scrollTop+box.clientHeight>=box.scrollHeight-40;box.appendChild(d);if(stick)box.scrollTop=box.scrollHeight}
+
+/* ---------- Провайдеры ---------- */
+async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div class="empty">Загрузка…</div></div>';
+  const RT={native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)'};
+  const draw=async()=>{const o=await api('/api/providers');const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
+   const st=(ok,on,off)=>`<span class="st ${ok?'on':'off'}">${ok?on:off}</span>`;
+   const cx=o.codex,cc=o.claude_code,r=o.routing;
+   const login=L.phase==='waiting'?`<p>Откройте ссылку, войдите в аккаунт ChatGPT и введите код:</p>
+      <a href="${esc(L.url)}" target="_blank" rel="noopener">${esc(L.url)}</a><div class="devcode">${esc(L.code)}</div>
+      <p class="stat">Код действует до ${new Date(L.expires_at*1000).toLocaleTimeString()}. Страница обновится сама после входа.</p>
+      <button id="cx-cancel">Отменить</button>`
+     :L.phase==='starting'?'<p class="stat">Запрашиваю код…</p>'
+     :L.phase==='error'?`<pre>${esc(L.error||'')}</pre>`:L.phase==='done'?'<p style="color:var(--ok)">Вход выполнен.</p>':'';
+   box.innerHTML=`<p class="stat">Кто выполняет работу. Подписки подключаются входом в их официальные CLI; ключи API задаются только переменными окружения — их значения здесь не показываются и не хранятся.</p>
+   <div class="pv">
+    <div class="pvc"><h3>${ri('worker')}Codex${st(cx.logged_in,'подключён',cx.installed?'не подключён':'не установлен')}</h3>
+      <div class="kv"><span>вход</span><span>${cx.logged_in?esc(cx.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка ChatGPT (device code) или ключ API</span><span>CLI</span><span>${esc(cx.version||'нет — npm install -g @openai/codex')}</span><span>модель</span><span>${esc(cx.model||'')}</span></div>
+      ${login}
+      ${cx.installed&&!cx.logged_in&&L.phase!=='waiting'?'<button class="primary" id="cx-login">Войти через device code</button>':''}
+      ${cx.logged_in?'<button id="cx-logout">Выйти</button>':''}</div>
+    <div class="pvc"><h3>${ri('worker')}Claude Code${st(cc.logged_in,'подключён',cc.installed?'не подключён':'не установлен')}</h3>
+      <div class="kv"><span>вход</span><span>${cc.logged_in?esc(cc.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка Claude или ключ API</span><span>CLI</span><span>${esc(cc.version||'нет')}</span><span>модель</span><span>${esc(cc.model)}</span></div>
+      ${cc.logged_in?'':`<p class="stat">${esc(cc.detail)}</p>`}</div>
+    <div class="pvc"><h3>${ri('librarian')}Ключи API</h3><div class="kv">${o.keys.map(k=>`<span>${esc(k.label)}</span><span>${k.set?'<span style="color:var(--ok)">задан</span>':'не задан'} · <code>${esc(k.env)}</code></span>`).join('')}</div>
+      <p class="stat">Задаются в настройках окружения, не в чате и не здесь.</p></div>
+    <div class="pvc"><h3>${ri('auditor')}System One (локально)${st(o.local.reachable,'отвечает','не запущена')}</h3>
+      <div class="kv"><span>режим</span><span>${esc(o.local.backend)}</span><span>адрес</span><span><code>${esc(o.local.url)}</code></span></div>
+      ${o.local.reachable?'':'<p class="stat">Запуск: <code>artel local serve</code></p>'}</div>
+   </div>
+   <h2>Кто какую роль выполняет</h2>
+   <div class="tablewrap pvroles"><table><tr><th>роль</th><th>рантайм</th></tr>
+    <tr><td><b>по умолчанию</b></td><td><select data-def="1">${r.runtimes.map(x=>`<option value="${x}" ${x===r.runtime?'selected':''}>${RT[x]}</option>`).join('')}</select></td></tr>
+    ${r.roles.map(role=>`<tr><td>${ri(role)}${esc(role)}</td><td><select data-role="${role}"><option value="">как по умолчанию</option>${r.runtimes.map(x=>`<option value="${x}" ${r.runtime_by_role[role]===x?'selected':''}>${RT[x]}</option>`).join('')}</select></td></tr>`).join('')}
+   </table></div>
+   <div class="kv" style="margin-top:10px;max-width:520px"><span>модель Claude Code</span><input id="m-cc" value="${esc(r.models.claude_code||'')}" placeholder="sonnet">
+     <span>модель Codex</span><input id="m-cx" value="${esc(r.models.codex||'')}" placeholder="по умолчанию аккаунта"></div>
+   <p><button class="primary" id="rt-save">Сохранить</button> <span class="stat" id="rt-msg"></span></p>
+   <p class="stat">Сохраняется в ARTEL_HOME/artel.yaml и действует для новых запусков. Разные подписки на разных ролях разносят нагрузку по лимитам.</p>`;
+   const on=(id,fn)=>{const el=$('#'+id);if(el)el.onclick=fn};
+   on('cx-login',async()=>{$('#cx-login').disabled=true;await api('/api/providers/codex/login',{method:'POST'});draw()});
+   on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST'});draw()});
+   on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST'});draw()});
+   on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});
+     const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value}};
+     await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});$('#rt-msg').textContent='Сохранено.'});
+   return L.phase};
+  const phase=await draw();
+  timer=setInterval(async()=>{const L=await api('/api/providers/codex/login');if(['waiting','starting'].includes(L.phase)||state.cxw){state.cxw=['waiting','starting'].includes(L.phase);if(!document.activeElement||document.activeElement.tagName!=='SELECT')draw()}},3000)}
 
 /* ---------- Агенты ---------- */
 async function agents(){$('#view').innerHTML='<div class="wrap" id="ag"><div class="empty">Загрузка…</div></div>';
