@@ -19,7 +19,8 @@ import yaml
 OPEN = ("planned", "partial", "in_progress")
 ABSORB_WAVE = 4                       # items found by studying other harnesses queue after the hand-planned waves
 STUDY_CATEGORIES = ("harness", "orchestrator", "memory-skills", "framework", "sandbox", "eval", "protocol")
-STATUS_MARK = {"done": "готово", "partial": "частично", "in_progress": "в работе", "planned": "план"}
+STATUS_MARK = {"done": "готово", "partial": "частично", "in_progress": "в работе", "planned": "план",
+               "blocked": "нужна помощь"}
 
 
 class Roadmap:

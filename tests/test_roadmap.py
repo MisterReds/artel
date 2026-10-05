@@ -117,28 +117,40 @@ def test_roadmap_generation_merges_marks_done_and_reuses_baseline(tmp_path, monk
         rows = [{"id": k, "pass": v, "partial": float(v), "cost_usd": 0.1} for k, v in ok.items()]
         return {"results": rows, "summary": bench.summarize(rows)}
 
+    repairs = []
+
     def impl(h, wt):
         assert h.refs == [str(donor)]
-        (wt / ("artel/a.py" if "W1-a" in h.title else "broken")).write_text("x = 1\n")
+        if "REPAIR" in h.plan:  # the team gets the failing checks back and tries again (here: fails to fix it)
+            repairs.append(h.title)
+            (wt / "broken").write_text(f"attempt {len(repairs)}\n")
+        else:
+            (wt / ("artel/a.py" if "W1-a" in h.title else "broken")).write_text("x = 1\n")
         return {"cost_usd": 0.0}
 
     cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
     ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
     s = ev.roadmap_generation(2)
-    assert s["roadmap"] == {"W1-a": "done", "W1-b": "planned"}
+    # planned items are adopted, not ranked: W1-a goes in; W1-b breaks a task, goes back to its team twice with
+    # the evidence, still breaks it, and is flagged for a human decision instead of silently dropped
+    assert s["roadmap"] == {"W1-a": "done", "W1-b": "blocked"}
+    assert len(repairs) == 2
     rm = Roadmap.of_repo(repo)
     assert rm.get("W1-a")["status"] == "done" and "evolve/gen-1" in rm.get("W1-a")["result"]
-    assert "rejected" in rm.get("W1-b")["result"]
+    assert "breaks tasks: b" in rm.get("W1-b")["result"] and "needs a design decision" in rm.get("W1-b")["result"]
+    assert "нужна помощь" in (repo / "docs" / "ROADMAP.md").read_text()
     assert "roadmap: gen 1" in git(repo, "log", "-1", "--format=%s")
     assert (repo / "docs" / "ROADMAP.md").exists() and (repo / "artel" / "a.py").exists()
     assert git(repo, "rev-parse", "evolve/gen-1") == git(repo, "rev-parse", "HEAD")
     # next pick follows dependencies; the roadmap-only commit reuses the merged code's baseline
     n_base = sum(1 for c in calls if c.startswith("base-"))
     s2 = ev.roadmap_generation(5)
-    assert set(s2["roadmap"]) == {"W1-b", "W2-c"}
+    assert set(s2["roadmap"]) == {"W2-c"}  # blocked items wait for a decision; W2-c's dependency is done
     assert sum(1 for c in calls if c.startswith("base-")) == n_base + 1  # merged code is new; measured once
-    ev.roadmap_generation(5)  # gen 2 merged nothing; its roadmap-only commit must not trigger a new baseline
-    assert sum(1 for c in calls if c.startswith("base-")) == n_base + 1
+    rm = Roadmap.of_repo(repo)
+    rm.set_status("W1-b", "planned", "redesigned by hand")
+    ev.roadmap_generation(5)  # gen 2 merged W2-c ... its roadmap-only commit must not trigger an extra baseline
+    assert sum(1 for c in calls if c.startswith("base-")) <= n_base + 2
 
 
 def _selfrepo(tmp_path, donor):

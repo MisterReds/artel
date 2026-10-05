@@ -293,3 +293,13 @@ def test_reopen_voids_decisions_and_remeasures_without_reimplementing(repo, tmp_
     s = ev.resume()
     assert impls == ["good idea"] and s["generation"] == 1 and s["accepted"] == ["evolve/g1-1-good-idea"]
     assert any(e["kind"] == "voided" for e in ev.ledger())
+
+
+def test_adopt_policy_takes_neutral_features_and_rejects_only_damage():
+    p = Policy()
+    same = bench.compare(_suite(1.0, 1.0), _suite(1.0, 1.1))
+    assert p.adopt(same, {"ok": True}, []).accepted  # no gain needed for a planned feature
+    assert not p.decide(same, {"ok": True}).accepted  # ... while a free hypothesis must show a gain
+    assert not p.adopt(same, {"ok": True}, ["b"]).accepted
+    assert not p.adopt(bench.compare(_suite(1.0, 1.0), _suite(1.0, 1.4)), {"ok": True}, []).accepted
+    assert not p.adopt(same, {"ok": False, "summary": "1 failed"}, []).accepted

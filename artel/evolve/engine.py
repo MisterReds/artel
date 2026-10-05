@@ -129,6 +129,22 @@ class Policy:
         return Decision(False, f"no measurable gain (pass {d['pass_rate']:+.2f}, partial {d['partial_mean']:+.3f}, "
                                f"cost {cost_ratio:+.0%})", score)
 
+    adopt_cost_increase: float = 0.25   # a planned feature may cost at most +25% on the benchmark
+
+    def adopt(self, cmp: dict, tests: dict, regressed: list) -> Decision:
+        """Planned (roadmap) features are not a contest: adopt when tests pass and nothing got worse.
+        ``regressed`` are regressions confirmed by a re-run (single LLM runs are noisy)."""
+        if not tests.get("ok"):
+            return Decision(False, f"tests fail: {tests.get('summary', '')}", -1)
+        if regressed:
+            return Decision(False, f"breaks tasks: {', '.join(regressed)}", -1)
+        b, c = cmp["base"], cmp["candidate"]
+        cost_ratio = (c["cost_usd"] / b["cost_usd"] - 1) if b["cost_usd"] else 0.0
+        if cost_ratio > self.adopt_cost_increase:
+            return Decision(False, f"cost {cost_ratio:+.0%} over the +{self.adopt_cost_increase:.0%} allowance", -1)
+        return Decision(True, f"adopted: tests pass, no regression (pass {cmp['delta']['pass_rate']:+.2f}, "
+                              f"cost {cost_ratio:+.0%})", 0)
+
 
 @dataclass
 class Hypothesis:
@@ -448,8 +464,12 @@ class Evolution:
     def resume_plan_from_ledger(self) -> bool:
         """Rebuild the plan of an interrupted generation started before plans were saved (one-time migration)."""
         run = self.state.get("running")
-        if not run or run.get("plan"):
-            return bool(run)
+        if run and run.get("plan"):
+            if run["plan"].get("roadmap"):
+                run["plan"].setdefault("mode", "adopt")  # plans saved before adopt mode existed
+            return True
+        if not run:
+            return False
         from ..roadmap import Roadmap
 
         gen = run["generation"]
@@ -471,8 +491,8 @@ class Evolution:
             return self._commit_locked(wt, h)
 
     def _commit_locked(self, wt: Path, h: Hypothesis) -> dict:
-        git(wt, "add", "-A")
-        if not git(wt, "status", "--porcelain"):
+        git(wt, "add", "-A", "--", ".", ":!**/__pycache__/**", ":!*.pyc", ":!.pytest_cache/**")
+        if not git(wt, "diff", "--cached", "--name-only"):
             return {"changed": False}
         git(wt, "commit", "-q", "-m", f"evolve: {h.title}\n\n{h.rationale}\n\nSource: {h.source}")
         stat = git(wt, "diff", "--shortstat", "HEAD~1", "HEAD")
@@ -580,7 +600,7 @@ class Evolution:
     def _generation(self, candidates: int = 2, hypotheses: Optional[list] = None, kind: str = "candidate",
                    parallel: int = 1, screen_tasks: Optional[list] = None, finalists: Optional[int] = None,
                    budget_usd: Optional[float] = None, stack: bool = True, resume: bool = False,
-                   plan_extra: Optional[dict] = None) -> dict:
+                   plan_extra: Optional[dict] = None, repairs: int = 2) -> dict:
         """One generation over a population of hypotheses.
 
         The plan (parent commit, hypotheses, candidate branches) is saved in state.json before any work, so a
@@ -628,6 +648,40 @@ class Evolution:
                     for k, h in enumerate(hypotheses, 1)]
             for f in futs:
                 results.append(f.result())
+        if self.state["running"]["plan"].get("mode") == "adopt":
+            merged_what, stack_entry = self._adopt(gen, champ, base, results, budget_left, repairs)
+        else:
+            merged_what, stack_entry = self._compete(gen, champ, base, results, budget_left, screen_tasks,
+                                                     parallel, finalists, stack)
+        merged = None
+        if merged_what:
+            merged = git(self.repo, "rev-parse", "HEAD")
+            git(self.repo, "tag", "-f", f"evolve-gen-{gen}", merged)
+            # Some git proxies refuse tag pushes; a branch marks the generation everywhere.
+            git(self.repo, "branch", "-f", f"evolve/gen-{gen}", merged)
+        for e in results:
+            e["merged"] = e["branch"] in merged_what
+            wt = e.pop("worktree", None)
+            if wt:
+                self._remove_worktree(Path(wt))
+            self.record(**e)
+        if stack_entry:
+            stack_entry["merged"] = bool(merged_what) and merged_what == stack_entry.get("included")
+            self.record(**stack_entry)
+        summary = {"generation": gen, "champion_before": champ, "champion_after": merged or champ,
+                   "candidates": len(results), "accepted": merged_what, "spent_usd": round(self._spent(results), 4),
+                   "stages": {st: sum(1 for e in results if e.get("stage") == st) for st in
+                              ("skipped", "implement", "tests", "error", "screen", "budget", "benchmarked")}}
+        summary["published"] = self.publish()
+        self.record(kind="generation", **summary)
+        self.state.pop("running", None)
+        self._save()
+        return summary
+
+    def _compete(self, gen, champ, base, results, budget_left, screen_tasks, parallel, finalists, stack):
+        """Free hypotheses compete: screen, benchmark finalists, merge what measurably beats the champion."""
+        from concurrent.futures import ThreadPoolExecutor
+
         alive = [e for e in results if e.get("stage") == "tested"]
 
         # 2. screen on a cheap subset, rank, keep finalists
@@ -667,7 +721,7 @@ class Evolution:
                      improved=cmp["improved"], regressed=cmp["regressed"], summary=cmp["candidate"], stage="benchmarked")
 
         winners = sorted([e for e in results if e.get("accepted")], key=lambda e: -e.get("score", 0))
-        merged, merged_what = None, []
+        merged_what = []
         stack_entry = None
         if len(winners) >= 2 and stack:
             stack_entry = self._stack(gen, champ, base, winners, budget_left)
@@ -684,33 +738,176 @@ class Evolution:
                 f"evolve gen {gen}: {w['hypothesis']['title']}\n\n{w['reason']}\nDelta: {json.dumps(w.get('delta', {}))}",
                 w["branch"])
             merged_what = [w["branch"]]
-        if merged_what:
-            merged = git(self.repo, "rev-parse", "HEAD")
-            git(self.repo, "tag", "-f", f"evolve-gen-{gen}", merged)
-            # Some git proxies refuse tag pushes; a branch marks the generation everywhere.
-            git(self.repo, "branch", "-f", f"evolve/gen-{gen}", merged)
         for e in winners:
             if e["branch"] not in merged_what:
                 e["reason"] += " (accepted alone, not merged: " + (
                     "excluded from the stack)" if stack_entry else "a better candidate won)")
-        for e in results:
-            e["merged"] = e["branch"] in merged_what
-            wt = e.pop("worktree", None)
-            if wt:
-                self._remove_worktree(Path(wt))
-            self.record(**e)
-        if stack_entry:
-            stack_entry["merged"] = bool(merged_what) and merged_what == stack_entry.get("included")
+        return merged_what, stack_entry
+
+    # --- adopt: planned roadmap features --------------------------------
+    def _adopt(self, gen, champ, base, results, budget_left, repairs):
+        """Roadmap items are adopted, not ranked. All tested candidates are integrated on one branch and measured
+        once; on a confirmed regression the culprits are found on the regressed tasks only, sent back to their
+        team with the failing checks, re-measured, and adopted when fixed. Nothing is dropped silently."""
+        for e in results:  # failing tests are a reason to fix, not to drop
+            for _ in range(repairs):
+                if e.get("stage") != "tests" or budget_left() <= 0:
+                    break
+                if self._repair(e, f"The test suite fails after your change:\n{e.get('tests_tail', '')}"):
+                    e.update(stage="tested", reason="", tests={"ok": True, "summary": e["repairs"][-1]["tests"]})
+            if e.get("stage") == "tests":
+                e.update(stage="blocked", reason=f"{e.get('reason', '')}; still failing after {repairs} repair rounds")
+        tested = [e for e in results if e.get("stage") == "tested"]
+        adopted: list = []
+        pending = list(tested)
+        stack_entry = None
+        for round_no in range(repairs + 1):
+            if not pending or budget_left() <= 0:
+                break
+            wt, included, excluded = self._integrate(gen, champ, adopted + pending, f"r{round_no}")
+            for e, why in excluded.items():
+                ent = next(x for x in pending + adopted if x["branch"] == e)
+                ent.update(accepted=False, reason=why, stage="integrate")
+                if ent in pending:
+                    pending.remove(ent)
+                if ent in adopted:
+                    adopted.remove(ent)
+            new = [e for e in pending if e["branch"] in included]
+            try:
+                suite = self._bench_call(wt, f"g{gen}-adopt-r{round_no}")
+                cmp = bench_mod.compare(base, suite)
+                regressed = self._confirm(wt, cmp, f"g{gen}-adopt-r{round_no}")
+                d = self.policy.adopt(cmp, {"ok": True}, regressed)
+            finally:
+                self._remove_worktree(wt)
+            stack_entry = {"kind": "stack", "generation": gen, "branch": f"evolve/g{gen}-adopt", "parent": champ,
+                           "included": included, "excluded": excluded, "round": round_no, "accepted": d.accepted,
+                           "reason": d.reason, "delta": cmp["delta"], "per_task": cmp["per_task"],
+                           "summary": cmp["candidate"], "regressed": regressed,
+                           "hypothesis": {"title": f"adoption round {round_no} of generation {gen}", "source": "stack"}}
             self.record(**stack_entry)
-        summary = {"generation": gen, "champion_before": champ, "champion_after": merged or champ,
-                   "candidates": len(results), "accepted": merged_what, "spent_usd": round(self._spent(results), 4),
-                   "stages": {st: sum(1 for e in results if e.get("stage") == st) for st in
-                              ("skipped", "implement", "tests", "error", "screen", "budget", "benchmarked")}}
-        summary["published"] = self.publish()
-        self.record(kind="generation", **summary)
-        self.state.pop("running", None)
-        self._save()
-        return summary
+            if d.accepted:
+                for e in new:
+                    e.update(accepted=True, reason=d.reason, stage="adopted", delta=cmp["delta"])
+                adopted += new
+                pending = []
+                break
+            culprits = self._culprits(gen, new, regressed, cmp, round_no)
+            for e in new:
+                if e not in culprits:
+                    e.update(accepted=True, reason=f"adopted: not involved in {d.reason}", stage="adopted")
+                    adopted.append(e)
+            pending = []
+            if round_no == repairs:
+                for e in culprits:
+                    e.update(accepted=False, stage="blocked",
+                             reason=f"{e.get('blame', d.reason)}; still failing after {repairs} repair rounds")
+                break
+            for e in culprits:  # back to the team with the evidence
+                if self._repair(e, f"After integration the benchmark shows: {e.get('blame', d.reason)}.\n"
+                                   f"Failing hidden checks:\n{e.get('evidence', '')[:3000]}"):
+                    pending.append(e)
+                else:
+                    last = (e.get("repairs") or [{}])[-1]
+                    e.update(accepted=False, stage="blocked",
+                             reason=f"{e.get('blame', d.reason)}; repair round {round_no + 1} failed: "
+                                    f"{last.get('error') or last.get('tests') or 'no change'}")
+        if not adopted:
+            return [], stack_entry
+        # final integration of everything adopted, tests after each merge, then merge into main
+        wt, included, excluded = self._integrate(gen, champ, adopted, "final")
+        self._remove_worktree(wt)
+        for b, why in excluded.items():
+            e = next(x for x in adopted if x["branch"] == b)
+            e.update(accepted=False, reason=why, stage="integrate")
+        if not included:
+            return [], stack_entry
+        git(self.repo, "checkout", "-q", self.state["main"])
+        git(self.repo, "merge", "--no-ff", "-q", "-m",
+            f"evolve gen {gen}: adopt {len(included)} roadmap items\n\n" +
+            "\n".join(f"- {e['hypothesis']['title']}" for e in adopted if e["branch"] in included) +
+            f"\n\n{stack_entry['reason'] if stack_entry else ''}", f"evolve/g{gen}-adopt")
+        return included, stack_entry
+
+    def _integrate(self, gen: int, champ: str, entries: list, label: str):
+        """(Re)build the integration branch evolve/g<gen>-adopt from champ, merging entries one by one with tests."""
+        branch = f"evolve/g{gen}-adopt"
+        with self._git_lock:
+            git(self.repo, "branch", "-f", branch, champ)
+            wt = self.home / "worktrees" / f"{branch.replace('/', '_')}-{label}"
+            if wt.exists():
+                self._remove_worktree_locked(wt)
+            git(self.repo, "worktree", "add", "-q", str(wt), branch)
+        included, excluded = [], {}
+        for e in entries:
+            git(wt, "clean", "-fdq", check=False)  # test debris from the previous merge must not block the next
+            m = subprocess.run(["git", *GIT_ID, "merge", "--no-ff", "-q", "-m", f"adopt: {e['hypothesis']['title']}",
+                                e["branch"]], cwd=wt, capture_output=True, text=True)
+            if m.returncode != 0:
+                git(wt, "merge", "--abort", check=False)
+                excluded[e["branch"]] = ("conflicts with another item; retried next generation on the new main: "
+                                         + (m.stderr or m.stdout).strip()[-200:])
+                continue
+            tests = self.run_tests(wt)
+            if not tests["ok"]:
+                git(wt, "reset", "--hard", "-q", "HEAD~1")
+                excluded[e["branch"]] = f"tests fail in combination: {tests['summary']}"
+                continue
+            included.append(e["branch"])
+        self._push(branch)
+        return wt, included, excluded
+
+    def _confirm(self, code: Path, cmp: dict, label: str) -> list:
+        """Re-run regressed tasks once; only regressions that repeat count."""
+        if not cmp["regressed"]:
+            return []
+        again = self._bench_call(code, f"{label}-confirm", list(cmp["regressed"]))
+        still = {r["id"] for r in again["results"] if not r.get("pass")}
+        return [t for t in cmp["regressed"] if t in still]
+
+    def _culprits(self, gen: int, new: list, regressed: list, cmp: dict, round_no: int) -> list:
+        """Which items cause the regression: each runs the regressed tasks alone (or the full suite for cost)."""
+        culprits = []
+        for e in new:
+            tasks = regressed or None
+            suite = self._bench_call(Path(e["worktree"]), f"g{gen}-blame-{e['branch'].split('-')[1]}-r{round_no}",
+                                     tasks)
+            failing = [r for r in suite["results"] if not r.get("pass") and r["id"] in (regressed or [])]
+            if regressed and failing:
+                e["blame"] = f"breaks tasks: {', '.join(r['id'] for r in failing)}"
+                e["evidence"] = "\n".join(f"[{r['id']}] " + "\n".join(
+                    f"$ {c['command']}\n{c['output']}" for c in (r.get("checks") or []) if c.get("exit"))
+                    + str(r.get("error", ""))[-800:] for r in failing)
+                culprits.append(e)
+            elif not regressed:
+                base_cost = cmp["base"]["cost_usd"] or 1
+                ratio = suite["summary"]["cost_usd"] / base_cost - 1
+                if ratio > self.policy.adopt_cost_increase:
+                    e["blame"] = f"cost {ratio:+.0%} on the benchmark"
+                    e["evidence"] = json.dumps({r["id"]: r.get("cost_usd") for r in suite["results"]})
+                    culprits.append(e)
+        return culprits  # a confirmed regression no single item reproduces is recorded on the stack entry
+
+    def _repair(self, e: dict, feedback: str) -> bool:
+        """Send a candidate back to its team in the same worktree; True when it is committed and tests pass."""
+        h = Hypothesis.from_dict(e["hypothesis"])
+        h.plan = (f"{h.plan}\n\nREPAIR: the worktree already contains your implementation of this change. Do not "
+                  f"start over; find and fix the cause.\n{feedback}")
+        wt = Path(e["worktree"])
+        try:
+            impl = self.implement_fn(h, wt)
+            commit = self._commit(wt, h)
+            tests = self.run_tests(wt)
+        except InfraError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            e.setdefault("repairs", []).append({"error": repr(exc)[:300]})
+            return False
+        e.setdefault("repairs", []).append({"implementation": impl, "commit": commit, "tests": tests["summary"]})
+        if not commit.get("changed"):
+            e["repairs"][-1]["error"] = "the team made no change"
+            return False
+        return bool(tests["ok"])
 
     def _unique_branch(self, name: str) -> str:
         """Branch names must not collide with earlier runs (e.g. a fresh evolution home on the same repo)."""
@@ -785,7 +982,7 @@ class Evolution:
         plan = {"champ": cands[0]["parent"], "kind": cands[0]["kind"],
                 "hypotheses": [e["hypothesis"] for e in cands],
                 "branches": {e["branch"].split("-")[1]: e["branch"] for e in cands},
-                **({"roadmap": roadmap} if roadmap and picks else {})}
+                **({"roadmap": roadmap, "mode": "adopt"} if roadmap and picks else {})}
         self.state["running"] = {"generation": gen, "since": time.time(), "phase": "reopened", "plan": plan}
         self._save()
         self.record(kind="voided", generation=gen, reason=reason, branches=list(plan["branches"].values()))
@@ -831,7 +1028,7 @@ class Evolution:
             self.record(kind="roadmap_pick", items=[it["id"] for it in items],
                         refs={h.source: h.refs for h in hyps})
         s = self.generation(len(hyps), hypotheses=None if resume else hyps, kind="candidate", resume=resume,
-                            plan_extra={"roadmap": [it["id"] for it in items]}, **opts)
+                            plan_extra={"roadmap": [it["id"] for it in items], "mode": "adopt"}, **opts)
         gen = s["generation"]
         cands = {e["branch"]: e for e in self.ledger() if e["kind"] == "candidate" and e.get("generation") == gen}
         outcome = {}
@@ -842,6 +1039,8 @@ class Evolution:
             item_id = src.split(":", 1)[1]
             if e.get("merged"):
                 outcome[item_id] = ("done", f"evolve/gen-{gen} ({e['branch']})")
+            elif e.get("stage") == "blocked":
+                outcome[item_id] = ("blocked", f"gen {gen}: {e.get('reason', '')[:200]} — needs a design decision")
             else:
                 outcome[item_id] = (rm.get(item_id).get("status"),
                                     f"gen {gen} rejected at {e.get('stage', '?')}: {e.get('reason', '')[:160]}")
