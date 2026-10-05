@@ -303,3 +303,39 @@ def test_adopt_policy_takes_neutral_features_and_rejects_only_damage():
     assert not p.adopt(same, {"ok": True}, ["b"]).accepted
     assert not p.adopt(bench.compare(_suite(1.0, 1.0), _suite(1.0, 1.4)), {"ok": True}, []).accepted
     assert not p.adopt(same, {"ok": False, "summary": "1 failed"}, []).accepted
+
+
+def test_adopt_combination_failure_is_incremental_not_all_or_nothing(repo, tmp_path):
+    """Each item is fine alone but together they cost too much: adopt the cheapest, defer the other."""
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+
+    def bench_fn(code, label, tasks=None):
+        code = Path(code)
+        n = sum((code / f).exists() for f in ("x.txt", "y.txt"))
+        solo_cost = 1.05 if (code / "x.txt").exists() else 1.10
+        cost = 1.0 if n == 0 else (solo_cost if n == 1 else 2.0)
+        rows = [{"id": "a", "pass": True, "partial": 1.0, "cost_usd": cost}]
+        return {"results": rows, "summary": bench.summarize(rows)}
+
+    def impl(h, wt):
+        (wt / ("x.txt" if h.title == "x" else "y.txt")).write_text("1")
+        return {}
+
+    ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    s = ev.generation(hypotheses=[Hypothesis("x", "r", "p"), Hypothesis("y", "r", "p")],
+                      plan_extra={"mode": "adopt"})
+    led = {e["hypothesis"]["title"]: e for e in ev.ledger() if e["kind"] == "candidate"}
+    assert s["accepted"] == ["evolve/g1-1-x"] and led["x"]["merged"]
+    assert led["y"]["stage"] == "deferred" and "combination" in led["y"]["reason"]
+
+
+def test_gates_leave_no_python_debris(tmp_path, monkeypatch):
+    from artel.manager import Manager, new_kernel, run_goal
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05})
+    project, _ = run_goal("gates", cfg)
+    (project.shared / "m.py").write_text("X = 1\n")
+    m = Manager(new_kernel(cfg), project)
+    res = m.run_gates({"id": "t", "checks": ["python3 -c 'import m'"]})
+    assert res[0]["exit"] == 0 and not (project.shared / "__pycache__").exists()

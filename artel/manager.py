@@ -18,6 +18,7 @@ human stop, or every remaining path waiting on a human.
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import threading
 import time
@@ -201,10 +202,14 @@ class Manager:
 
     def run_gates(self, task: dict) -> list[dict]:
         results = []
+        # gates observe, they must not change the deliverable (bytecode / pytest caches made reviewers reject
+        # work that had been cleaned up before the gate ran)
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
+               "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()}
         for cmd in task["checks"]:
             try:
                 p = subprocess.run(cmd, shell=True, cwd=self.project.shared, capture_output=True, text=True,
-                                   timeout=int(self.cfg.get("tool_timeout_s", 300)))
+                                   timeout=int(self.cfg.get("tool_timeout_s", 300)), env=env)
                 res = {"command": cmd, "exit": p.returncode, "output": window_text(p.stdout + p.stderr, 3000)}
             except subprocess.TimeoutExpired:
                 res = {"command": cmd, "exit": -1, "output": "timed out"}

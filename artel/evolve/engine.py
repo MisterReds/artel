@@ -238,13 +238,14 @@ class Evolution:
     def _has_remote(self) -> bool:
         return bool(git(self.repo, "remote", check=False)) and self.state.get("push", True)
 
-    def _push(self, *refs: str) -> bool:
-        """Best-effort push of exact refs to origin with backoff (git proxies drop connections)."""
+    def _push(self, *refs: str, force: bool = False) -> bool:
+        """Best-effort push of exact refs to origin with backoff (git proxies drop connections). ``force`` only
+        for scratch branches that are rebuilt by design (integration branches)."""
         if not self._has_remote():
             return False
         for attempt in range(4):
             p = subprocess.run(["git", "push", "--quiet", "origin",
-                                *[f"refs/heads/{r}:refs/heads/{r}" for r in refs]],
+                                *[f"{'+' if force else ''}refs/heads/{r}:refs/heads/{r}" for r in refs]],
                                cwd=self.repo, capture_output=True, text=True, timeout=600)
             if p.returncode == 0:
                 return True
@@ -792,7 +793,17 @@ class Evolution:
                 adopted += new
                 pending = []
                 break
+            self._current_base = base
             culprits = self._culprits(gen, new, regressed, cmp, round_no)
+            if not culprits and len(new) > 1:
+                # every item is fine alone but the combination is not: adopt the cheapest one now; the others are
+                # re-measured on top of it in the next generation (incremental, never all-or-nothing)
+                new.sort(key=lambda e: (e.get("solo") or {}).get("cost_ratio", 0))
+                for e in new[1:]:
+                    e.update(accepted=False, stage="deferred",
+                             reason=f"fine alone ({(e.get('solo') or {}).get('cost_ratio', 0):+.0%} cost) but the "
+                                    f"combination fails ({d.reason}); re-measured on the new main next generation")
+                new = new[:1]
             for e in new:
                 if e not in culprits:
                     e.update(accepted=True, reason=f"adopted: not involved in {d.reason}", stage="adopted")
@@ -854,7 +865,7 @@ class Evolution:
                 excluded[e["branch"]] = f"tests fail in combination: {tests['summary']}"
                 continue
             included.append(e["branch"])
-        self._push(branch)
+        self._push(branch, force=True)
         return wt, included, excluded
 
     def _confirm(self, code: Path, cmp: dict, label: str) -> list:
@@ -882,11 +893,20 @@ class Evolution:
             elif not regressed:
                 base_cost = cmp["base"]["cost_usd"] or 1
                 ratio = suite["summary"]["cost_usd"] / base_cost - 1
-                if ratio > self.policy.adopt_cost_increase:
+                e["solo"] = {"cost_ratio": round(ratio, 3), "pass_rate": suite["summary"]["pass_rate"]}
+                broke = self._confirm(Path(e["worktree"]), bench_mod.compare(self._base_for(cmp), suite),
+                                      f"g{gen}-blame-{e['branch'].split('-')[1]}-r{round_no}")
+                if broke:
+                    e["blame"] = f"breaks tasks: {', '.join(broke)}"
+                    culprits.append(e)
+                elif ratio > self.policy.adopt_cost_increase:
                     e["blame"] = f"cost {ratio:+.0%} on the benchmark"
                     e["evidence"] = json.dumps({r["id"]: r.get("cost_usd") for r in suite["results"]})
                     culprits.append(e)
-        return culprits  # a confirmed regression no single item reproduces is recorded on the stack entry
+        return culprits
+
+    def _base_for(self, cmp: dict) -> dict:
+        return self._current_base
 
     def _repair(self, e: dict, feedback: str) -> bool:
         """Send a candidate back to its team in the same worktree; True when it is committed and tests pass."""
@@ -954,8 +974,10 @@ class Evolution:
         """Push the champion, every evolve/* branch and the generation tags to `origin` (best-effort)."""
         if not git(self.repo, "remote", check=False):
             return {"pushed": False, "reason": "no remote"}
-        p = subprocess.run(["git", "push", "--quiet", "origin", self.state["main"], "refs/heads/evolve/*:refs/heads/evolve/*"],
-                           cwd=self.repo, capture_output=True, text=True, timeout=600)
+        p = subprocess.run(["git", "push", "--quiet", "origin", self.state["main"]], cwd=self.repo, capture_output=True,
+                           text=True, timeout=600)
+        for b in git(self.repo, "branch", "--list", "evolve/*", "--format=%(refname:short)").split():
+            self._push(b, force=b.endswith("-adopt"))
         tags = subprocess.run(["git", "push", "--quiet", "origin", "--tags"], cwd=self.repo, capture_output=True,
                               text=True, timeout=300)
         return {"pushed": p.returncode == 0, "tags_pushed": tags.returncode == 0,
@@ -1043,7 +1065,7 @@ class Evolution:
                 outcome[item_id] = ("blocked", f"gen {gen}: {e.get('reason', '')[:200]} — needs a design decision")
             else:
                 outcome[item_id] = (rm.get(item_id).get("status"),
-                                    f"gen {gen} rejected at {e.get('stage', '?')}: {e.get('reason', '')[:160]}")
+                                    f"gen {gen} {e.get('stage', '?')}: {e.get('reason', '')[:160]}")
         self.update_roadmap(outcome, gen)
         s["roadmap"] = {k: v[0] for k, v in outcome.items()}
         s["published"] = self.publish()
