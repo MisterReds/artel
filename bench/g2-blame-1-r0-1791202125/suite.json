@@ -1,0 +1,216 @@
+{
+ "label": "g2-blame-1-r0",
+ "code": "/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i",
+ "commit": "77209bb38d2c02352508fc5e8ce6724d04ca587d",
+ "ts": 1791202497.9349003,
+ "repeats": 1,
+ "config": {
+  "provider": "anthropic",
+  "runtime": "claude_code",
+  "claude_code": {
+   "model": "sonnet",
+   "permission_mode": "bypassPermissions",
+   "max_resumes": 2,
+   "timeout_s": 1800
+  },
+  "models": {
+   "default": "claude-opus-5-5"
+  }
+ },
+ "results": [
+  {
+   "id": "adr-doc",
+   "kind": "writing",
+   "exit": 0,
+   "wall_s": 119.7,
+   "status": "done",
+   "cost_usd": 0.6044,
+   "tokens": 873244,
+   "requests": 6,
+   "duration_s": 119.6,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_adr.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-blame-1-r0-1791202125/adr-doc/projects/bench-adr-doc"
+  },
+  {
+   "id": "csv-report",
+   "kind": "data",
+   "exit": 0,
+   "wall_s": 83.2,
+   "status": "done",
+   "cost_usd": 0.4909,
+   "tokens": 829365,
+   "requests": 6,
+   "duration_s": 83.1,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_report.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-blame-1-r0-1791202125/csv-report/projects/bench-csv-report"
+  },
+  {
+   "id": "fix-inventory",
+   "kind": "bugfix",
+   "exit": 0,
+   "wall_s": 147.0,
+   "status": "done",
+   "cost_usd": 0.7578,
+   "tokens": 1302256,
+   "requests": 8,
+   "duration_s": 146.9,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 3,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_inventory.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-blame-1-r0-1791202125/fix-inventory/projects/bench-fix-inventory"
+  },
+  {
+   "id": "log-stats",
+   "kind": "data-hard",
+   "exit": 0,
+   "wall_s": 136.4,
+   "status": "done",
+   "cost_usd": 0.6453,
+   "tokens": 1089461,
+   "requests": 6,
+   "duration_s": 136.2,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 2,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_logstats.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-blame-1-r0-1791202125/log-stats/projects/bench-log-stats/shared/.artel_eval/check_logstats.py\", line 14, in <module>\n    assert s[\"total\"] == total and s[\"malformed\"] == mal, (s[\"total\"], total, s[\"malformed\"], mal)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: (197655, 197655, 1757, 2345)\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-blame-1-r0-1791202125/log-stats/projects/bench-log-stats"
+  },
+  {
+   "id": "lru-ttl-cache",
+   "kind": "build-hard",
+   "exit": 0,
+   "wall_s": 148.5,
+   "status": "done",
+   "cost_usd": 0.7935,
+   "tokens": 1286387,
+   "requests": 8,
+   "duration_s": 148.3,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 3,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_cache.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-blame-1-r0-1791202125/lru-ttl-cache/projects/bench-lru-ttl-cache"
+  },
+  {
+   "id": "multi-module-bugs",
+   "kind": "bugfix-hard",
+   "exit": 0,
+   "wall_s": 225.0,
+   "status": "done",
+   "cost_usd": 1.1382,
+   "tokens": 1884094,
+   "requests": 11,
+   "duration_s": 224.8,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 2,
+   "tasks": 4,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_billing.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-blame-1-r0-1791202125/multi-module-bugs/projects/bench-multi-module-bugs"
+  },
+  {
+   "id": "wordfreq-cli",
+   "kind": "build",
+   "exit": 0,
+   "wall_s": 148.1,
+   "status": "done",
+   "cost_usd": 0.7074,
+   "tokens": 1240168,
+   "requests": 8,
+   "duration_s": 148.0,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 3,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_wordfreq.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-blame-1-r0-1791202125/wordfreq-cli/projects/bench-wordfreq-cli"
+  }
+ ],
+ "summary": {
+  "tasks": 7,
+  "pass_rate": 0.857,
+  "partial_mean": 0.857,
+  "cost_usd": 5.1375,
+  "tokens": 8504975,
+  "duration_mean_s": 143.8,
+  "attempts": 0,
+  "rejections": 0,
+  "stalls": 0,
+  "audit_rounds": 8
+ }
+}
