@@ -5,7 +5,7 @@
  "running": {
   "generation": 2,
   "since": 1791199713.7831593,
-  "phase": "reopened",
+  "phase": "implementing 4 candidates, 2 at a time",
   "plan": {
    "champ": "43d92fb0090577ebc18b3be5c3fab1b93f99356a",
    "kind": "candidate",
@@ -81,7 +81,9 @@
     "W1-evidence-window",
     "W1-output-spill",
     "W1-read-cache"
-   ]
-  }
+   ],
+   "mode": "adopt"
+  },
+  "resumed_at": 1791200723.364898
  }
 }
