@@ -42,14 +42,17 @@ def _cfg(args) -> dict:
 def print_board(project: Project) -> None:
     m = project.meta
     u = m["usage"]
-    print(f"{project.slug}  [{m['status']}]  {m['name']}")
+    from .brand import banner, paint, status
+
+    print(f"{banner()}  {m['name']}  [{status(m['status'])}]  "
+          f"{project.slug}")
     print(f"  tokens in/out {u['input_tokens']}/{u['output_tokens']}  requests {u['requests']}  "
           f"audits {m.get('audit_rounds', 0)}")
     for p in project.personas():
         print(f"  @{p.name} — {p.role}")
     for t in project.board.list():
         flag = " [needs human]" if t["needs_human"] else ""
-        print(f"  {ICONS.get(t['status'], '?')} {t['status']:<9} {t['id']}  {t['assignee'] or '-':<10} "
+        print(f"  {ICONS.get(t['status'], '?')} {status(t['status']):<9} {t['id']}  {t['assignee'] or '-':<10} "
               f"{t['title']}{flag}  (attempts {t['attempts']})")
 
 
@@ -81,7 +84,9 @@ def cmd_run(args) -> int:
         from .web.server import serve
 
         threading.Thread(target=serve, kwargs={"port": args.port, "config": cfg}, daemon=True).start()
-        print(f"dashboard: http://127.0.0.1:{args.port}")
+        from .brand import banner
+
+        print(banner(f"дашборд http://127.0.0.1:{args.port}"))
     holder: dict = {}
 
     def target():
@@ -305,6 +310,71 @@ def _evolve_once(args) -> int:
     return 0
 
 
+def cmd_providers(args) -> int:
+    import subprocess
+
+    from .brand import banner
+    from .providers import logout_codex, overview
+    from .runtimes.codex import codex_env, codex_settings
+
+    cfg = _cfg(args)
+    if args.action == "login" and args.name == "codex":
+        c = codex_settings(cfg)  # the CLI prints the link and the one-time code, then waits for the browser
+        return subprocess.call([c["binary"], "login", "--device-auth"], env=codex_env(c))
+    if args.action == "logout" and args.name == "codex":
+        print(logout_codex(cfg)["detail"])
+        return 0
+    o = overview(cfg)
+    print(banner("провайдеры"))
+    for key, label in (("codex", "Codex"), ("claude_code", "Claude Code")):
+        st = o[key]
+        state = ("вход выполнен" + (f" ({st['method']})" if st.get("method") else "")) if st["logged_in"] else \
+            ("не подключён" if st["installed"] else "не установлен")
+        print(f"  {label:<14} {state:<34} {st.get('version', '')}")
+    for k in o["keys"]:
+        print(f"  {k['label']:<14} {'задан' if k['set'] else 'не задан':<34} ${k['env']}")
+    loc = o["local"]
+    print(f"  {'System One':<14} {'отвечает' if loc['reachable'] else 'не запущена':<34} {loc['url']}")
+    r = o["routing"]
+    print(f"  рантайм по умолчанию: {r['runtime']}" + "".join(f"; {k}: {v}" for k, v in r["runtime_by_role"].items()))
+    return 0
+
+
+def cmd_update(args) -> int:
+    from .updater import Updater, UpdateError
+
+    up = Updater(config=_cfg(args))
+    try:
+        if args.rollback:
+            out = up.rollback()
+            print(f"rolled back {out['from'][:10]} -> {out['to'][:10]}; restart running Artel processes")
+            return 0
+        st = up.status(fetch=True)
+        if not st.get("available"):
+            print(st.get("reason") or "up to date")
+            return 0
+        from .brand import banner
+
+        print(banner("обновление"))
+        print(f"{st['behind']} new commits on {st['channel']} ({st['current'][:10]} -> {st['remote'][:10]})")
+        for r in st["roadmap_done"]:
+            print(f"  done: {r['id']} — {r['title']} (from {r['from']})")
+        for c in st["commits"][:20]:
+            print(f"  {c['date'][:10]} {c['subject']}")
+        if args.check:
+            return 0
+        if not st["can_update"]:
+            print(f"cannot update: {st['reason']}")
+            return 1
+        out = up.apply(verify=not args.no_verify)
+        print(f"updated {out['from'][:10]} -> {out['to'][:10]}" + (" (dependencies reinstalled)" if out.get("deps") else "")
+              + "; restart running Artel processes (the dashboard restarts itself)")
+        return 0
+    except UpdateError as e:
+        print(f"update failed: {e}")
+        return 1
+
+
 def cmd_roadmap(args) -> int:
     from .roadmap import Roadmap
 
@@ -392,7 +462,7 @@ def main(argv=None) -> int:
     r.add_argument("--workdir", help="work directly in this directory (e.g. a git worktree) instead of shared/")
     r.add_argument("--ref", action="append", help="read-only source directory the team may study (repeatable)")
     r.add_argument("--seed", help="copy this directory into the deliverables directory before planning")
-    r.add_argument("--runtime", choices=["native", "claude_code"])
+    r.add_argument("--runtime", choices=["native", "claude_code", "codex"])
     r.add_argument("--port", type=int, default=8765)
     r.set_defaults(fn=cmd_run)
 
@@ -435,7 +505,7 @@ def main(argv=None) -> int:
         p.add_argument("--repo", help="Artel git repo to evolve (default: this installation)")
         p.add_argument("--tasks", help="comma-separated benchmark task ids")
         p.add_argument("--parallel-bench", type=int, default=2)
-        p.add_argument("--runtime", choices=["native", "claude_code"])
+        p.add_argument("--runtime", choices=["native", "claude_code", "codex"])
         p.add_argument("--provider", choices=["anthropic", "openai_compat", "scripted"])
 
     bn = sub.add_parser("bench", help="run the benchmark suite with hidden checks")
@@ -476,6 +546,19 @@ def main(argv=None) -> int:
     ev.add_argument("--no-wait", action="store_true",
                     help="exit when the model provider hits a limit instead of waiting for the reset and resuming")
     ev.set_defaults(fn=cmd_evolve)
+
+    pv = sub.add_parser("providers", help="subscriptions, API keys and runtimes; Codex device-code login")
+    pv.add_argument("action", nargs="?", default="status", choices=["status", "login", "logout"])
+    pv.add_argument("name", nargs="?", default="codex", choices=["codex"])
+    pv.add_argument("--config")
+    pv.set_defaults(fn=cmd_providers)
+
+    upd = sub.add_parser("update", help="pull the improvements published since this installation (verified first)")
+    upd.add_argument("--check", action="store_true", help="only show what is new")
+    upd.add_argument("--rollback", action="store_true", help="return to the version before the last update")
+    upd.add_argument("--no-verify", action="store_true", help="skip running the pillar tests on the new version")
+    upd.add_argument("--config")
+    upd.set_defaults(fn=cmd_update)
 
     rmp = sub.add_parser("roadmap", help="roadmap.yaml: status, next items, render docs/ROADMAP.md")
     rmp.add_argument("action", choices=["status", "next", "study", "render"], nargs="?", default="status")

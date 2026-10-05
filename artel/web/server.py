@@ -29,6 +29,56 @@ class Runner:
         self.kernel = new_kernel(config)
         self.active: dict[str, threading.Event] = {}
         self.lock = threading.Lock()
+        from ..updater import Updater
+
+        self.updater = Updater(config=config)
+        from ..providers import CodexLogin
+
+        self.codex_login = CodexLogin(config)
+        self.update_state: dict = {"phase": "idle"}  # idle | checking | verifying | restart_pending | error
+        self.restart_pending = False
+
+    # --- self-update ----------------------------------------------------
+    def update_status(self, fetch: bool = False) -> dict:
+        st = self.updater.status(fetch=True) if fetch or self.updater._last is None else self.updater._last
+        return {**st, "state": self.update_state, "running_projects": sorted(self.active),
+                "history": self.updater.history()[-5:]}
+
+    def update_apply(self, rollback: bool = False) -> dict:
+        from ..updater import UpdateError
+
+        self.update_state = {"phase": "verifying" if not rollback else "rolling back", "since": time.time()}
+        try:
+            out = self.updater.rollback() if rollback else self.updater.apply()
+        except UpdateError as e:
+            self.update_state = {"phase": "error", "error": str(e)[-1500:]}
+            return {"ok": False, "error": str(e)}
+        self.restart_pending = True
+        self.update_state = {"phase": "restart_pending", "to": out.get("to"),
+                             "waiting_for": sorted(self.active)}
+        return {"ok": True, **out}
+
+    def start_update_loop(self) -> None:
+        """Check the update channel periodically; restart into the new code once no project is running."""
+        from ..updater import restart_process
+
+        interval = float(self.updater.cfg.get("check_interval_min", 30)) * 60
+
+        def loop():
+            last = 0.0
+            while True:
+                if self.restart_pending and not self.active:
+                    time.sleep(1.0)  # let the HTTP response that triggered it finish
+                    restart_process()
+                if interval > 0 and time.time() - last > interval:
+                    last = time.time()
+                    try:
+                        self.updater.status(fetch=True)
+                    except Exception:  # noqa: BLE001 - offline is fine; the next check retries
+                        pass
+                time.sleep(2.0)
+
+        threading.Thread(target=loop, daemon=True, name="artel-updater").start()
 
     def start(self, goal: str, name: str | None) -> str:
         stop = threading.Event()
@@ -161,6 +211,18 @@ def make_handler(runner: Runner):
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
+                elif parts and parts[0] == "static":
+                    self._static("/".join(parts[1:]))
+                elif parts == ["favicon.ico"] or parts == ["favicon.svg"]:
+                    self._static("favicon.svg")
+                elif parts == ["api", "providers"]:
+                    from ..providers import overview
+
+                    self._json({**overview(runner.config), "codex_login": runner.codex_login.state})
+                elif parts == ["api", "providers", "codex", "login"]:
+                    self._json(runner.codex_login.state)
+                elif parts == ["api", "update"]:
+                    self._json(runner.update_status(fetch=q.get("check", ["0"])[0] == "1"))
                 elif parts == ["api", "evolution"]:
                     self._json(evolution_view())
                 elif parts == ["api", "skills"]:
@@ -180,6 +242,21 @@ def make_handler(runner: Runner):
                 self._json({"error": str(exc)}, 404)
             except (BrokenPipeError, ConnectionResetError):
                 pass
+
+        def _static(self, rel: str) -> None:
+            root = (Path(__file__).parent / "static").resolve()
+            f = (root / rel).resolve()
+            if root not in f.parents or not f.is_file():
+                return self._json({"error": "not found"}, 404)
+            types = {".svg": "image/svg+xml", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2",
+                     ".png": "image/png"}
+            body = f.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", types.get(f.suffix, "application/octet-stream"))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def _files(self, project: Project, rel: str) -> None:
             base = project.root.resolve()
@@ -227,6 +304,22 @@ def make_handler(runner: Runner):
                     if not goal:
                         return self._json({"error": "goal required"}, 400)
                     return self._json({"slug": runner.start(goal, data.get("name") or None)})
+                if parts == ["api", "providers", "codex", "login"]:
+                    return self._json(runner.codex_login.start())
+                if parts == ["api", "providers", "codex", "cancel"]:
+                    return self._json(runner.codex_login.cancel())
+                if parts == ["api", "providers", "codex", "logout"]:
+                    from ..providers import logout_codex
+
+                    return self._json(logout_codex(runner.config))
+                if parts == ["api", "providers", "routing"]:
+                    from ..providers import save_routing
+
+                    return self._json(save_routing(runner.config, data))
+                if parts == ["api", "update", "apply"]:
+                    return self._json(runner.update_apply())
+                if parts == ["api", "update", "rollback"]:
+                    return self._json(runner.update_apply(rollback=True))
                 if len(parts) == 4 and parts[3] == "stop":
                     return self._json({"stopped": runner.stop(parts[2])})
                 if len(parts) == 4 and parts[3] == "resume":
@@ -246,9 +339,12 @@ def serve(port: int = 8765, config: dict | None = None, host: str = "127.0.0.1")
     from ..project import load_config
 
     runner = Runner(config or load_config())
+    runner.start_update_loop()
     httpd = ThreadingHTTPServer((host, port), make_handler(runner))
     httpd.daemon_threads = True
-    print(f"artel dashboard on http://{host}:{port}")
+    from ..brand import banner
+
+    print(banner(f"дашборд http://{host}:{port}"), flush=True)
     httpd.serve_forever()
 
 

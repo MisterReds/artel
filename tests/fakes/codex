@@ -1,0 +1,52 @@
+#!/usr/bin/env python3
+"""Stand-in for the OpenAI Codex CLI in tests: device login, login status, and `exec --json` that does some work
+and finishes by calling Artel's terminal tool through the MCP bridge configured with -c mcp_servers.artel.args."""
+import json, os, sys, time, urllib.request
+from pathlib import Path
+
+home = Path(os.environ.get("CODEX_HOME", Path.home() / ".codex"))
+args = sys.argv[1:]
+if args[:1] == ["--version"]:
+    print("codex-cli 9.9.9-fake"); sys.exit(0)
+if args[:2] == ["login", "status"]:
+    print("Logged in using ChatGPT" if (home / "auth.json").exists() else "Not logged in")
+    sys.exit(0 if (home / "auth.json").exists() else 1)
+if args[:1] == ["logout"]:
+    (home / "auth.json").unlink(missing_ok=True); print("Successfully logged out"); sys.exit(0)
+if args[:2] == ["login", "--device-auth"]:
+    print("\x1b[94mWelcome to Codex\x1b[0m\n\n1. Open this link in your browser and sign in to your account\n"
+          "   \x1b[94mhttps://auth.openai.com/codex/device\x1b[0m\n\n2. Enter this one-time code \x1b[90m(expires in 15 minutes)\x1b[0m\n"
+          "   \x1b[94mABCD-EFG12\x1b[0m\n", flush=True)
+    for _ in range(200):  # the test "confirms in the browser" by creating this file
+        if (home / "confirm").exists():
+            home.mkdir(parents=True, exist_ok=True); (home / "auth.json").write_text("{}"); print("Successfully logged in"); sys.exit(0)
+        time.sleep(0.05)
+    sys.exit(1)
+assert args[0] == "exec", args
+cfg = {}
+for i, a in enumerate(args):
+    if a == "-c":
+        k, v = args[i + 1].split("=", 1); cfg[k] = v
+url, token = json.loads(cfg["mcp_servers.artel.args"])[2:4]
+log = Path(os.environ["FAKE_CODEX_LOG"]); log.write_text(log.read_text() + json.dumps(args) + "\n" if log.exists() else json.dumps(args) + "\n")
+prompt = sys.stdin.read()
+emit = lambda o: print(json.dumps(o), flush=True)
+resumed = "resume" in args
+emit({"type": "thread.started", "thread_id": "th-1"})
+emit({"type": "turn.started"})
+if os.environ.get("FAKE_CODEX_LIMIT"):
+    emit({"type": "turn.failed", "error": {"message": "You've hit your usage limit. Try again at 4:20 PM."}}); sys.exit(1)
+emit({"type": "item.completed", "item": {"id": "i1", "type": "agent_message", "text": "Writing the file." if not resumed else "Finishing."}})
+emit({"type": "item.completed", "item": {"id": "i2", "type": "file_change", "status": "completed", "changes": [{"path": "hello.py", "kind": "add"}]}})
+Path("hello.py").write_text("print('hi')\n")
+emit({"type": "item.completed", "item": {"id": "i3", "type": "command_execution", "command": "python hello.py", "aggregated_output": "hi\n", "exit_code": 0, "status": "completed"}})
+if os.environ.get("FAKE_CODEX_LAZY") and not resumed:  # first run ends without a terminal tool -> Artel resumes
+    emit({"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 10, "output_tokens": 20}}); sys.exit(0)
+def call(name, a):
+    req = urllib.request.Request(url, data=json.dumps({"name": name, "args": a}).encode(),
+                                 headers={"X-Artel-Token": token, "Content-Type": "application/json"})
+    return json.loads(urllib.request.urlopen(req).read())
+r = call("task_submit", {"summary": "hello.py prints hi", "evidence": "$ python hello.py\nhi"})
+emit({"type": "item.completed", "item": {"id": "i4", "type": "mcp_tool_call", "server": "artel", "tool": "task_submit", "arguments": {}, "status": "completed"}})
+emit({"type": "turn.completed", "usage": {"input_tokens": 1000, "cached_input_tokens": 400, "output_tokens": 200}})
+time.sleep(5)  # Artel stops the run as soon as the terminal tool is accepted

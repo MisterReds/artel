@@ -6,3 +6,4 @@ dist/
 *.gguf
 *.bin
 *.safetensors
+*.log
