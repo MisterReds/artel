@@ -1,0 +1,10 @@
+{
+ "main": "master",
+ "generation": 2,
+ "repo": "/home/user/artel",
+ "running": {
+  "generation": 2,
+  "since": 1791185180.0829942,
+  "phase": "implementing 4 candidates, 2 at a time"
+ }
+}
