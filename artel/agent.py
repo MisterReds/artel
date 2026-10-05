@@ -21,6 +21,10 @@ from .tooling import ToolContext, ToolError
 
 NO_PROGRESS_CAP = 3
 _llm_lock = threading.Lock()
+TERMINAL_EXAMPLES = {
+    "task_submit": '{"summary": "...", "evidence": "<pasted command output>", "artifacts": ["shared/..."]}',
+    "review_verdict": '{"passed": true|false, "feedback": "..."}',
+}
 
 
 @dataclass
@@ -67,7 +71,11 @@ def execute_tool(kernel, ctx: ToolContext, name: str, args: dict) -> tuple[str, 
         return f"unknown tool {name!r} for role {ctx.role}", True
     missing = [k for k in spec.input_schema.get("required", []) if k not in args]
     if missing:
-        return f"missing required arguments: {missing}", True
+        msg = f"missing required arguments: {missing}"
+        example = TERMINAL_EXAMPLES.get(name) if spec.terminal else None
+        if example:
+            msg += f". Call {name} again with all required arguments, e.g. {example}"
+        return msg, True
 
     def final(c: dict) -> tuple[str, bool]:
         try:

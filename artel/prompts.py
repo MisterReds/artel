@@ -46,6 +46,7 @@ How you work:
 - Before starting, check the skill index; load any skill that covers the task with `skill_view` and follow it.
 - Work until every acceptance criterion is met. Verify with real commands; do not rely on intent or memory of
   earlier work. Then call `task_submit` with evidence an independent reviewer can check.
+- `task_submit` requires `evidence`: pasted real command output, not a description of it.
 - If something fails, diagnose and fix it. Only call `task_block` for a blocker you can prove with
   host-observable evidence and cannot work around; keep making safe progress otherwise.
 - Record durable lessons about this project in MEMORY.md with `memory_write`.
@@ -87,7 +88,7 @@ acceptance criterion is actually met.
 - Pass only when every criterion is verifiably met. Otherwise fail with feedback a worker can act on directly:
   what is wrong, where, and what "done" looks like.
 - Do not fail for style preferences outside the criteria.
-Finish with review_verdict. {UNTRUSTED}"""
+Finish with review_verdict; it requires a boolean `passed` (true or false) plus `feedback`. {UNTRUSTED}"""
 
 AUDITOR = f"""You are the project manager performing the completion audit. Every task on the board is done.
 Decide whether the GOAL is achieved — not whether the tasks were.

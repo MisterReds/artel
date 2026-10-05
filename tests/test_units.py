@@ -124,3 +124,31 @@ def test_openai_message_translation():
     assert [m["role"] for m in out] == ["system", "user", "assistant", "tool", "user"]
     assert out[2]["tool_calls"][0]["function"]["name"] == "bash"
     assert out[3] == {"role": "tool", "tool_call_id": "c1", "content": "a.txt"}
+
+
+def _exec(name, args, role):
+    from types import SimpleNamespace
+    from artel.agent import execute_tool
+    from artel.tooling import ToolContext
+    spec = SimpleNamespace(roles=[role], terminal=name in ("task_submit", "review_verdict"),
+                           input_schema={"required": ["summary", "evidence", "passed"]}, fn=None)
+    kernel = SimpleNamespace(tools={name: spec})
+    return execute_tool(kernel, ToolContext(kernel=kernel, project=None, role=role, workspace=Path(".")), name, args)
+
+
+def test_terminal_missing_args_give_example():
+    msg, err = _exec("task_submit", {"summary": "x"}, "worker")
+    assert err and "evidence" in msg and '"artifacts": ["shared/..."]' in msg
+    msg, err = _exec("review_verdict", {}, "reviewer")
+    assert err and '"passed": true|false' in msg and '"feedback"' in msg
+
+
+def test_nonterminal_missing_args_unchanged():
+    msg, err = _exec("bash", {}, "worker")
+    assert err and msg == "missing required arguments: ['summary', 'evidence', 'passed']"
+
+
+def test_worker_prompt_formats_with_new_line():
+    from artel import prompts
+    assert "`task_submit` requires `evidence`" in prompts.WORKER
+    assert "boolean `passed`" in prompts.REVIEWER
