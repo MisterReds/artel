@@ -252,3 +252,44 @@ def test_interrupted_generation_resumes_without_redoing_finished_candidates(repo
     assert s["generation"] == 1 and s["accepted"] and "running" not in ev2.state
     assert ev2.state["generation"] == 1 and any(e["kind"] == "resume" for e in ev2.ledger())
     assert ev2.resume() is None
+
+
+def test_provider_limit_pauses_instead_of_rejecting(repo, tmp_path):
+    from artel.evolve.engine import InfraError, infra_problem
+
+    e = infra_problem("planning failed: error claude code failed: You've hit your session limit · resets 11:20am (UTC)")
+    assert isinstance(e, InfraError) and e.retry_at and "session limit" in str(e)
+    assert infra_problem("AssertionError: expected 3 got 4") is None
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    limited = {"on": True}
+
+    def bench_fn(code, label, tasks=None):
+        if limited["on"] and not label.startswith("base-"):
+            rows = [{"id": "a", "pass": False, "partial": 0.0, "error": "You've hit your session limit"}]
+        else:
+            rows = [{"id": "a", "pass": True, "partial": 1.0, "cost_usd": 0.1 if label.startswith("base-") else 0.05}]
+        return {"results": rows, "summary": bench.summarize(rows)}
+
+    impls = []
+    ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn,
+                   implement_fn=lambda h, wt: impls.append(h.title) or (wt / "x.txt").write_text("1"))
+    with pytest.raises(InfraError):
+        ev.generation(hypotheses=[Hypothesis("cheaper", "r", "p")])
+    assert not [x for x in ev.ledger() if x["kind"] == "candidate"]  # nobody was judged on a provider failure
+    assert ev.state["running"]["phase"].startswith("paused") and ev.ledger()[-1]["kind"] == "paused"
+    limited["on"] = False
+    s = ev.resume()
+    assert impls == ["cheaper"] and s["accepted"] == ["evolve/g1-1-cheaper"]
+
+
+def test_reopen_voids_decisions_and_remeasures_without_reimplementing(repo, tmp_path):
+    scores = iter([_suite(0.5, 1.0), _suite(0.0, 1.0), _suite(1.0, 1.0)])
+    impls = []
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=lambda code, label: next(scores),
+                   implement_fn=lambda h, wt: impls.append(h.title) or (wt / "y.txt").write_text("1") and {})
+    assert ev.generation(hypotheses=[Hypothesis("good idea", "r", "p")])["accepted"] == []
+    ev.reopen(1, "provider outage")
+    s = ev.resume()
+    assert impls == ["good idea"] and s["generation"] == 1 and s["accepted"] == ["evolve/g1-1-good-idea"]
+    assert any(e["kind"] == "voided" for e in ev.ledger())

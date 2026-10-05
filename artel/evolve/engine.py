@@ -37,6 +37,50 @@ from . import diagnose as diag_mod
 GIT_ID = ["-c", "user.name=artel-evolve", "-c", "user.email=artel-evolve@localhost"]
 
 
+INFRA_PATTERNS = re.compile(r"session limit|usage limit|rate limit|hit your [a-z ]*limit|overloaded_error|"
+                            r"credit balance|invalid api key|authentication_error|\b429\b|\b529\b", re.I)
+
+
+class InfraError(RuntimeError):
+    """The model provider, not the candidate, failed (limits, auth, outage). The generation pauses with its plan
+    saved; ``resume`` continues it. ``retry_at`` is a unix time when the provider said the limit resets."""
+
+    def __init__(self, message: str, retry_at: Optional[float] = None):
+        super().__init__(message)
+        self.retry_at = retry_at
+
+
+def infra_problem(text: str) -> Optional[InfraError]:
+    m = INFRA_PATTERNS.search(text or "")
+    if not m:
+        return None
+    line = next((ln for ln in (text or "").splitlines() if INFRA_PATTERNS.search(ln)), m.group(0)).strip()[:300]
+    retry_at = None
+    r = re.search(r"resets (?:at )?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*\(?UTC", text or "", re.I)
+    if r:
+        import datetime as dt
+
+        h, mi = int(r.group(1)) % 12 if r.group(3) else int(r.group(1)), int(r.group(2) or 0)
+        if (r.group(3) or "").lower() == "pm":
+            h += 12
+        now = dt.datetime.now(dt.timezone.utc)
+        t = now.replace(hour=h, minute=mi, second=0, microsecond=0)
+        if t <= now:
+            t += dt.timedelta(days=1)
+        retry_at = t.timestamp()
+    return InfraError(line, retry_at)
+
+
+def check_suite(suite: dict) -> dict:
+    """Raise InfraError when benchmark runs failed because of the provider rather than the code under test."""
+    for r in suite.get("results", []):
+        if not r.get("pass"):
+            err = infra_problem(str(r.get("error", "")))
+            if err:
+                raise err
+    return suite
+
+
 def git(repo: Path, *args: str, check: bool = True) -> str:
     p = subprocess.run(["git", *GIT_ID, *args], cwd=repo, capture_output=True, text=True)
     if check and p.returncode != 0:
@@ -155,7 +199,7 @@ class Evolution:
     # --- durability: everything worth keeping goes to the git remote as it happens ---------------
     JOURNAL_BRANCH = "evolve/journal"
     JOURNAL_KINDS = ("baseline", "candidate", "absorb_candidate", "stack", "generation", "absorb", "absorb_error",
-                     "roadmap_pick")
+                     "roadmap_pick", "paused", "voided")
 
     def restore_journal(self) -> bool:
         """A fresh machine (or a reclaimed container) continues from the journal on the remote."""
@@ -254,7 +298,7 @@ class Evolution:
             return json.loads(cache.read_text())
         wt = self._worktree(f"baseline-{sha[:10]}", sha, new_branch=False)
         try:
-            suite = self.bench_fn(wt, f"base-{sha[:8]}")
+            suite = self._bench_call(wt, f"base-{sha[:8]}")
         finally:
             self._remove_worktree(wt)
         cache.parent.mkdir(parents=True, exist_ok=True)
@@ -369,8 +413,18 @@ class Evolution:
 
         project, status = run_goal(self.implementation_goal(h, wt), self.config, name=f"evolve-{wt.name}",
                                    workdir=wt, refs=tuple(h.refs))
+        self._raise_if_infra(project, status)
         meta = project.meta
         return {"project": str(project.root), "status": status, "cost_usd": meta["usage"].get("cost_usd", 0.0)}
+
+    @staticmethod
+    def _raise_if_infra(project, status: str) -> None:
+        if status == "done":
+            return
+        tail = "\n".join(json.dumps(e, ensure_ascii=False) for e in project.log.read()[-60:])
+        err = infra_problem(tail)
+        if err:
+            raise err
 
     def _continue_implementation(self, h: Hypothesis, wt: Path) -> Optional[dict]:
         """Resume the interrupted implementation project that worked in ``wt`` (None if there is none)."""
@@ -386,6 +440,7 @@ class Evolution:
                 continue
             if meta.get("workdir") == str(wt) and meta.get("status") != "done":
                 project, status = resume_project(meta_path.parent.name, self.config)
+                self._raise_if_infra(project, status)
                 return {"project": str(project.root), "status": status, "resumed": True,
                         "cost_usd": project.meta["usage"].get("cost_usd", 0.0)}
         return None
@@ -430,9 +485,10 @@ class Evolution:
     # --- population generation ------------------------------------------
     def _bench_call(self, code: Path, label: str, tasks: Optional[list] = None) -> dict:
         try:
-            return self.bench_fn(code, label, tasks=tasks) if tasks else self.bench_fn(code, label)
+            suite = self.bench_fn(code, label, tasks=tasks) if tasks else self.bench_fn(code, label)
         except TypeError:  # bench functions without task selection
-            return self.bench_fn(code, label)
+            suite = self.bench_fn(code, label)
+        return check_suite(suite)
 
     def _bench(self, code: Path, label: str, tasks: Optional[list] = None) -> dict:  
         out = self.home / "bench" / f"{label}-{int(time.time())}"
@@ -502,11 +558,26 @@ class Evolution:
                              stage="tests")
                 return entry
             entry["stage"] = "tested"
+        except InfraError:
+            raise
         except Exception as exc:  # noqa: BLE001 - a broken candidate never stops evolution
+            err = infra_problem(repr(exc))
+            if err:
+                raise err from exc
             entry.update(accepted=False, reason=f"error: {exc!r}", stage="error")
         return entry
 
-    def generation(self, candidates: int = 2, hypotheses: Optional[list] = None, kind: str = "candidate",
+    def generation(self, *args, **kwargs) -> dict:
+        try:
+            return self._generation(*args, **kwargs)
+        except InfraError as e:
+            run = self.state.get("running") or {}
+            run["phase"] = f"paused: {e}"
+            self._save()
+            self.record(kind="paused", generation=run.get("generation"), reason=str(e), retry_at=e.retry_at)
+            raise
+
+    def _generation(self, candidates: int = 2, hypotheses: Optional[list] = None, kind: str = "candidate",
                    parallel: int = 1, screen_tasks: Optional[list] = None, finalists: Optional[int] = None,
                    budget_usd: Optional[float] = None, stack: bool = True, resume: bool = False,
                    plan_extra: Optional[dict] = None) -> dict:
@@ -697,6 +768,33 @@ class Evolution:
         if "running" in self.state:
             self.state["running"]["phase"] = phase
             self._save()
+
+    def reopen(self, gen: int, reason: str) -> dict:
+        """Void the decisions of a finished generation whose measurements were invalid (e.g. a provider outage
+        judged as regressions) and make it resumable: implementations are kept, measurement and selection rerun."""
+        from ..roadmap import Roadmap
+
+        if self.state.get("running"):
+            raise RuntimeError("another generation is running; resume or finish it first")
+        cands = [e for e in self.ledger() if e["kind"] in ("candidate", "absorb_candidate") and e["generation"] == gen]
+        if not cands or any(e.get("merged") for e in cands):
+            raise RuntimeError(f"generation {gen} has no candidates or already merged something; revert instead")
+        picks = [e for e in self.ledger() if e["kind"] == "roadmap_pick" and e["ts"] < cands[0]["ts"]]
+        roadmap = [h["hypothesis"]["source"].split(":", 1)[1] for h in cands
+                   if h["hypothesis"].get("source", "").startswith("roadmap:")]
+        plan = {"champ": cands[0]["parent"], "kind": cands[0]["kind"],
+                "hypotheses": [e["hypothesis"] for e in cands],
+                "branches": {e["branch"].split("-")[1]: e["branch"] for e in cands},
+                **({"roadmap": roadmap} if roadmap and picks else {})}
+        self.state["running"] = {"generation": gen, "since": time.time(), "phase": "reopened", "plan": plan}
+        self._save()
+        self.record(kind="voided", generation=gen, reason=reason, branches=list(plan["branches"].values()))
+        if roadmap and (self.repo / "roadmap.yaml").exists():
+            rm = Roadmap.of_repo(self.repo)
+            for item_id in roadmap:
+                rm.set_status(item_id, "planned", f"gen {gen} measurement voided ({reason}); remeasuring")
+            self._commit_roadmap(f"roadmap: gen {gen} decisions voided — {reason}")
+        return plan
 
     def resume(self, **opts) -> Optional[dict]:
         """Finish the generation that was interrupted (None if nothing was running)."""

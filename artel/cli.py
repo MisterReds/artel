@@ -260,9 +260,30 @@ def cmd_doctor(args) -> int:
 
 
 def cmd_evolve(args) -> int:
+    import time as _time
+
+    from .evolve.engine import InfraError
+
+    while True:
+        try:
+            return _evolve_once(args)
+        except InfraError as e:
+            if args.no_wait:
+                print(f"paused: {e}. Continue with `artel evolve --resume`.")
+                return 75
+            wait = max(60.0, (e.retry_at or _time.time() + 900) - _time.time() + 60)
+            print(f"paused: {e}. Resuming in {int(wait)} s.", flush=True)
+            _time.sleep(wait)
+            args.resume = True
+
+
+def _evolve_once(args) -> int:
     ev = _evolution(args)
     opts = {"parallel": args.parallel_candidates, "finalists": args.finalists, "budget_usd": args.budget,
             "stack": not args.no_stack, "screen_tasks": args.screen_tasks.split(",") if args.screen_tasks else None}
+    if args.reopen:
+        ev.reopen(args.reopen, args.reason or "invalid measurement")
+        args.resume = True
     if args.resume:
         s = ev.resume(**opts)
         print(json.dumps(s, ensure_ascii=False) if s else "no interrupted generation")
@@ -449,6 +470,11 @@ def main(argv=None) -> int:
                          "roadmap), then implement the next --roadmap items (default 2) in plan order")
     ev.add_argument("--study", type=int, default=1, help="with --cycle: harnesses studied per turn")
     ev.add_argument("--resume", action="store_true", help="finish the generation a crash or restart interrupted")
+    ev.add_argument("--reopen", type=int, metavar="GEN",
+                    help="void a generation's decisions (invalid measurement), keep its implementations, remeasure")
+    ev.add_argument("--reason", help="with --reopen: why the measurement was invalid")
+    ev.add_argument("--no-wait", action="store_true",
+                    help="exit when the model provider hits a limit instead of waiting for the reset and resuming")
     ev.set_defaults(fn=cmd_evolve)
 
     rmp = sub.add_parser("roadmap", help="roadmap.yaml: status, next items, render docs/ROADMAP.md")
