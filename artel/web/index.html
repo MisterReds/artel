@@ -92,6 +92,7 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(-
 .feedbtn{display:none}
 @media (max-width:1100px){.layout{grid-template-columns:1fr}.feed{display:none}.feed.show{display:flex;position:fixed;inset:0;z-index:5}.feedbtn{display:inline-block}}
 @media (max-width:720px){.wrap,.layout main{padding:12px 16px}header{padding:10px 16px;gap:8px}header .logo{flex:1}nav{order:3;flex:0 0 100%;flex-wrap:nowrap;overflow-x:auto}nav a{white-space:nowrap}.board{grid-template-columns:1fr}.col{min-height:0}.grid{grid-template-columns:1fr}}
+button:disabled{opacity:.45;cursor:default}
 </style>
 </head>
 <body>
@@ -104,6 +105,7 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(-
     <a href="#/evolution" data-v="evolution">Эволюция</a>
     <a href="#/skills" data-v="skills">Скиллы</a>
   </nav>
+  <button id="updbtn" style="display:none" title="Доступно обновление Artel"></button>
   <button class="primary" id="newbtn">+ Новая цель</button>
   <button id="theme" title="Тема">◐</button>
 </header>
@@ -324,6 +326,36 @@ async function skills(){const sk=await api('/api/skills');
   document.querySelectorAll('[data-k]').forEach(a=>a.onclick=async()=>{const r=await api(`/api/skills/${encodeURIComponent(a.dataset.k)}`);
     dlg(`<h3>${esc(a.dataset.k)}</h3><pre>${esc(r.text)}</pre><h2>История изменений</h2>${r.ledger.map(e=>`<div class="ev">${new Date(e.ts*1000).toLocaleString()} · ${esc(e.action)} · ${esc(e.actor)} · ${esc(e.reason||'')}</div>`).join('')}`)})}
 route();
+// --- self-update -----------------------------------------------------------------------------------
+async function checkUpdate(force){const u=await api('/api/update'+(force?'?check=1':''));const b=$('#updbtn');
+  const busy=u.state&&u.state.phase==='restart_pending';
+  if(u.available||busy){b.style.display='';b.className='primary';b.textContent=busy?'Перезапуск…':`Обновление (${u.behind})`}else{b.style.display='none'}
+  return u}
+function updDialog(u){const st=u.state||{};const when=t=>new Date(t*1000).toLocaleString();
+  const rows=(u.commits||[]).map(c=>`<tr><td class="stat">${esc(c.date.slice(0,16).replace('T',' '))}</td><td>${esc(c.subject)}</td></tr>`).join('');
+  const done=(u.roadmap_done||[]).map(r=>`<li><b>${esc(r.id)}</b> — ${esc(r.title)} <span class="stat">из ${esc(r.from)}</span></li>`).join('');
+  const hist=(u.history||[]).slice().reverse().map(h=>`<li class="stat">${when(h.ts)} · ${esc(h.action)} ${esc((h.from||'').slice(0,8))} → ${esc((h.to||'').slice(0,8))}</li>`).join('');
+  dlg(`<h3>Обновление Artel</h3>
+   <p class="stat">Канал ${esc(u.channel||'')} · установлено ${esc((u.current||'').slice(0,10))} · новое ${esc((u.remote||'').slice(0,10))}</p>
+   ${u.available?`<p>Новых изменений: <b>${u.behind}</b>${u.deps_changed?' · изменились зависимости (будут установлены)':''}</p>`:`<p>${esc(u.reason||'Установлена последняя версия')}</p>`}
+   ${done?`<h4>Новое из дорожной карты</h4><ul>${done}</ul>`:''}
+   ${rows?`<h4>Изменения</h4><div class="tablewrap" style="max-height:280px;overflow:auto"><table>${rows}</table></div>`:''}
+   ${st.phase==='error'?`<pre>${esc(st.error)}</pre>`:''}
+   ${st.phase==='restart_pending'?`<p>Обновление установлено. Перезапуск ${st.waiting_for&&st.waiting_for.length?'после завершения проектов: '+esc(st.waiting_for.join(', ')):'сейчас'}.</p>`:''}
+   ${u.running_projects&&u.running_projects.length&&u.available?`<p class="stat">Идут проекты (${u.running_projects.length}); перезапуск подождёт их завершения.</p>`:''}
+   <div style="margin-top:12px;display:flex;gap:8px;flex-wrap:wrap">
+     <button class="primary" id="upd-go" ${u.can_update?'':'disabled'}>Обновить</button>
+     <button id="upd-check">Проверить сейчас</button>
+     <button id="upd-back" ${(u.history||[]).some(h=>h.action==='update')?'':'disabled'}>Откатить последнее</button></div>
+   <p class="stat">Перед установкой новая версия проверяется тестами опор во временной копии; при провале ничего не меняется.</p>
+   ${hist?`<h4>История</h4><ul>${hist}</ul>`:''}`);
+  $('#upd-go').onclick=async()=>{$('#upd-go').disabled=true;$('#upd-go').textContent='Проверка и установка…';
+    const r=await api('/api/update/apply',{method:'POST'});updDialog(await checkUpdate(false));if(!r.ok)return;waitRestart()};
+  $('#upd-check').onclick=async()=>updDialog(await checkUpdate(true));
+  $('#upd-back').onclick=async()=>{if(!confirm('Вернуть предыдущую версию?'))return;const r=await api('/api/update/rollback',{method:'POST'});updDialog(await checkUpdate(false));if(r.ok)waitRestart()}}
+function waitRestart(){const t0=Date.now();const iv=setInterval(async()=>{try{const u=await api('/api/update');if(u.state.phase!=='restart_pending'&&Date.now()-t0>3000){clearInterval(iv);location.reload()}}catch(e){}},2000)}
+$('#updbtn').onclick=async()=>updDialog(await checkUpdate(false));
+checkUpdate(false);setInterval(()=>checkUpdate(false),60000);
 </script>
 </body>
 </html>

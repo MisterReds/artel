@@ -305,6 +305,38 @@ def _evolve_once(args) -> int:
     return 0
 
 
+def cmd_update(args) -> int:
+    from .updater import Updater, UpdateError
+
+    up = Updater(config=_cfg(args))
+    try:
+        if args.rollback:
+            out = up.rollback()
+            print(f"rolled back {out['from'][:10]} -> {out['to'][:10]}; restart running Artel processes")
+            return 0
+        st = up.status(fetch=True)
+        if not st.get("available"):
+            print(st.get("reason") or "up to date")
+            return 0
+        print(f"{st['behind']} new commits on {st['channel']} ({st['current'][:10]} -> {st['remote'][:10]})")
+        for r in st["roadmap_done"]:
+            print(f"  done: {r['id']} — {r['title']} (from {r['from']})")
+        for c in st["commits"][:20]:
+            print(f"  {c['date'][:10]} {c['subject']}")
+        if args.check:
+            return 0
+        if not st["can_update"]:
+            print(f"cannot update: {st['reason']}")
+            return 1
+        out = up.apply(verify=not args.no_verify)
+        print(f"updated {out['from'][:10]} -> {out['to'][:10]}" + (" (dependencies reinstalled)" if out.get("deps") else "")
+              + "; restart running Artel processes (the dashboard restarts itself)")
+        return 0
+    except UpdateError as e:
+        print(f"update failed: {e}")
+        return 1
+
+
 def cmd_roadmap(args) -> int:
     from .roadmap import Roadmap
 
@@ -476,6 +508,13 @@ def main(argv=None) -> int:
     ev.add_argument("--no-wait", action="store_true",
                     help="exit when the model provider hits a limit instead of waiting for the reset and resuming")
     ev.set_defaults(fn=cmd_evolve)
+
+    upd = sub.add_parser("update", help="pull the improvements published since this installation (verified first)")
+    upd.add_argument("--check", action="store_true", help="only show what is new")
+    upd.add_argument("--rollback", action="store_true", help="return to the version before the last update")
+    upd.add_argument("--no-verify", action="store_true", help="skip running the pillar tests on the new version")
+    upd.add_argument("--config")
+    upd.set_defaults(fn=cmd_update)
 
     rmp = sub.add_parser("roadmap", help="roadmap.yaml: status, next items, render docs/ROADMAP.md")
     rmp.add_argument("action", choices=["status", "next", "study", "render"], nargs="?", default="status")
