@@ -54,6 +54,7 @@ class Manager:
         self.digests: dict[str, Outcome] = {}
         self.review_retries: dict[str, int] = {}
         self.failures_since_refine = 0
+        self.run_failures = 0  # never reset; gates the final refine
         self.last_refine = 0.0
 
     # --- helpers --------------------------------------------------------
@@ -334,10 +335,12 @@ class Manager:
         self.board.comment(task["id"], "manager", f"Run ended without completion ({reason}). Workspace and files are "
                                                    f"preserved; continue from where it stopped. Retry in {delay}s.")
         self.failures_since_refine += 1
+        self.run_failures += 1
 
     def on_work(self, task_id: str, result: tuple[Outcome, ToolContext]) -> None:
         out, _ctx = result
         task = self.board.get(task_id)
+        self.run_failures += sum(1 for line in out.digest if " -> ERROR " in line)
         if out.name == "task_submit":
             p = out.payload
             artifacts = "\n".join(p.get("artifacts", []))
@@ -351,6 +354,7 @@ class Manager:
             self.board.update(task_id, status="blocked", needs_human=1 if p.get("needs_human") else 0,
                               actor=task["assignee"])
             self.failures_since_refine += 1
+            self.run_failures += 1
         elif out.status in ("stopped", "budget"):
             self.board.update(task_id, status="ready", actor="manager")
         else:
@@ -383,12 +387,14 @@ class Manager:
             self.board.update(task_id, status="done", no_progress=0, actor="reviewer")
             digest = self.digests.pop(task_id, None)
             threshold = int(self.cfg["skills"]["review_after_tool_calls"])
-            if digest is not None and digest.tool_calls >= threshold:
+            troubled = task["attempts"] > 0 or (digest is not None and any(" -> ERROR " in d for d in digest.digest))
+            if digest is not None and digest.tool_calls >= threshold and (troubled or digest.tool_calls >= 2 * threshold):
                 self._bg(self.job_skill_review, self.board.get(task_id), digest)
         else:
             self.board.comment(task_id, "reviewer", f"REJECTED: {feedback}")
             attempts = task["attempts"] + 1
             self.failures_since_refine += 1
+            self.run_failures += 1
             if attempts >= int(self.b["max_attempts"]):
                 self.board.update(task_id, status="blocked", attempts=attempts, actor="reviewer")
                 self.board.comment(task_id, "manager", f"Circuit breaker after {attempts} rejected attempts. Replanning.")
@@ -564,7 +570,10 @@ class Manager:
                 pass
         self.collect()
         if final == "done":
-            self._bg(self.job_refine)
+            if self.run_failures:
+                self._bg(self.job_refine)
+            else:
+                self.project.log.append("harness/refine_skipped", reason="no failures this run")
         for fut in self.background:
             try:
                 fut.result(timeout=900)
