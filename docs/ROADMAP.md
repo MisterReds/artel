@@ -20,10 +20,10 @@
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
-| W1-loop-detector | Loop detector — identical tool calls in a row and repeated text stop the run with a corrective note | Qwen Code (`QwenLM/qwen-code`) | evolve | план — gen 2 rejected at benchmarked: regressed tasks: adr-doc, csv-report, fix-inventory, log-stats, lru-ttl-cache, multi-module-bugs, wordfreq-cli |
-| W1-evidence-window | Evidence window keeps head and tail, cuts the middle | Qwen Code (`QwenLM/qwen-code`) | evolve | план — gen 2 rejected at benchmarked: regressed tasks: adr-doc, csv-report, fix-inventory, log-stats, lru-ttl-cache, multi-module-bugs, wordfreq-cli |
-| W1-output-spill | Oversized tool output spills to a file with a preview and the path | OpenCode (`anomalyco/opencode`) | evolve | план — gen 2 rejected at screen: screen regressed: adr-doc, csv-report, lru-ttl-cache |
-| W1-read-cache | Stale-edit guard — refuse edits to files changed since the agent last read them | Qwen Code (`QwenLM/qwen-code`) | evolve | план — gen 2 rejected at screen: screen regressed: adr-doc, csv-report, lru-ttl-cache |
+| W1-loop-detector | Loop detector — identical tool calls in a row and repeated text stop the run with a corrective note | Qwen Code (`QwenLM/qwen-code`) | evolve | план — gen 2 measurement voided (Claude Code session limit: every benchmark run failed at planning); remeasuring |
+| W1-evidence-window | Evidence window keeps head and tail, cuts the middle | Qwen Code (`QwenLM/qwen-code`) | evolve | план — gen 2 measurement voided (Claude Code session limit: every benchmark run failed at planning); remeasuring |
+| W1-output-spill | Oversized tool output spills to a file with a preview and the path | OpenCode (`anomalyco/opencode`) | evolve | план — gen 2 measurement voided (Claude Code session limit: every benchmark run failed at planning); remeasuring |
+| W1-read-cache | Stale-edit guard — refuse edits to files changed since the agent last read them | Qwen Code (`QwenLM/qwen-code`) | evolve | план — gen 2 measurement voided (Claude Code session limit: every benchmark run failed at planning); remeasuring |
 | W1-fuzzy-edit | Fuzzy edit application (whitespace-normalized, then block-anchor match) | OpenCode (`anomalyco/opencode`) | evolve | план |
 | W1-post-write-diagnostics | Diagnostics right after a write (py_compile / configured linters) | OpenCode (`anomalyco/opencode`) | evolve | план |
 | W1-compaction | Context compaction for the native runtime — clear old tool outputs, then summarize | Claude Code / OpenCode (`anomalyco/opencode`) | evolve | план |
