@@ -1,6 +1,6 @@
 {
  "main": "master",
- "generation": 2,
+ "generation": 3,
  "repo": "/home/user/artel",
  "push_failures": [
   {
@@ -9,5 +9,101 @@
    ],
    "error": "'https://github.com/MisterReds/artel.git'\nhint: Updates were rejected because a pushed branch tip is behind its remote\nhint: counterpart. If you want to integrate the remote changes, use 'git pull'\nhint: before pushing again.\nhint: See the 'Note about fast-forwards' in 'git push --help' for details."
   }
- ]
+ ],
+ "running": {
+  "generation": 3,
+  "since": 1791234376.0070908,
+  "phase": "implementing 5 candidates, 2 at a time",
+  "plan": {
+   "champ": "4c37becd55382b56cb42fcf26b575d1fee5dcfea",
+   "kind": "candidate",
+   "branches": {
+    "1": "evolve/g3-1-w1-output-spill-oversized-tool-o",
+    "2": "evolve/g3-2-w1-fuzzy-edit-fuzzy-edit-applica",
+    "3": "evolve/g3-3-w1-post-write-diagnostics-diagno",
+    "4": "evolve/g3-4-w1-compaction-context-compaction",
+    "5": "evolve/g3-5-w1-snapshots-shadow-git-snapshot"
+   },
+   "roadmap": [
+    "W1-output-spill",
+    "W1-fuzzy-edit",
+    "W1-post-write-diagnostics",
+    "W1-compaction",
+    "W1-snapshots"
+   ],
+   "mode": "adopt",
+   "hypotheses": [
+    {
+     "title": "W1-output-spill: Oversized tool output spills to a file with a preview and the path",
+     "rationale": "Roadmap item W1-output-spill (wave 1).",
+     "plan": "Over 2000 lines or 50 KB, write the full output under the run workspace and return head/tail preview plus the path.",
+     "expected": "unit test for spill and preview",
+     "files": [
+      "artel/plugins/builtin_tools.py"
+     ],
+     "refs": [
+      "/tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode"
+     ],
+     "source": "roadmap:W1-output-spill",
+     "license_note": "Donor: OpenCode \u2014 study first: /tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode/packages/opencode/src/tool/truncate.ts. License MIT: copying allowed with attribution; keep the notice in a comment."
+    },
+    {
+     "title": "W1-fuzzy-edit: Fuzzy edit application (whitespace-normalized, then block-anchor match)",
+     "rationale": "Roadmap item W1-fuzzy-edit (wave 1).",
+     "plan": "When exact match fails, try line-trimmed match, then first/last-line anchors with Levenshtein similarity; refuse ambiguous matches.",
+     "expected": "unit tests for each fallback and ambiguity refusal",
+     "files": [
+      "artel/plugins/builtin_tools.py"
+     ],
+     "refs": [
+      "/tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode"
+     ],
+     "source": "roadmap:W1-fuzzy-edit",
+     "license_note": "Donor: OpenCode \u2014 study first: /tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode/packages/opencode/src/tool/edit.ts. License MIT: copying allowed with attribution; keep the notice in a comment."
+    },
+    {
+     "title": "W1-post-write-diagnostics: Diagnostics right after a write (py_compile / configured linters)",
+     "rationale": "Roadmap item W1-post-write-diagnostics (wave 1).",
+     "plan": "After write_file/edit_file on .py run py_compile (and ruff if present); append errors to the tool result.",
+     "expected": "unit test that a syntax error is reported in the same tool result",
+     "files": [
+      "artel/plugins/builtin_tools.py"
+     ],
+     "refs": [
+      "/tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode"
+     ],
+     "source": "roadmap:W1-post-write-diagnostics",
+     "license_note": "Donor: OpenCode \u2014 study first: /tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode/packages/opencode/src/tool/write.ts, /tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode/packages/opencode/src/lsp. License MIT: copying allowed with attribution; keep the notice in a comment."
+    },
+    {
+     "title": "W1-compaction: Context compaction for the native runtime \u2014 clear old tool outputs, then summarize",
+     "rationale": "Roadmap item W1-compaction (wave 1).",
+     "plan": "Over a token threshold, replace tool_result contents older than two turns with placeholders; above a second threshold, summarize the head into one message.",
+     "expected": "unit test with a long synthetic conversation; no benchmark regression",
+     "files": [
+      "artel/agent.py"
+     ],
+     "refs": [
+      "/tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode"
+     ],
+     "source": "roadmap:W1-compaction",
+     "license_note": "Donor: Claude Code / OpenCode \u2014 study first: /tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode/packages/opencode/src/session/compaction.ts. License MIT: copying allowed with attribution; keep the notice in a comment."
+    },
+    {
+     "title": "W1-snapshots: Shadow-git snapshot per run; rejected attempt can be reverted",
+     "rationale": "Roadmap item W1-snapshots (wave 1).",
+     "plan": "Snapshot the deliverables directory before each run in a separate git dir; on rejection with \"start over\" guidance, restore it.",
+     "expected": "unit test snapshot + restore",
+     "files": [
+      "artel/manager.py"
+     ],
+     "refs": [
+      "/tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode"
+     ],
+     "source": "roadmap:W1-snapshots",
+     "license_note": "Donor: OpenCode \u2014 study first: /tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode/packages/opencode/src/snapshot/index.ts, /tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode/packages/opencode/src/session/revert.ts. License MIT: copying allowed with attribution; keep the notice in a comment."
+    }
+   ]
+  }
+ }
 }
