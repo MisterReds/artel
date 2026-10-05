@@ -16,14 +16,15 @@
 | P6-kanban | Kanban DAG with compare-and-swap claims | Hermes Agent | готово |
 | P7-measured-evolution | Evolution through branches, tests, hidden-check benchmark, population screening and stacking | auto-harness / Gear / Ouroboros | готово |
 
-## Волна 1 — 0/8 готово
+## Волна 1 — 3/8 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
-| W1-loop-detector | Loop detector — identical tool calls in a row and repeated text stop the run with a corrective note | Qwen Code (`QwenLM/qwen-code`) | evolve | план — gen 2 measurement voided (Claude Code session limit: every benchmark run failed at planning); remeasuring |
-| W1-evidence-window | Evidence window keeps head and tail, cuts the middle | Qwen Code (`QwenLM/qwen-code`) | evolve | план — gen 2 measurement voided (Claude Code session limit: every benchmark run failed at planning); remeasuring |
-| W1-output-spill | Oversized tool output spills to a file with a preview and the path | OpenCode (`anomalyco/opencode`) | evolve | план — gen 2 measurement voided (Claude Code session limit: every benchmark run failed at planning); remeasuring |
-| W1-read-cache | Stale-edit guard — refuse edits to files changed since the agent last read them | Qwen Code (`QwenLM/qwen-code`) | evolve | план — gen 2 measurement voided (Claude Code session limit: every benchmark run failed at planning); remeasuring |
+| W1-loop-detector | Loop detector — identical tool calls in a row and repeated text stop the run with a corrective note | Qwen Code (`QwenLM/qwen-code`) | evolve | готово — evolve/gen-2 (evolve/g2-1-w1-loop-detector-loop-detector-i) |
+| W1-evidence-window | Evidence window keeps head and tail, cuts the middle | Qwen Code (`QwenLM/qwen-code`) | evolve | готово — evolve/gen-2 (evolve/g2-2-w1-evidence-window-evidence-wind) |
+| W1-output-spill | Oversized tool output spills to a file with a preview and the path | OpenCode (`anomalyco/opencode`) | evolve | план — gen 2 rejected at integrate: conflicts with another item; retried next generation on the new main: Auto-merging artel/plugins/builtin_tools.py
+CONFLICT (content): Merge conflict in artel/pl |
+| W1-read-cache | Stale-edit guard — refuse edits to files changed since the agent last read them | Qwen Code (`QwenLM/qwen-code`) | evolve | готово — evolve/gen-2 (evolve/g2-4-w1-read-cache-stale-edit-guard-r) |
 | W1-fuzzy-edit | Fuzzy edit application (whitespace-normalized, then block-anchor match) | OpenCode (`anomalyco/opencode`) | evolve | план |
 | W1-post-write-diagnostics | Diagnostics right after a write (py_compile / configured linters) | OpenCode (`anomalyco/opencode`) | evolve | план |
 | W1-compaction | Context compaction for the native runtime — clear old tool outputs, then summarize | Claude Code / OpenCode (`anomalyco/opencode`) | evolve | план |
@@ -56,4 +57,4 @@
 | W3-automations | Automations — schedule and event triggers | OpenHands / Qwen Code (`QwenLM/qwen-code`) | evolve | план |
 | W3-fast-system-one | Fast local System One decisions (Jev-Style kept loaded in memory) | Jev-Style v3 (`chaoliangUNSW/Jev-Style-2B-Decision-v3-GGUF`) | design | частично |
 
-Итого: 0/25 пунктов готово.
+Итого: 3/25 пунктов готово.
