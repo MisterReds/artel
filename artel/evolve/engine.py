@@ -765,6 +765,7 @@ class Evolution:
         for round_no in range(repairs + 1):
             if not pending or budget_left() <= 0:
                 break
+            self._phase(f"integrating {len(adopted + pending)} items, tests after each merge (round {round_no})")
             wt, included, excluded = self._integrate(gen, champ, adopted + pending, f"r{round_no}")
             for e, why in excluded.items():
                 ent = next(x for x in pending + adopted if x["branch"] == e)
@@ -775,6 +776,7 @@ class Evolution:
                     adopted.remove(ent)
             new = [e for e in pending if e["branch"] in included]
             try:
+                self._phase(f"benchmarking the integration of {len(included)} items (round {round_no})")
                 suite = self._bench_call(wt, f"g{gen}-adopt-r{round_no}")
                 cmp = bench_mod.compare(base, suite)
                 regressed = self._confirm(wt, cmp, f"g{gen}-adopt-r{round_no}")
@@ -794,6 +796,7 @@ class Evolution:
                 pending = []
                 break
             self._current_base = base
+            self._phase(f"finding which item causes: {d.reason}")
             culprits = self._culprits(gen, new, regressed, cmp, round_no)
             if not culprits and len(new) > 1:
                 # every item is fine alone but the combination is not: adopt the cheapest one now; the others are
@@ -814,6 +817,8 @@ class Evolution:
                     e.update(accepted=False, stage="blocked",
                              reason=f"{e.get('blame', d.reason)}; still failing after {repairs} repair rounds")
                 break
+            if culprits:
+                self._phase(f"repairing {len(culprits)} items with the failing checks")
             for e in culprits:  # back to the team with the evidence
                 if self._repair(e, f"After integration the benchmark shows: {e.get('blame', d.reason)}.\n"
                                    f"Failing hidden checks:\n{e.get('evidence', '')[:3000]}"):
@@ -826,6 +831,7 @@ class Evolution:
         if not adopted:
             return [], stack_entry
         # final integration of everything adopted, tests after each merge, then merge into main
+        self._phase(f"final integration of {len(adopted)} adopted items")
         wt, included, excluded = self._integrate(gen, champ, adopted, "final")
         self._remove_worktree(wt)
         for b, why in excluded.items():
