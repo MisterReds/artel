@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import os
 import subprocess
 from pathlib import Path
@@ -13,6 +14,10 @@ PLUGIN = {"name": "artel.plugins.builtin_tools", "version": "1",
           "provides": ["tool:bash", "tool:read_file", "tool:write_file", "tool:edit_file", "tool:list_files",
                        "tool:memory_write"]}
 MAX_OUT = 20_000
+MAX_LINES = 2000
+MAX_BYTES = 50 * 1024
+SPILL_DIR = ".spill"
+_spill_seq = itertools.count(1)
 EXEC_ROLES = ("worker", "reviewer", "auditor", "evolver", "absorber")
 
 
@@ -21,6 +26,34 @@ def _clip(text: str, limit: int = MAX_OUT) -> str:
         return text
     half = limit // 2
     return text[:half] + f"\n…[{len(text) - limit} chars omitted]…\n" + text[-half:]
+
+
+def spill_output(ctx: ToolContext, text: str, tool: str) -> str:
+    """Return ``text`` unchanged, or spill oversized output to a file and return a preview plus its path.
+
+    Over MAX_LINES lines or MAX_BYTES bytes, the full text goes to <workspace>/.spill/ (hidden, so
+    list_files skips it and it stays out of shared deliverables). Idea adapted from OpenCode
+    packages/opencode/src/tool/truncate.ts (MIT License, Copyright (c) 2025 opencode).
+    """
+    nbytes = len(text.encode())
+    nlines = text.count("\n") + 1
+    if nlines <= MAX_LINES and nbytes <= MAX_BYTES:
+        return text
+    d = Path(ctx.workspace) / SPILL_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{tool}-{os.getpid()}-{next(_spill_seq)}.txt"
+    while f.exists():
+        f = d / f"{tool}-{os.getpid()}-{next(_spill_seq)}.txt"
+    f.write_text(text)
+    rel = f"{SPILL_DIR}/{f.name}"
+    return (f"{window_text(text, MAX_OUT)}\n\n[output too large ({nlines} lines, {nbytes} bytes); "
+            f"full output saved to {rel}. Use read_file with path={rel} and offset/limit to view parts of it.]")
+
+
+def _bound(ctx: ToolContext, text: str, tool: str) -> str:
+    """Spill oversized output; otherwise apply the plain char clip."""
+    spilled = spill_output(ctx, text, tool)
+    return _clip(text) if spilled == text else spilled
 
 
 def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
@@ -32,7 +65,7 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
     except subprocess.TimeoutExpired as exc:
         raise ToolError(f"timed out after {timeout}s; partial output:\n{_clip(str(exc.stdout or ''), 4000)}")
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
-    result = f"[exit {proc.returncode}]\n{_clip(out)}"
+    result = f"[exit {proc.returncode}]\n{_bound(ctx, out, 'bash')}"
     ctx.outputs.append(f"$ {command}\n{window_text(result, 3000)}")
     return result
 
@@ -45,7 +78,7 @@ def read_file(ctx: ToolContext, path: str, offset: int = 0, limit: int = 0) -> s
     end = offset + limit if limit else len(lines)
     ctx.record_stamp(p)
     body = "\n".join(f"{i + 1:>5}\t{ln}" for i, ln in enumerate(lines[offset:end], start=offset))
-    return _clip(body) or "(empty file)"
+    return _bound(ctx, body, "read_file") or "(empty file)"
 
 
 def write_file(ctx: ToolContext, path: str, content: str) -> str:
@@ -88,7 +121,7 @@ def list_files(ctx: ToolContext, path: str = ".", depth: int = 3) -> str:
         if len(out) >= 500:
             out.append("…truncated")
             break
-    return "\n".join(out) or "(empty)"
+    return _bound(ctx, "\n".join(out), "list_files") or "(empty)"
 
 
 def memory_write(ctx: ToolContext, content: str, mode: str = "append") -> str:
