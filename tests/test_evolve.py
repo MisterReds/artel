@@ -6,7 +6,7 @@ import pytest
 
 from artel.evolve import bench
 from artel.evolve.diagnose import doctor, render_markdown, trajectory_profile
-from artel.evolve.engine import Evolution, Hypothesis, Policy, git
+from artel.evolve.engine import Evolution, Hypothesis, Policy, git, slug
 from artel.project import DEFAULT_CONFIG, deep_merge
 
 
@@ -218,3 +218,37 @@ def test_everything_reaches_the_remote_and_a_fresh_home_restores(repo, tmp_path)
     ev2 = make(clone, tmp_path / "fresh", [])
     kinds = [e["kind"] for e in ev2.ledger()]
     assert kinds.count("candidate") == 2 and "generation" in kinds and ev2.state["generation"] == 1
+
+
+class _Crash(BaseException):
+    """Simulates the process dying (not an ordinary candidate error)."""
+
+
+def test_interrupted_generation_resumes_without_redoing_finished_candidates(repo, tmp_path):
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    calls = []
+
+    def impl(h, wt):
+        calls.append(h.title)
+        (wt / f"{slug(h.title)}.txt").write_text("partial" if h.title == "two" else "done")
+        if h.title == "two" and calls.count("two") == 1:
+            raise _Crash()
+        return {"cost_usd": 0.0}
+
+    def bench_fn(code, label, tasks=None):
+        ok = (Path(code) / "two.txt").exists()
+        rows = [{"id": "a", "pass": ok, "partial": float(ok), "cost_usd": 0.1}]
+        return {"results": rows, "summary": bench.summarize(rows)}
+
+    hyps = [Hypothesis("one", "r", "p"), Hypothesis("two", "r", "p")]
+    ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    with pytest.raises(_Crash):
+        ev.generation(hypotheses=hyps)
+    assert ev.state["running"]["plan"]["branches"] == {"1": "evolve/g1-1-one", "2": "evolve/g1-2-two"}
+    # a new process (container restart) picks the generation up
+    ev2 = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    s = ev2.resume()
+    assert calls == ["one", "two", "two"]  # "one" was committed before the crash and is not redone
+    assert s["generation"] == 1 and s["accepted"] and "running" not in ev2.state
+    assert ev2.state["generation"] == 1 and any(e["kind"] == "resume" for e in ev2.ledger())
+    assert ev2.resume() is None

@@ -263,6 +263,10 @@ def cmd_evolve(args) -> int:
     ev = _evolution(args)
     opts = {"parallel": args.parallel_candidates, "finalists": args.finalists, "budget_usd": args.budget,
             "stack": not args.no_stack, "screen_tasks": args.screen_tasks.split(",") if args.screen_tasks else None}
+    if args.resume:
+        s = ev.resume(**opts)
+        print(json.dumps(s, ensure_ascii=False) if s else "no interrupted generation")
+        return 0
     if args.cycle:
         for _ in range(args.cycle):
             print(json.dumps(ev.cycle(items=args.roadmap if args.roadmap is not None else 2, study=args.study,
@@ -444,6 +448,7 @@ def main(argv=None) -> int:
                     help="K turns of: study the next unstudied harness from the registry (findings join the "
                          "roadmap), then implement the next --roadmap items (default 2) in plan order")
     ev.add_argument("--study", type=int, default=1, help="with --cycle: harnesses studied per turn")
+    ev.add_argument("--resume", action="store_true", help="finish the generation a crash or restart interrupted")
     ev.set_defaults(fn=cmd_evolve)
 
     rmp = sub.add_parser("roadmap", help="roadmap.yaml: status, next items, render docs/ROADMAP.md")

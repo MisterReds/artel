@@ -372,6 +372,45 @@ class Evolution:
         meta = project.meta
         return {"project": str(project.root), "status": status, "cost_usd": meta["usage"].get("cost_usd", 0.0)}
 
+    def _continue_implementation(self, h: Hypothesis, wt: Path) -> Optional[dict]:
+        """Resume the interrupted implementation project that worked in ``wt`` (None if there is none)."""
+        if self.implement_fn != self._implement:
+            return None
+        from ..manager import resume as resume_project
+        from ..project import artel_home
+
+        for meta_path in sorted((artel_home() / "projects").glob("*/project.json"), key=lambda p: -p.stat().st_mtime):
+            try:
+                meta = json.loads(meta_path.read_text())
+            except ValueError:
+                continue
+            if meta.get("workdir") == str(wt) and meta.get("status") != "done":
+                project, status = resume_project(meta_path.parent.name, self.config)
+                return {"project": str(project.root), "status": status, "resumed": True,
+                        "cost_usd": project.meta["usage"].get("cost_usd", 0.0)}
+        return None
+
+    def resume_plan_from_ledger(self) -> bool:
+        """Rebuild the plan of an interrupted generation started before plans were saved (one-time migration)."""
+        run = self.state.get("running")
+        if not run or run.get("plan"):
+            return bool(run)
+        from ..roadmap import Roadmap
+
+        gen = run["generation"]
+        picks = [e for e in self.ledger() if e["kind"] == "roadmap_pick"]
+        branches = sorted(git(self.repo, "branch", "--list", f"evolve/g{gen}-*", "--format=%(refname:short)").split())
+        if not picks or not branches:
+            return False
+        rm = Roadmap.of_repo(self.repo)
+        hyps = [rm.to_hypothesis(rm.get(i), self.home / "sources") for i in picks[-1]["items"]]
+        champ = git(self.repo, "merge-base", branches[0], self.state["main"])
+        by_k = {b.split("-")[1]: b for b in branches}
+        run["plan"] = {"champ": champ, "kind": "candidate", "hypotheses": [h.__dict__ for h in hyps],
+                       "branches": by_k, "roadmap": picks[-1]["items"]}
+        self._save()
+        return True
+
     def _commit(self, wt: Path, h: Hypothesis) -> dict:
         with self._git_lock:
             return self._commit_locked(wt, h)
@@ -417,16 +456,41 @@ class Evolution:
         return total
 
     def _build_candidate(self, gen: int, k: int, h: Hypothesis, champ: str, kind: str, budget_left) -> dict:
-        branch = self._unique_branch(f"evolve/g{gen}-{k}-{slug(h.title)}")
+        plan = self.state["running"]["plan"]
+        with self._git_lock:
+            branch = plan["branches"].get(str(k)) or self._unique_branch(f"evolve/g{gen}-{k}-{slug(h.title)}")
+            plan["branches"][str(k)] = branch
+            self._save()
         entry = {"kind": kind, "generation": gen, "branch": branch, "parent": champ, "hypothesis": h.__dict__}
         if budget_left() <= 0:
             entry.update(accepted=False, reason="generation budget exhausted before implementation", stage="skipped")
             return entry
-        wt = self._worktree(branch.replace("/", "_"), champ, branch=branch)
+        wt = self.home / "worktrees" / branch.replace("/", "_")
+        exists = bool(git(self.repo, "branch", "--list", branch))
+        ahead = exists and int(git(self.repo, "rev-list", "--count", f"{champ}..{branch}") or 0) > 0
+        try:
+            if not exists:
+                wt = self._worktree(branch.replace("/", "_"), champ, branch=branch)
+            elif not (wt / ".git").exists():
+                with self._git_lock:
+                    if wt.exists():
+                        self._remove_worktree_locked(wt)
+                    git(self.repo, "worktree", "prune", check=False)
+                    git(self.repo, "worktree", "add", str(wt), branch)
+        except Exception as exc:  # noqa: BLE001
+            entry.update(accepted=False, reason=f"error: worktree: {exc!r}", stage="error")
+            return entry
         entry["worktree"] = str(wt)
         try:
-            impl = self.implement_fn(h, wt)
-            commit = self._commit(wt, h)
+            if ahead:  # the commit happens only after the implementation finished
+                impl = {"resumed": "implementation already committed"}
+            else:
+                impl = self._continue_implementation(h, wt) if exists else None
+                impl = impl or self.implement_fn(h, wt)
+            commit = self._commit(wt, h) if not ahead else {"changed": False}
+            if ahead:
+                commit = {"changed": True, "commit": git(wt, "rev-parse", "HEAD"),
+                          "diffstat": git(wt, "diff", "--shortstat", champ, "HEAD")}
             entry.update(implementation=impl, commit=commit)
             if not commit["changed"]:
                 entry.update(accepted=False, reason="implementation produced no changes", stage="implement")
@@ -444,8 +508,13 @@ class Evolution:
 
     def generation(self, candidates: int = 2, hypotheses: Optional[list] = None, kind: str = "candidate",
                    parallel: int = 1, screen_tasks: Optional[list] = None, finalists: Optional[int] = None,
-                   budget_usd: Optional[float] = None, stack: bool = True) -> dict:
+                   budget_usd: Optional[float] = None, stack: bool = True, resume: bool = False,
+                   plan_extra: Optional[dict] = None) -> dict:
         """One generation over a population of hypotheses.
+
+        The plan (parent commit, hypotheses, candidate branches) is saved in state.json before any work, so a
+        generation interrupted by a crash or a reclaimed container continues with ``resume=True``: committed
+        candidates are kept, half-done implementations continue in their worktree from their own project.
 
         implement + test (in parallel) -> screen on a cheap task subset -> full benchmark for the best
         ``finalists`` -> stack every accepted candidate on an integration branch, re-testing after each
@@ -453,11 +522,20 @@ class Evolution:
         """
         from concurrent.futures import ThreadPoolExecutor
 
-        self.state["generation"] += 1
-        gen = self.state["generation"]
-        self.state["running"] = {"generation": gen, "since": time.time(), "phase": "baseline"}
+        plan = (self.state.get("running") or {}).get("plan") if resume else None
+        if plan:
+            gen, champ = self.state["running"]["generation"], plan["champ"]
+            hypotheses = [Hypothesis.from_dict(h) for h in plan["hypotheses"]]
+            kind = plan.get("kind", kind)
+            self.state["running"].update(phase="baseline", resumed_at=time.time())
+            self.record(kind="resume", generation=gen, branches=plan.get("branches", {}))
+        else:
+            self.state["generation"] += 1
+            gen = self.state["generation"]
+            champ = self.champion()
+            self.state["running"] = {"generation": gen, "since": time.time(), "phase": "baseline",
+                                     "plan": {"champ": champ, "kind": kind, "branches": {}, **(plan_extra or {})}}
         self._save()
-        champ = self.champion()
         base = self.baseline(champ)
         if hypotheses is None:
             report = diag_mod.doctor(None, [Path(r["project"]) for r in base["results"] if r.get("project")],
@@ -465,6 +543,8 @@ class Evolution:
             (self.home / f"gen{gen}-diagnosis.md").write_text(diag_mod.render_markdown(report))
             self._phase("proposing")
             hypotheses = self.propose(report, candidates)
+        self.state["running"]["plan"]["hypotheses"] = [h.__dict__ for h in hypotheses]
+        self._save()
         results: list[dict] = []
 
         def budget_left() -> float:
@@ -618,16 +698,29 @@ class Evolution:
             self.state["running"]["phase"] = phase
             self._save()
 
+    def resume(self, **opts) -> Optional[dict]:
+        """Finish the generation that was interrupted (None if nothing was running)."""
+        if not self.resume_plan_from_ledger():
+            return None
+        if self.state["running"]["plan"].get("roadmap"):
+            return self.roadmap_generation(0, resume=True, **opts)
+        return self.generation(resume=True, **opts)
+
     def run(self, generations: int = 1, candidates: int = 2, **opts) -> list[dict]:
         return [self.generation(candidates, **opts) for _ in range(generations)]
 
     # --- roadmap --------------------------------------------------------
-    def roadmap_generation(self, n: int, wave: Optional[int] = None, ids: Optional[list] = None, **opts) -> dict:
+    def roadmap_generation(self, n: int, wave: Optional[int] = None, ids: Optional[list] = None,
+                           resume: bool = False, **opts) -> dict:
         """Implement the next ``n`` evolve items of roadmap.yaml (or exactly ``ids``) as one population;
         mark merged items done."""
         from ..roadmap import Roadmap
 
         rm = Roadmap.of_repo(self.repo)
+        resume = resume and self.resume_plan_from_ledger()
+        if resume:
+            ids = self.state["running"]["plan"].get("roadmap") or ids
+            n = max(n, len(ids or []))
         if ids:
             items = [rm.get(i) for i in ids if rm.get(i).get("status") in ("planned", "partial")
                      and rm.get(i).get("mode") == "evolve"][:n]
@@ -636,9 +729,11 @@ class Evolution:
         if not items:
             return {"roadmap": [], "reason": "no open evolve items"}
         hyps = [rm.to_hypothesis(it, self.home / "sources") for it in items]
-        self.record(kind="roadmap_pick", items=[it["id"] for it in items],
-                    refs={h.source: h.refs for h in hyps})
-        s = self.generation(len(hyps), hypotheses=hyps, kind="candidate", **opts)
+        if not resume:
+            self.record(kind="roadmap_pick", items=[it["id"] for it in items],
+                        refs={h.source: h.refs for h in hyps})
+        s = self.generation(len(hyps), hypotheses=None if resume else hyps, kind="candidate", resume=resume,
+                            plan_extra={"roadmap": [it["id"] for it in items]}, **opts)
         gen = s["generation"]
         cands = {e["branch"]: e for e in self.ledger() if e["kind"] == "candidate" and e.get("generation") == gen}
         outcome = {}
