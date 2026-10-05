@@ -49,6 +49,7 @@ items:
     wave: 1
     mode: evolve
     status: planned
+    result: "gen 2 rejected at benchmarked: regressed tasks: adr-doc, csv-report, fix-inventory, log-stats, lru-ttl-cache, multi-module-bugs, wordfreq-cli"
     title: Loop detector — identical tool calls in a row and repeated text stop the run with a corrective note
     source: {harness: Qwen Code, repo: QwenLM/qwen-code, paths: [packages/core/src/services/loopDetectionService.ts]}
     target: [artel/agent.py, artel/runtimes/claude_code.py]
@@ -61,6 +62,7 @@ items:
     wave: 1
     mode: evolve
     status: planned
+    result: "gen 2 rejected at benchmarked: regressed tasks: adr-doc, csv-report, fix-inventory, log-stats, lru-ttl-cache, multi-module-bugs, wordfreq-cli"
     title: Evidence window keeps head and tail, cuts the middle
     source: {harness: Qwen Code, repo: QwenLM/qwen-code, paths: [packages/core/src/goals/goal-evidence.ts]}
     target: [artel/manager.py, artel/plugins/builtin_tools.py]
@@ -72,6 +74,7 @@ items:
     wave: 1
     mode: evolve
     status: planned
+    result: "gen 2 rejected at screen: screen regressed: adr-doc, csv-report, lru-ttl-cache"
     title: Oversized tool output spills to a file with a preview and the path
     source: {harness: OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/tool/truncate.ts]}
     target: [artel/plugins/builtin_tools.py]
@@ -81,6 +84,7 @@ items:
     wave: 1
     mode: evolve
     status: planned
+    result: "gen 2 rejected at screen: screen regressed: adr-doc, csv-report, lru-ttl-cache"
     title: Stale-edit guard — refuse edits to files changed since the agent last read them
     source: {harness: Qwen Code, repo: QwenLM/qwen-code, paths: [packages/core/src/services/fileReadCache.ts]}
     target: [artel/plugins/builtin_tools.py, artel/tooling.py]
