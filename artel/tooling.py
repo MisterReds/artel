@@ -25,6 +25,27 @@ class ToolContext:
     outputs: list = field(default_factory=list)       # recent command outputs, for evidence checks
     terminal: Optional[tuple] = None                  # (tool_name, input) once a terminal tool accepted
     state: dict = field(default_factory=dict)
+    read_stamps: dict = field(default_factory=dict)   # resolved path -> (mtime_ns, size) at last read/write
+
+    def record_stamp(self, p: Path) -> None:
+        """Remember the file's (mtime_ns, size); idea from Qwen Code fileReadCache.ts (Apache-2.0)."""
+        try:
+            st = p.stat()
+        except OSError:
+            self.read_stamps.pop(str(p), None)
+            return
+        self.read_stamps[str(p)] = (st.st_mtime_ns, st.st_size)
+
+    def is_stale(self, p: Path) -> bool:
+        """True when the file was read/written here before and has since changed on disk."""
+        stamp = self.read_stamps.get(str(p))
+        if stamp is None:
+            return False
+        try:
+            st = p.stat()
+        except OSError:
+            return True
+        return (st.st_mtime_ns, st.st_size) != stamp
 
     @property
     def actor(self) -> str:
