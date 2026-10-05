@@ -88,6 +88,32 @@ def project_view(project: Project, runner: Runner) -> dict:
             "notes": project.prompt_notes(), "live": project.slug in runner.active, "seq": project.log.seq}
 
 
+def evolution_view() -> list[dict]:
+    from ..evolve.engine import git
+    from ..project import artel_home
+
+    out = []
+    base = artel_home() / "evolution"
+    for d in sorted(base.iterdir()) if base.exists() else []:
+        sf = d / "state.json"
+        if not sf.exists():
+            continue
+        state = json.loads(sf.read_text())
+        lp = d / "ledger.jsonl"
+        ledger = [json.loads(ln) for ln in lp.read_text().splitlines() if ln.strip()] if lp.exists() else []
+        absorb = [json.loads(p.read_text()) for p in sorted((d / "absorb").glob("*.json"))] if (d / "absorb").exists() else []
+        branches = []
+        if state.get("repo"):
+            raw = git(Path(state["repo"]), "for-each-ref", "--format=%(refname:short)|%(objectname:short)|%(subject)",
+                      "refs/heads/evolve/", check=False)
+            branches = [dict(zip(("name", "sha", "subject"), ln.split("|", 2))) for ln in raw.splitlines() if ln]
+            state["champion"] = git(Path(state["repo"]), "rev-parse", "--short", state.get("main", "HEAD"), check=False)
+        diag = sorted(d.glob("gen*-diagnosis.md"))
+        out.append({"name": d.name, "state": state, "ledger": ledger, "absorb": absorb, "branches": branches,
+                    "diagnosis": diag[-1].read_text() if diag else ""})
+    return out
+
+
 def make_handler(runner: Runner):
     class Handler(BaseHTTPRequestHandler):
         server_version = "artel/0.1"
@@ -135,6 +161,8 @@ def make_handler(runner: Runner):
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
+                elif parts == ["api", "evolution"]:
+                    self._json(evolution_view())
                 elif parts == ["api", "skills"]:
                     self._json(runner.kernel.get("skills").list())
                 elif len(parts) == 3 and parts[:2] == ["api", "skills"]:

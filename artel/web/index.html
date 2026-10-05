@@ -101,6 +101,7 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(-
     <a href="#/portfolio" data-v="portfolio">Портфель</a>
     <a href="#/agents" data-v="agents">Агенты</a>
     <a href="#/registry" data-v="registry">Реестр харнессов</a>
+    <a href="#/evolution" data-v="evolution">Эволюция</a>
     <a href="#/skills" data-v="skills">Скиллы</a>
   </nav>
   <button class="primary" id="newbtn">+ Новая цель</button>
@@ -132,7 +133,7 @@ $('#newbtn').onclick=()=>{dlg(`<h3>Новая цель → новый проек
 function route(){clearInterval(timer);if(es){es.close();es=null}
   const h=location.hash.slice(2)||'portfolio';const [v,arg]=h.split('/');
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-  ({portfolio,agents,registry,skills,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
+  ({portfolio,agents,registry,skills,evolution,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
 window.addEventListener('hashchange',route);
 
 /* ---------- Портфель ---------- */
@@ -285,6 +286,36 @@ function renderRegistry(){const all=state.reg;const cats=Object.entries(all.redu
   const q=$('#rq');q.onchange=()=>{state.rq=q.value.toLowerCase();state.rn=100;renderRegistry()};
   $('#rf').onchange=e=>{state.rf=e.target.value;state.rn=100;renderRegistry()};
   const mo=$('#more');if(mo)mo.onclick=()=>{state.rn+=200;renderRegistry()}}
+
+/* ---------- Эволюция ---------- */
+const DM={pass_rate:['прохождение',1,v=>(v>0?'+':'')+Math.round(v*100)+' п.п.'],partial_mean:['частично',1,v=>(v>0?'+':'')+v.toFixed(3)],
+  cost_usd:['стоимость',-1,v=>(v>0?'+$':'−$')+Math.abs(v).toFixed(2)],duration_mean_s:['время',-1,v=>(v>0?'+':'')+Math.round(v)+' с'],
+  rejections:['отказы',-1,v=>(v>0?'+':'')+v],stalls:['срывы',-1,v=>(v>0?'+':'')+v]};
+function deltaChips(d){return Object.entries(DM).filter(([k])=>d&&d[k]!=null&&d[k]!==0).map(([k,[l,dir,f]])=>{const good=d[k]*dir>0;
+  return `<span class="ft" style="color:${good?'var(--ok)':'var(--bad)'}">${l} ${f(d[k])}</span>`}).join('')||'<span class="stat">без изменений метрик</span>'}
+async function evolution(){$('#view').innerHTML='<div class="wrap" id="evo"><div class="empty">Загрузка…</div></div>';
+  const draw=async()=>{const evs=await api('/api/evolution');
+  if(!evs.length){$('#evo').innerHTML=`<div class="empty">Эволюция ещё не запускалась.<br><br><code>artel evolve --generations 1 --candidates 2</code> · <code>artel absorb owner/repo --run</code></div>`;return}
+  $('#evo').innerHTML=evs.map(ev=>{const L=ev.ledger,base=L.filter(e=>e.kind==='baseline'),cands=L.filter(e=>e.kind==='candidate'||e.kind==='absorb_candidate');
+    const gens=[...new Set(cands.map(c=>c.generation))].sort((a,b)=>b-a);const run=ev.state.running;
+    return `<p class="stat">Artel улучшает сам себя: каждая гипотеза — ветка git, реализует её сам Artel, затем тесты и бенчмарк со скрытыми проверками; лучший кандидат вливается в <b>${esc(ev.state.main)}</b>.</p>
+    <div class="kpis"><div class="kpi"><b>${ev.state.generation||0}</b><span>поколений</span></div><div class="kpi"><b>${cands.length}</b><span>кандидатов</span></div>
+      <div class="kpi"><b style="color:var(--ok)">${cands.filter(c=>c.merged).length}</b><span>влито</span></div><div class="kpi"><b>${esc(ev.state.champion||'—')}</b><span>чемпион</span></div>
+      <div class="kpi"><b>${ev.branches.length}</b><span>веток evolve/*</span></div></div>
+    ${run?`<div class="alert" style="border-left-color:var(--run)">▶ идёт поколение ${run.generation}: ${esc(run.phase)} · ${ago(run.since).replace(' назад','')}</div>`:''}
+    <h2>Чемпион по коммитам</h2><div class="tablewrap"><table><tr><th>коммит</th><th class="n">прохождение</th><th class="n">частично</th><th class="n">стоимость</th><th class="n">время/задача</th><th class="n">отказы</th><th class="n">срывы</th></tr>
+      ${base.map(b=>`<tr><td>${esc(b.commit.slice(0,10))}</td><td class="n">${pct(b.summary.pass_rate)}</td><td class="n">${b.summary.partial_mean.toFixed(2)}</td><td class="n">${money(b.summary.cost_usd)}</td><td class="n">${b.summary.duration_mean_s} с</td><td class="n">${b.summary.rejections}</td><td class="n">${b.summary.stalls}</td></tr>`).join('')||'<tr><td colspan="7" class="stat">базовый замер идёт…</td></tr>'}</table></div>
+    ${gens.map(g=>`<h2>Поколение ${g}</h2>${cands.filter(c=>c.generation===g).map(c=>`<div class="pcard" style="cursor:default">
+      <div class="top"><span class="nm">${esc(c.hypothesis.title)}</span><span class="badge ${c.merged?'done':'error'}">${c.merged?'влито':'отклонено'}</span></div>
+      <div class="stat">${esc(c.branch)}${c.commit&&c.commit.diffstat?' · '+esc(c.commit.diffstat):''}${c.tests?' · тесты: '+esc(c.tests.summary):''}${c.implementation&&c.implementation.cost_usd?' · реализация '+money(c.implementation.cost_usd):''} · источник: ${esc(c.hypothesis.source)}</div>
+      <div><b>Решение:</b> ${esc(c.reason||'')}</div><div>${deltaChips(c.delta)}</div>
+      ${c.per_task?`<div class="tablewrap"><table><tr><th>задача</th><th>было → стало</th><th class="n">частично</th><th class="n">стоимость</th><th class="n">время</th></tr>${Object.entries(c.per_task).map(([t,d])=>`<tr><td>${esc(t)}</td><td>${d.pass[0]?'✓':'✗'} → ${d.pass[1]?'✓':'✗'}</td><td class="n">${d.partial>0?'+':''}${d.partial}</td><td class="n">${d.cost_usd>0?'+':''}${d.cost_usd}</td><td class="n">${d.duration_s>0?'+':''}${d.duration_s} с</td></tr>`).join('')}</table></div>`:''}
+      <details><summary class="stat">гипотеза и план</summary><p>${esc(c.hypothesis.rationale)}</p><pre>${esc(c.hypothesis.plan)}</pre><p class="stat">Ожидалось: ${esc(c.hypothesis.expected||'')}</p>${c.tests_tail?`<pre>${esc(c.tests_tail)}</pre>`:''}</details>
+      ${c.implementation&&c.implementation.project?`<a href="#/p/${encodeURIComponent(c.implementation.project.split('/').pop())}">проект реализации →</a>`:''}</div>`).join('')}`).join('')}
+    ${ev.absorb.length?`<h2>Абсорбция чужих харнессов</h2>${ev.absorb.map(a=>`<div class="pcard" style="cursor:default"><div class="top"><span class="nm">${esc(a.source)}</span><span class="badge">${esc(a.license)}</span></div><div class="stat">${esc(a.summary)}</div>
+      ${a.features.map(f=>`<div><div class="bar" style="width:120px;display:inline-flex;vertical-align:middle"><i class="s-done" style="width:${(f.fit||0)*100}%"></i></div> <b>${esc(f.name)}</b> → ${esc(f.target||'')} <span class="stat">${esc((f.value||'').slice(0,200))}</span></div>`).join('')}</div>`).join('')}`:''}
+    ${ev.diagnosis?`<h2>Последняя диагностика</h2><pre>${esc(ev.diagnosis)}</pre>`:''}`}).join('')};
+  await draw();timer=setInterval(draw,5000)}
 
 /* ---------- Скиллы ---------- */
 async function skills(){const sk=await api('/api/skills');

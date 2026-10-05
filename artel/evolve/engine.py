@@ -124,7 +124,8 @@ class Evolution:
             self.state = json.loads(state.read_text())
         else:
             self.state = {"main": git(self.repo, "rev-parse", "--abbrev-ref", "HEAD"), "generation": 0}
-            self._save()
+        self.state["repo"] = str(self.repo)
+        self._save()
 
     # --- persistence ----------------------------------------------------
     def _save(self) -> None:
@@ -269,6 +270,7 @@ class Evolution:
     def generation(self, candidates: int = 2, hypotheses: Optional[list] = None, kind: str = "candidate") -> dict:
         self.state["generation"] += 1
         gen = self.state["generation"]
+        self.state["running"] = {"generation": gen, "since": time.time(), "phase": "baseline"}
         self._save()
         champ = self.champion()
         base = self.baseline(champ)
@@ -276,9 +278,11 @@ class Evolution:
             report = diag_mod.doctor(None, [Path(r["project"]) for r in base["results"] if r.get("project")],
                                      bench=base, run_tests=False)
             (self.home / f"gen{gen}-diagnosis.md").write_text(diag_mod.render_markdown(report))
+            self._phase("proposing")
             hypotheses = self.propose(report, candidates)
         results = []
         for k, h in enumerate(hypotheses, 1):
+            self._phase(f"candidate {k}/{len(hypotheses)}: {h.title}")
             branch = f"evolve/g{gen}-{k}-{slug(h.title)}"
             wt = self._worktree(branch.replace("/", "_"), champ, branch=branch)
             entry = {"kind": kind, "generation": gen, "branch": branch, "parent": champ,
@@ -326,7 +330,14 @@ class Evolution:
         summary = {"generation": gen, "champion_before": champ, "champion_after": merged or champ,
                    "candidates": len(results), "accepted": [e["branch"] for e in results if e.get("merged")]}
         self.record(kind="generation", **summary)
+        self.state.pop("running", None)
+        self._save()
         return summary
+
+    def _phase(self, phase: str) -> None:
+        if "running" in self.state:
+            self.state["running"]["phase"] = phase
+            self._save()
 
     def run(self, generations: int = 1, candidates: int = 2) -> list[dict]:
         return [self.generation(candidates) for _ in range(generations)]
