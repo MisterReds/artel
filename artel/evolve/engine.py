@@ -323,6 +323,8 @@ class Evolution:
                 w["branch"])
             merged = git(self.repo, "rev-parse", "HEAD")
             git(self.repo, "tag", "-f", f"evolve-gen-{gen}", merged)
+            # Some git proxies refuse tag pushes; a branch marks the generation everywhere.
+            git(self.repo, "branch", "-f", f"evolve/gen-{gen}", merged)
             for e in winners[1:]:
                 e["reason"] += " (superseded by a better candidate this generation)"
                 e["accepted"] = False
@@ -341,9 +343,12 @@ class Evolution:
         """Push the champion, every evolve/* branch and the generation tags to `origin` (best-effort)."""
         if not git(self.repo, "remote", check=False):
             return {"pushed": False, "reason": "no remote"}
-        p = subprocess.run(["git", "push", "--quiet", "origin", self.state["main"], "refs/heads/evolve/*:refs/heads/evolve/*",
-                            "--tags"], cwd=self.repo, capture_output=True, text=True, timeout=600)
-        return {"pushed": p.returncode == 0, "detail": (p.stderr or p.stdout).strip()[-300:]}
+        p = subprocess.run(["git", "push", "--quiet", "origin", self.state["main"], "refs/heads/evolve/*:refs/heads/evolve/*"],
+                           cwd=self.repo, capture_output=True, text=True, timeout=600)
+        tags = subprocess.run(["git", "push", "--quiet", "origin", "--tags"], cwd=self.repo, capture_output=True,
+                              text=True, timeout=300)
+        return {"pushed": p.returncode == 0, "tags_pushed": tags.returncode == 0,
+                "detail": (p.stderr or p.stdout).strip()[-300:]}
 
     def _phase(self, phase: str) -> None:
         if "running" in self.state:
