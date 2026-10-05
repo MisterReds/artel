@@ -165,8 +165,9 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                     "mcp__artel"]
             if role in READONLY_ROLES:
                 args += ["--disallowedTools", *WRITE_TOOLS]
-            if cc.get("effort"):
-                args += ["--effort", cc["effort"]]
+            eff = ctx.state.get("effort") or cc.get("effort")
+            if eff:
+                args += ["--effort", eff]
             if session_id:
                 args += ["--resume", session_id]
             args += list(cc.get("extra_args") or [])

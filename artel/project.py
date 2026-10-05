@@ -65,7 +65,12 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "local": {"base_url": "http://127.0.0.1:8090/v1", "api_key_env": "", "model": "local"},
     },
     "provider_by_role": {},              # e.g. {librarian: local}
-    "local_gate": {"skill_review": False, "refine": False},   # local yes/no filter before expensive roles
+    "decide": {                          # System One decisions (TypeSafe Jev via OpenRouter, or a local model)
+        "backend": "none",               # none | jev | local
+        "model": "typesafe/jev-1.13", "api_key_env": "OPENROUTER_API_KEY",
+        "points": {"skill_review": False, "refine": False, "replan_shortcut": False, "difficulty": False},
+        "thresholds": {"skip_learning_below": 0.25, "shortcut_min": 0.8},
+    },
     "runtime": "native",                 # native | claude_code (Claude Code CLI as the agent)
     "runtime_by_role": {},               # e.g. {reviewer: native}
     "claude_code": {"model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,

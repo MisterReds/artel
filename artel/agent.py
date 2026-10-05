@@ -107,7 +107,7 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
     specs = kernel.tools_for(role, tool_names)
     tools = [s.schema() for s in specs]
     model = model_override or project.model_for(role, persona)
-    effort = project.effort_for(role, persona)
+    effort = ctx.state.get("effort") or project.effort_for(role, persona)
     max_tokens = int(kernel.config.get("max_tokens", 16000))
     actor = persona.name if persona else role
     task_id = (ctx.task or {}).get("id")

@@ -167,6 +167,9 @@ class Manager:
         workspace = self.project.worker_dir(persona.name) / "workspace"
         ctx = ToolContext(self.kernel, self.project, role="worker", workspace=workspace, persona=persona, task=task,
                           run_id=run_id)
+        effort = self.difficulty_effort(task)
+        if effort:
+            ctx.state["effort"] = effort
         try:
             out = run_agent(self.kernel, self.project, role="worker", system=self.worker_system(persona),
                            first_user=self.task_card(task), ctx=ctx, max_turns=int(self.b["max_turns_per_run"]),
@@ -179,6 +182,21 @@ class Manager:
                               tokens_in=out.usage["input_tokens"], tokens_out=out.usage["output_tokens"],
                               cost_usd=round(out.cost_usd, 6))
         return out, ctx
+
+    def difficulty_effort(self, task: dict) -> Optional[str]:
+        """System One difficulty estimate -> effort for this run (first attempt only)."""
+        if task["attempts"]:
+            return None
+        from .decide import decide, score
+
+        ans = decide(self.kernel, self.project, "difficulty",
+                     {"task": f"{task['title']}\n{task['body'][:3000]}", "criteria": "; ".join(task["criteria"])},
+                     {"difficulty": score("How hard is this task for an experienced engineer?",
+                                          ["trivial: a few obvious edits", "routine: standard work, some care",
+                                           "hard: subtle logic, debugging or design needed"])})
+        if not ans or "difficulty" not in ans or float(ans["difficulty"].get("confidence", 0)) < 0.6:
+            return None
+        return ["low", "medium", "high"][min(2, max(0, round(float(ans["difficulty"]["score"]))))]
 
     def run_gates(self, task: dict) -> list[dict]:
         results = []
@@ -205,7 +223,34 @@ class Manager:
                        max_turns=25, purpose="review", stop_event=self.stop)
         return gates, out
 
+    def triage(self, task: dict) -> Optional[str]:
+        """Fast System One triage of a stuck task: retry | guidance | reassign | human, or None if unsure."""
+        from .decide import choice, decide
+
+        runs = self.board.runs(task["id"])
+        state = {"task": f"{task['title']}\n{task['body'][:2000]}", "criteria": "; ".join(task["criteria"]),
+                 "history": "\n".join(f"[{c['author']}] {c['body'][:500]}" for c in self.board.comments(task["id"])[-8:]),
+                 "runs": "; ".join(f"{r['status']} after {r['turns']} turns: {(r['summary'] or '')[:200]}" for r in runs[-4:])}
+        ans = decide(self.kernel, self.project, "replan_shortcut", state, {"action": choice(
+            "What will most likely get this stuck task done?",
+            {"retry": "The failure looks transient or the worker was close; retrying as-is is enough.",
+             "guidance": "The worker misunderstood something and needs concrete corrective guidance.",
+             "reassign": "This worker lacks the skills for the task; another specialist should take it.",
+             "human": "Only a human can unblock it: missing credentials, access, or a business decision."})})
+        if not ans or "action" not in ans:
+            return None
+        a = ans["action"]
+        floor = float((self.cfg.get("decide") or {}).get("thresholds", {}).get("shortcut_min", 0.8))
+        top = float((a.get("probabilities") or {}).get(a.get("choice"), 0))
+        return a.get("choice") if top >= floor and a.get("choice") in ("retry", "human") else None
+
     def job_replan(self, task: dict) -> Outcome:
+        fast = self.triage(task)
+        if fast:
+            action = {"retry": "retry", "human": "escalate"}[fast]
+            return Outcome(status="terminal", terminal=("replan_decision", {
+                "action": action, "rationale": f"System One triage: {fast}", "guidance": "", "assignee": "",
+                "new_worker": {}, "subtasks": []}))
         runs = self.board.runs(task["id"])
         roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster())
         user = (f"{self.task_card(task)}\n\n<runs>\n" +
@@ -230,19 +275,22 @@ class Manager:
         return run_agent(self.kernel, self.project, role="auditor", system=prompts.AUDITOR, first_user=user, ctx=ctx,
                         max_turns=30, purpose="audit", stop_event=self.stop)
 
-    def _local_gate(self, kind: str, question: str, context: str) -> bool:
-        """Optional fast local-model filter in front of an expensive role; True = run it."""
-        if not (self.cfg.get("local_gate") or {}).get(kind):
-            return True
-        from . import local
+    def _gate(self, point: str, instructions: str, yes: str, no: str, context: str) -> bool:
+        """System One gate in front of an expensive role; True = run it (also when undecided)."""
+        from .decide import decide, noul
 
-        go, raw = local.gate(question, context)
-        self.project.log.append("local/gate", gate=kind, run=go, answer=raw)
-        return go
+        ans = decide(self.kernel, self.project, point, {"trajectory": context[-12000:]},
+                     {"go": noul(instructions, yes, no)})
+        if not ans or "go" not in ans:
+            return True
+        floor = float((self.cfg.get("decide") or {}).get("thresholds", {}).get("skip_learning_below", 0.25))
+        return float(ans["go"].get("noul", 1.0)) >= floor
 
     def job_skill_review(self, task: dict, out: Outcome) -> None:
-        if not self._local_gate("skill_review", "Does this task trajectory contain a reusable technique, a user "
-                                "correction, a fixed mistake or a pitfall worth saving as a skill?", out.digest_text(8000)):
+        if not self._gate("skill_review", "Does this trajectory contain something worth saving as a reusable skill?",
+                          "A non-obvious technique, a corrected mistake, a workaround or a pitfall a future agent "
+                          "would benefit from.", "Routine work with no new technique, correction or pitfall.",
+                          out.digest_text(12000)):
             return
         user = (f"{self.task_card(task, include_feedback=False)}\n\nOutcome: accepted by review.\n"
                 f"Result: {task.get('result') or ''}\n\n<trajectory>\n{out.digest_text()}\n</trajectory>")
@@ -255,8 +303,10 @@ class Manager:
     def job_refine(self) -> None:
         from .refine import trajectory_digest
 
-        if not self._local_gate("refine", "Does this trajectory show failures, rejections, stalls or wasted effort "
-                                "that a project rule could prevent next time?", trajectory_digest(self.project, 120)):
+        if not self._gate("refine", "Would a new project rule have prevented problems in this trajectory?",
+                          "There were failures, rejections, stalls, repeated tool errors or wasted effort with a "
+                          "clear cause.", "The run was clean or problems had no preventable cause.",
+                          trajectory_digest(self.project, 120)):
             return
 
         roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster())
