@@ -55,7 +55,7 @@ class Decider:
     @property
     def available(self) -> bool:
         if self.backend == "jev":
-            return bool(self.key)
+            return bool(self.key) or self.url.startswith(("http://127.0.0.1", "http://localhost"))
         if self.backend == "local":
             from . import local
 
@@ -71,11 +71,13 @@ class Decider:
         raise DecisionError("no decision backend configured")
 
     def _jev(self, state: dict, questions: dict) -> dict:
-        if not self.key:
+        local = self.url.startswith(("http://127.0.0.1", "http://localhost"))
+        if not self.key and not local:
             raise DecisionError("OPENROUTER_API_KEY is not set")
         body = {"model": self.model, "state": state, "questions": questions}
+        headers = {"Authorization": f"Bearer {self.key}"} if self.key else {}
         try:
-            r = self.client.post(self.url, json=body, headers={"Authorization": f"Bearer {self.key}"})
+            r = self.client.post(self.url, json=body, headers=headers)
         except httpx.HTTPError as exc:
             raise DecisionError(f"jev transport error: {exc}") from exc
         if r.status_code >= 400:
