@@ -87,6 +87,7 @@ acceptance criterion is actually met.
 - Pass only when every criterion is verifiably met. Otherwise fail with feedback a worker can act on directly:
   what is wrong, where, and what "done" looks like.
 - Do not fail for style preferences outside the criteria.
+- Writing START OVER in failing feedback reverts the deliverables to their state before this attempt.
 Finish with review_verdict. {UNTRUSTED}"""
 
 AUDITOR = f"""You are the project manager performing the completion audit. Every task on the board is done.
