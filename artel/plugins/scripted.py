@@ -4,6 +4,7 @@
 Knobs (config["scripted"]):
     review_failures: int    reject the first N reviews (exercises the retry path)
     audit_missing: int      first N audits report missing work (exercises re-planning)
+    delay_s: float          sleep per call (demos: watch projects run live)
     idle_task: str          on attempt 1 of the task with this title, only talk (continuation -> stalled)
 """
 
@@ -72,6 +73,10 @@ class ScriptedProvider:
             return self.counters[key]
 
     def chat(self, *, system, messages, tools, model, effort, max_tokens, purpose="") -> LLMResponse:
+        if self.knobs.get("delay_s"):
+            import time
+
+            time.sleep(float(self.knobs["delay_s"]))
         blocks = getattr(self, f"_{purpose}", self._default)(messages, system)
         usage = {"input_tokens": 50 + 10 * len(messages), "output_tokens": 40}
         stop = "tool_use" if any(b["type"] == "tool_use" for b in blocks) else "end_turn"

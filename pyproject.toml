@@ -20,3 +20,4 @@ include = ["artel*"]
 
 [tool.setuptools.package-data]
 "artel.web" = ["index.html"]
+"artel.data" = ["harnesses.json"]

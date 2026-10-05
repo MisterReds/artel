@@ -77,3 +77,31 @@ def test_refine_rollback(cfg):
     edit = refine.history(project)[0]
     refine.rollback(project, edit["id"])
     assert not project.prompt_notes_path.exists()
+
+
+def test_portfolio_and_agent_analytics(cfg):
+    from artel import analytics
+
+    cfg = deep_merge(cfg, {"scripted": {"review_failures": 1}})
+    run_goal("Project one", cfg)
+    run_goal("Project two", cfg)
+    from artel.manager import Manager
+
+    stuck = Project.create("Project three", cfg)
+    Manager(new_kernel(cfg), stuck).plan()
+    t = stuck.board.list(kind="work")[0]
+    stuck.board.update(t["id"], status="blocked", needs_human=1)
+
+    pf = analytics.portfolio(cfg)
+    assert len(pf) == 3
+    by_name = {p["name"]: p for p in pf}
+    assert by_name["Project one"]["stage"] == "done" and by_name["Project one"]["progress"] == 1.0
+    three = by_name["Project three"]
+    assert three["attention"] and three["attention"][0]["reason"] == "нужен человек"
+    a = analytics.agent_analytics(pf)
+    model = a["by_model"][0]
+    assert model["key"] == "scripted" and model["done"] == 6 and model["projects"] == 3
+    # each run_goal builds its own scripted provider, so each project rejects its first review once
+    assert model["rejections"] == 2 and model["first_pass_rate"] == round(4 / 6, 3)
+    tl = analytics.task_timelines(analytics._events(Project.open(by_name["Project one"]["slug"], cfg)))
+    assert any([s["to"] for s in steps][-1] == "done" for steps in tl.values())

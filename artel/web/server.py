@@ -13,10 +13,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
+from .. import analytics
 from ..manager import human_comment, new_kernel, resume, run_goal
 from ..project import Project, list_projects
 
 STATIC = Path(__file__).parent / "index.html"
+REGISTRY = Path(__file__).parent.parent / "data" / "harnesses.json"
 
 
 class Runner:
@@ -78,7 +80,11 @@ def project_view(project: Project, runner: Runner) -> dict:
         done = sum(1 for t in snap["tasks"] if t["assignee"] == p.name and t["status"] == "done")
         workers.append({"name": p.name, "role": p.role, "files": files, "current": running.get(p.name),
                         "done": done, "skills": p.skills})
-    return {"slug": project.slug, "meta": project.meta, "board": snap, "workers": workers,
+    timelines = analytics.task_timelines(analytics._events(project))
+    for t in snap["tasks"]:
+        t["timeline"] = timelines.get(t["id"], [])
+    stats = analytics.project_stats(project, live=project.slug in runner.active)
+    return {"slug": project.slug, "meta": project.meta, "board": snap, "workers": workers, "stats": stats,
             "notes": project.prompt_notes(), "live": project.slug in runner.active, "seq": project.log.seq}
 
 
@@ -118,6 +124,17 @@ def make_handler(runner: Runner):
                     self.wfile.write(body)
                 elif parts == ["api", "projects"]:
                     self._json([{**p, "live": p["slug"] in runner.active} for p in list_projects()])
+                elif parts == ["api", "portfolio"]:
+                    self._json(analytics.portfolio(runner.config, live=set(runner.active)))
+                elif parts == ["api", "analytics"]:
+                    self._json(analytics.agent_analytics(analytics.portfolio(runner.config, live=set(runner.active))))
+                elif parts == ["api", "registry"]:
+                    body = REGISTRY.read_bytes() if REGISTRY.exists() else b"[]"
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json; charset=utf-8")
+                    self.send_header("Content-Length", str(len(body)))
+                    self.end_headers()
+                    self.wfile.write(body)
                 elif parts == ["api", "skills"]:
                     self._json(runner.kernel.get("skills").list())
                 elif len(parts) == 3 and parts[:2] == ["api", "skills"]:
