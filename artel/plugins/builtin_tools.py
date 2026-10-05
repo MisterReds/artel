@@ -91,6 +91,84 @@ def write_file(ctx: ToolContext, path: str, content: str) -> str:
     return f"wrote {len(content)} chars to {ctx.display(p)}"
 
 
+# Fuzzy edit fallbacks (line-trimmed, block-anchor with Levenshtein similarity) adapted from
+# OpenCode packages/opencode/src/tool/edit.ts -- MIT License, Copyright (c) 2025 opencode (anomalyco).
+# Permission is hereby granted, free of charge, to use, copy, modify and distribute this software
+# subject to inclusion of the above copyright notice and this permission notice.
+BLOCK_ANCHOR_THRESHOLD = 0.65
+
+
+def _levenshtein(a: str, b: str) -> int:
+    if not a or not b:
+        return max(len(a), len(b))
+    prev = list(range(len(b) + 1))
+    for i, ca in enumerate(a, 1):
+        cur = [i]
+        for j, cb in enumerate(b, 1):
+            cur.append(min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (ca != cb)))
+        prev = cur
+    return prev[-1]
+
+
+def _similarity(a: str, b: str) -> float:
+    longest = max(len(a), len(b))
+    return 1.0 if longest == 0 else 1 - _levenshtein(a, b) / longest
+
+
+def _line_trimmed_spans(lines: list[str], search: list[str]) -> list[tuple[int, int]]:
+    want = [s.strip() for s in search]
+    stripped = [ln.strip() for ln in lines]
+    return [(i, i + len(want) - 1) for i in range(len(lines) - len(want) + 1)
+            if stripped[i:i + len(want)] == want]
+
+
+def _block_anchor_spans(lines: list[str], search: list[str]) -> list[tuple[int, int]]:
+    if len(search) < 3:
+        return []
+    first, last = search[0].strip(), search[-1].strip()
+    middle = [s.strip() for s in search[1:-1]]
+    found = []
+    for i, ln in enumerate(lines):
+        if ln.strip() != first:
+            continue
+        for j in range(i + 2, len(lines)):
+            if lines[j].strip() != last:
+                continue
+            got = [x.strip() for x in lines[i + 1:j]]
+            pairs = max(len(middle), len(got))
+            sim = sum(_similarity(m, g) for m, g in zip(middle, got)) / pairs
+            if sim >= BLOCK_ANCHOR_THRESHOLD:
+                found.append((sim, i, j))
+            break
+    return [(i, j) for _, i, j in found]
+
+
+def _fuzzy_replace(text: str, old: str, new: str) -> str:
+    """Apply old->new when the exact match failed; refuse ambiguity, raise if nothing matches."""
+    lines = text.splitlines(keepends=True)
+    bare = [ln.rstrip("\r\n") for ln in lines]
+    search = old.split("\n")
+    keep_nl = old.endswith("\n")
+    if keep_nl:
+        search.pop()
+    search = [s.rstrip("\r") for s in search]
+    if not search or not any(s.strip() for s in search):
+        raise ToolError("old text must match exactly once (matched 0)")
+    for tier, finder in (("line-trimmed", _line_trimmed_spans), ("block-anchor", _block_anchor_spans)):
+        spans = sorted(set(finder(bare, search)))
+        if len(spans) > 1:
+            where = ", ".join(f"{a + 1}-{b + 1}" for a, b in spans)
+            raise ToolError(f"old text has no exact match and {len(spans)} {tier} matches (lines {where}); "
+                            "add more surrounding context to make it unique")
+        if spans:
+            a, b = spans[0]
+            tail = lines[b][len(bare[b]):] if keep_nl else ""
+            start = sum(len(x) for x in lines[:a])
+            end = sum(len(x) for x in lines[:b]) + len(bare[b]) + len(tail)
+            return text[:start] + new + text[end:]
+    raise ToolError("old text must match exactly once (matched 0)")
+
+
 def edit_file(ctx: ToolContext, path: str, old: str, new: str) -> str:
     p = ctx.resolve(path, write=True)
     if not p.is_file():
@@ -99,9 +177,13 @@ def edit_file(ctx: ToolContext, path: str, old: str, new: str) -> str:
         raise ToolError(f"{path} changed on disk since you last read it; re-read the file with read_file before editing it")
     text = p.read_text()
     n = text.count(old)
-    if n != 1:
+    if n == 1:
+        updated = text.replace(old, new)
+    elif n == 0:
+        updated = _fuzzy_replace(text, old, new)
+    else:
         raise ToolError(f"old text must match exactly once (matched {n})")
-    p.write_text(text.replace(old, new))
+    p.write_text(updated)
     ctx.record_stamp(p)
     ctx.edited_files.append(ctx.display(p))
     ctx.project.log.append("file/edited", actor=ctx.actor, path=ctx.display(p))
