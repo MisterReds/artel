@@ -172,7 +172,7 @@ class Evolution:
         self.record(kind="baseline", commit=sha, summary=suite["summary"])
         return suite
 
-    NON_CODE = ("roadmap.yaml", "docs/")
+    NON_CODE = ("roadmap.yaml", "studied.yaml", "docs/")
 
     def _equivalent_baseline(self, sha: str) -> Optional[Path]:
         """A cached baseline of a commit that differs from ``sha`` only in non-code files (roadmap, docs)."""
@@ -529,12 +529,17 @@ class Evolution:
         return [self.generation(candidates, **opts) for _ in range(generations)]
 
     # --- roadmap --------------------------------------------------------
-    def roadmap_generation(self, n: int, wave: Optional[int] = None, **opts) -> dict:
-        """Implement the next ``n`` evolve items of roadmap.yaml as one population; mark merged items done."""
+    def roadmap_generation(self, n: int, wave: Optional[int] = None, ids: Optional[list] = None, **opts) -> dict:
+        """Implement the next ``n`` evolve items of roadmap.yaml (or exactly ``ids``) as one population;
+        mark merged items done."""
         from ..roadmap import Roadmap
 
         rm = Roadmap.of_repo(self.repo)
-        items = rm.next_items(n, wave=wave)
+        if ids:
+            items = [rm.get(i) for i in ids if rm.get(i).get("status") in ("planned", "partial")
+                     and rm.get(i).get("mode") == "evolve"][:n]
+        else:
+            items = rm.next_items(n, wave=wave)
         if not items:
             return {"roadmap": [], "reason": "no open evolve items"}
         hyps = [rm.to_hypothesis(it, self.home / "sources") for it in items]
@@ -569,55 +574,118 @@ class Evolution:
             rm = Roadmap.of_repo(self.repo)
             for item_id, (status, note) in outcome.items():
                 rm.set_status(item_id, status, note)
-            (self.repo / "docs").mkdir(exist_ok=True)
-            (self.repo / "docs" / "ROADMAP.md").write_text(rm.render_markdown())
-            git(self.repo, "add", "roadmap.yaml", "docs/ROADMAP.md")
-            if not git(self.repo, "diff", "--cached", "--name-only", check=False):
-                return None
             done = [k for k, v in outcome.items() if v[0] == "done"]
-            git(self.repo, "commit", "-q", "-m",
-                f"roadmap: gen {gen} — done: {', '.join(done) or 'none'}; attempted: {', '.join(outcome)}")
-            sha = git(self.repo, "rev-parse", "HEAD")
+            sha = self._commit_roadmap(f"roadmap: gen {gen} — done: {', '.join(done) or 'none'}; "
+                                       f"attempted: {', '.join(outcome)}")
+            if not sha:
+                return None
             if git(self.repo, "branch", "--list", f"evolve/gen-{gen}"):
                 git(self.repo, "branch", "-f", f"evolve/gen-{gen}", sha)
             return sha
 
+    def _commit_roadmap(self, message: str) -> Optional[str]:
+        """Re-render docs/ROADMAP.md and commit roadmap.yaml, studied.yaml and the render on the main branch."""
+        from ..roadmap import Roadmap
+
+        with self._git_lock:
+            (self.repo / "docs").mkdir(exist_ok=True)
+            (self.repo / "docs" / "ROADMAP.md").write_text(Roadmap.of_repo(self.repo).render_markdown())
+            paths = [p for p in ("roadmap.yaml", "studied.yaml", "docs/ROADMAP.md") if (self.repo / p).exists()]
+            git(self.repo, "add", *paths)
+            if not git(self.repo, "diff", "--cached", "--name-only", check=False):
+                return None
+            git(self.repo, "commit", "-q", "-m", message)
+            return git(self.repo, "rev-parse", "HEAD")
+
+    def cycle(self, items: int = 2, study: int = 1, **opts) -> dict:
+        """One turn of directed self-improvement: study the next unstudied harness from the registry
+        (its findings join the roadmap), then implement the next roadmap items in plan order."""
+        from ..roadmap import next_to_study
+
+        studied = []
+        for h in next_to_study(self.repo, n=study):
+            try:
+                out = self.absorb(h["repo"])
+                studied.append({"repo": h["repo"], "added": out["roadmap_added"]})
+            except Exception as e:  # an unreachable or broken source must not stop the cycle
+                self.record(kind="absorb_error", source=h["repo"], error=str(e)[:500])
+                studied.append({"repo": h["repo"], "error": str(e)[:200]})
+        gen = self.roadmap_generation(items, **opts) if items else {}
+        return {"studied": studied, "generation": gen}
+
     # --- absorb ---------------------------------------------------------
-    def absorb(self, source: str, focus: str = "", top: int = 2, run: bool = False) -> dict:
+    def absorb(self, source: str, focus: str = "", top: int = 3, run: bool = False, min_fit: float = 0.6) -> dict:
+        """Study another harness's code; its worthwhile features become roadmap items (wave ABSORB_WAVE) with the
+        donor's source files attached. ``run`` implements the new evolve items right away (out of plan order)."""
+        from ..roadmap import ABSORB_WAVE, Roadmap, add_studied
+
         src = Path(source).expanduser()
-        name = slug(src.name if src.exists() else source.rstrip("/").split("/")[-1].removesuffix(".git"))
+        label = source.rstrip("/").removesuffix(".git")
+        label = "/".join(label.split("/")[-2:]) if not src.exists() else str(src)
+        name = slug(src.name if src.exists() else label.split("/")[-1])
         if not src.exists():
             url = source if "://" in source or source.startswith("git@") else f"https://github.com/{source}.git"
-            dest = self.home / "sources" / name
+            dest = self.home / "sources" / label.replace("/", "__")
             if not dest.exists():
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                subprocess.run(["git", "clone", "-q", "--depth", "1", url, str(dest)], check=True, timeout=900)
+                subprocess.run(["git", "clone", "-q", "--depth", "1", url, str(dest)], check=True, timeout=900,
+                               capture_output=True)
             src = dest
         lic = detect_license(src)
+        rm = Roadmap.of_repo(self.repo) if (self.repo / "roadmap.yaml").exists() else None
         goal = (f"Study the harness at {src} completely and find features worth absorbing into Artel (codebase at "
                 f"{self.repo}). {('Focus: ' + focus) if focus else ''}\n\nArtel today:\n<code_map>\n{self.code_map()}"
-                f"\n</code_map>\n\nAlready adopted vs planned (from docs/HARNESS_REGISTRY.md):\n"
-                f"{adopted_table(self.repo)}\n\nLicense of the source: {lic}. Finish with absorb_report.")
+                f"\n</code_map>\n\n<roadmap>\n{rm.text_for_agents() if rm else adopted_table(self.repo)}\n</roadmap>"
+                f"\n\nLicense of the source: {lic}. Finish with absorb_report.")
         report = self.agent_fn("absorber", goal, [str(src)], "absorb_report")
         feats = sorted(report["features"], key=lambda f: -float(f.get("fit", 0)))
         out = {"source": source, "path": str(src), "license": lic, "summary": report.get("summary", ""),
-               "features": feats}
+               "features": feats, "roadmap_added": []}
         adir = self.home / "absorb"
         adir.mkdir(exist_ok=True)
         (adir / f"{name}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
+        if rm:
+            items = []
+            for f in feats:
+                if float(f.get("fit", 0)) < min_fit or f.get("duplicates"):
+                    continue
+                mode = "design" if f.get("pillar") or f.get("mode") == "design" else "evolve"
+                items.append({
+                    "id": f"A-{slug(name, 16)}-{slug(f['name'], 28)}", "wave": ABSORB_WAVE, "mode": mode,
+                    "status": "planned", "title": f"{f['name']} — {f.get('description', '')}"[:200],
+                    "source": {"harness": name, "repo": label, "paths": list(f.get("source_files") or []),
+                               "license": lic},
+                    "target": [f["target"]] if f.get("target") else [], "fit": round(float(f.get("fit", 0)), 2),
+                    **({"pillar": f["pillar"]} if f.get("pillar") else {}),
+                    "plan": f.get("port_plan", ""),
+                    "acceptance": [x for x in (f.get("expected"), "tests for the new behavior",
+                                               "no benchmark regression") if x]})
+            out["roadmap_added"] = rm.add_items(items, header=f"absorbed from {label} ({lic})")
+            add_studied(self.repo, {"repo": label, "license": lic, "found": len(feats),
+                                    "added": out["roadmap_added"],
+                                    "skipped": {f["name"]: (f"duplicates {f['duplicates']}" if f.get("duplicates")
+                                                            else f"fit {f.get('fit')}") for f in feats
+                                                if f.get("duplicates") or float(f.get("fit", 0)) < min_fit},
+                                    "summary": report.get("summary", "")[:400]})
+            out["commit"] = self._commit_roadmap(
+                f"roadmap: absorbed {label} ({lic}) — {len(out['roadmap_added'])} items: "
+                f"{', '.join(out['roadmap_added']) or 'none'}")
         self.record(kind="absorb", source=source, license=lic, features=[f["name"] for f in feats],
-                    summary=report.get("summary", ""))
+                    summary=report.get("summary", ""), roadmap_added=out["roadmap_added"])
         if run and feats:
-            copy_ok = lic in ("MIT", "Apache-2.0", "BSD")
-            hyps = [Hypothesis.from_dict({
-                "title": f"Absorb from {name}: {f['name']}", "rationale": f.get("value", ""),
-                "plan": f.get("port_plan", ""), "expected": f.get("expected", ""),
-                "files": [f.get("target", "")] if f.get("target") else []},
-                refs=[str(src)], source=f"absorb:{name}",
-                license_note=("Source license allows copying with attribution; keep the notice in a comment."
-                              if copy_ok else "Reimplement the idea; do not copy code (license not permissive)."))
-                for f in feats[:top]]
-            out["generation"] = self.generation(len(hyps), hypotheses=hyps, kind="absorb_candidate")
+            if rm:
+                out["generation"] = self.roadmap_generation(top, ids=out["roadmap_added"])
+            else:
+                copy_ok = lic in ("MIT", "Apache-2.0", "BSD")
+                hyps = [Hypothesis.from_dict({
+                    "title": f"Absorb from {name}: {f['name']}", "rationale": f.get("value", ""),
+                    "plan": f.get("port_plan", ""), "expected": f.get("expected", ""),
+                    "files": [f.get("target", "")] if f.get("target") else []},
+                    refs=[str(src)], source=f"absorb:{name}",
+                    license_note=("Source license allows copying with attribution; keep the notice in a comment."
+                                  if copy_ok else "Reimplement the idea; do not copy code (license not permissive)."))
+                    for f in feats[:top]]
+                out["generation"] = self.generation(len(hyps), hypotheses=hyps, kind="absorb_candidate")
         return out
 
 

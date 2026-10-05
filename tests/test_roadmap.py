@@ -139,3 +139,74 @@ def test_roadmap_generation_merges_marks_done_and_reuses_baseline(tmp_path, monk
     assert sum(1 for c in calls if c.startswith("base-")) == n_base + 1  # merged code is new; measured once
     ev.roadmap_generation(5)  # gen 2 merged nothing; its roadmap-only commit must not trigger a new baseline
     assert sum(1 for c in calls if c.startswith("base-")) == n_base + 1
+
+
+def _selfrepo(tmp_path, donor):
+    repo = tmp_path / "selfrepo"
+    (repo / "artel").mkdir(parents=True)
+    (repo / "artel" / "__init__.py").write_text("")
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_ok.py").write_text("def test_ok():\n    assert True\n")
+    _toy(repo, str(donor))
+    for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "init"]):
+        git(repo, *args)
+    return repo
+
+
+def test_absorb_turns_findings_into_roadmap_items_and_cycle_follows_the_plan(tmp_path, monkeypatch):
+    from artel.roadmap import ABSORB_WAVE, load_studied, next_to_study
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    donor = tmp_path / "donor"
+    donor.mkdir()
+    (donor / "README.md").write_text("donor")
+    other = tmp_path / "otherharness"
+    other.mkdir()
+    (other / "README.md").write_text("Other harness with a marker feature")
+    (other / "LICENSE").write_text("MIT License\n\nPermission is hereby granted, free of charge, ...")
+    repo = _selfrepo(tmp_path, donor)
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05})
+    impls = []
+
+    def impl(h, wt):
+        impls.append(h.source)
+        (wt / "artel" / "a.py").write_text("x = 1\n")
+        return {"cost_usd": 0.0}
+
+    def bench_fn(code, label, tasks=None):
+        ok = (Path(code) / "artel" / "a.py").exists()
+        rows = [{"id": "a", "pass": ok, "partial": float(ok), "cost_usd": 0.1}]
+        return {"results": rows, "summary": bench.summarize(rows)}
+
+    ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    out = ev.absorb(str(other))  # the scripted absorber reports one feature, "marker", fit 0.9
+    assert out["roadmap_added"] == ["A-otherharness-marker"] and "generation" not in out
+    rm = Roadmap.of_repo(repo)
+    item = rm.get("A-otherharness-marker")
+    assert item["wave"] == ABSORB_WAVE and item["mode"] == "evolve" and item["source"]["license"] == "MIT"
+    assert item["source"]["paths"] == ["README.md"] and item["plan"] == "write ABSORBED.md"
+    assert "# toy roadmap — this comment must survive" in rm.path.read_text()
+    assert load_studied(repo)[0]["added"] == ["A-otherharness-marker"]
+    assert "roadmap: absorbed" in git(repo, "log", "-1", "--format=%s")
+    assert "Изученные проекты — 1" in (repo / "docs" / "ROADMAP.md").read_text()
+    assert ev.absorb(str(other))["roadmap_added"] == []  # studying again adds no duplicates
+
+    # registry: studied projects and roadmap donors are skipped; most relevant live harness first
+    reg = [{"repo": str(other), "status": "alive", "category": "harness", "relevance": 30},
+           {"repo": str(donor), "status": "alive", "category": "harness", "relevance": 29},
+           {"repo": "x/list", "status": "alive", "category": "list", "relevance": 28},
+           {"repo": "x/dead", "status": "dead", "category": "harness", "relevance": 27},
+           {"repo": "x/low", "status": "alive", "category": "orchestrator", "relevance": 3},
+           {"repo": "x/high", "status": "alive", "category": "orchestrator", "relevance": 20}]
+    assert [h["repo"] for h in next_to_study(repo, reg, n=5)] == ["x/high", "x/low"]
+
+    # a cycle studies nothing new here (registry patched to the already studied source) and implements the
+    # next items in plan order: wave 1 first, the absorbed wave-4 item waits its turn
+    monkeypatch.setattr("artel.roadmap.next_to_study", lambda repo, n=1: [])
+    s = ev.cycle(items=1)
+    assert impls == ["roadmap:W1-a"] and s["generation"]["roadmap"] == {"W1-a": "done"}
+    # --run jumps the queue explicitly for the freshly absorbed items
+    out = ev.absorb(str(other), run=True)
+    assert out["roadmap_added"] == []
+    s = ev.roadmap_generation(1, ids=["A-otherharness-marker"])
+    assert impls[-1] == "roadmap:A-otherharness-marker"
