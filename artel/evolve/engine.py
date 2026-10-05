@@ -123,6 +123,8 @@ class Evolution:
 
         self._git_lock = threading.RLock()  # worktree add/remove and commits touch shared repo state
         state = self.home / "state.json"
+        if not self.ledger_path.exists():
+            self.restore_journal()
         if state.exists():
             self.state = json.loads(state.read_text())
         else:
@@ -146,7 +148,95 @@ class Evolution:
         entry = {"id": uuid.uuid4().hex[:10], "ts": time.time(), **entry}
         with self.ledger_path.open("a") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+        if entry.get("kind") in self.JOURNAL_KINDS:
+            self.sync_journal(f"{entry['kind']}: {entry.get('branch') or entry.get('source') or entry.get('generation', '')}")
         return entry
+
+    # --- durability: everything worth keeping goes to the git remote as it happens ---------------
+    JOURNAL_BRANCH = "evolve/journal"
+    JOURNAL_KINDS = ("baseline", "candidate", "absorb_candidate", "stack", "generation", "absorb", "absorb_error",
+                     "roadmap_pick")
+
+    def restore_journal(self) -> bool:
+        """A fresh machine (or a reclaimed container) continues from the journal on the remote."""
+        import io
+        import tarfile
+
+        if not git(self.repo, "remote", check=False):
+            return False
+        f = subprocess.run(["git", "fetch", "--quiet", "origin",
+                            f"+refs/heads/{self.JOURNAL_BRANCH}:refs/heads/{self.JOURNAL_BRANCH}"],
+                           cwd=self.repo, capture_output=True, timeout=600)
+        if f.returncode != 0:
+            return False
+        tar = subprocess.run(["git", "archive", "--format=tar", self.JOURNAL_BRANCH], cwd=self.repo,
+                             capture_output=True, check=True).stdout
+        with tarfile.open(fileobj=io.BytesIO(tar)) as tf:
+            tf.extractall(self.home, filter="data")
+        return True
+
+    def _has_remote(self) -> bool:
+        return bool(git(self.repo, "remote", check=False)) and self.state.get("push", True)
+
+    def _push(self, *refs: str) -> bool:
+        """Best-effort push of exact refs to origin with backoff (git proxies drop connections)."""
+        if not self._has_remote():
+            return False
+        for attempt in range(4):
+            p = subprocess.run(["git", "push", "--quiet", "origin",
+                                *[f"refs/heads/{r}:refs/heads/{r}" for r in refs]],
+                               cwd=self.repo, capture_output=True, text=True, timeout=600)
+            if p.returncode == 0:
+                return True
+            time.sleep(2 ** (attempt + 1))
+        self.state.setdefault("push_failures", []).append({"refs": list(refs), "error": p.stderr.strip()[-300:]})
+        return False
+
+    def _journal_files(self) -> dict:
+        """Relative path -> bytes: the ledger, state, baselines, diagnoses, absorb reports, gzipped transcripts."""
+        import gzip
+
+        out = {}
+        for pat in ("ledger.jsonl", "state.json", "baseline/*.json", "*-diagnosis.md", "absorb/*.json"):
+            for f in self.home.glob(pat):
+                out[str(f.relative_to(self.home))] = f.read_bytes()
+        for f in list(self.home.glob("projects/*/events.jsonl")) + list(self.home.glob("bench/**/events.jsonl")):
+            if f.stat().st_size < 50_000_000:
+                out[str(f.relative_to(self.home)) + ".gz"] = gzip.compress(f.read_bytes(), mtime=0)
+        for f in self.home.glob("bench/**/suite.json"):
+            out[str(f.relative_to(self.home))] = f.read_bytes()
+        return out
+
+    def sync_journal(self, message: str = "journal") -> Optional[str]:
+        """Commit the evolution journal to the orphan branch evolve/journal (git plumbing: no checkout, the
+        main working tree is untouched) and push it. Returns the commit sha, or None when nothing changed."""
+        import os
+        import tempfile
+
+        with self._git_lock:
+            try:
+                with tempfile.TemporaryDirectory() as tmp:
+                    env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
+
+                    def g(*args, data=None):
+                        return subprocess.run(["git", *GIT_ID, *args], cwd=self.repo, env=env, input=data,
+                                              capture_output=True, check=True).stdout.decode().strip()
+
+                    for rel, data in sorted(self._journal_files().items()):
+                        blob = g("hash-object", "-w", "--stdin", data=data)
+                        g("update-index", "--add", "--cacheinfo", f"100644,{blob},{rel}")
+                    tree = g("write-tree")
+                    parent = git(self.repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{self.JOURNAL_BRANCH}",
+                                 check=False)
+                    if parent and git(self.repo, "rev-parse", f"{parent}^{{tree}}") == tree:
+                        return None
+                    sha = g("commit-tree", tree, *(["-p", parent] if parent else []), "-m", message)
+                    g("update-ref", f"refs/heads/{self.JOURNAL_BRANCH}", sha)
+            except subprocess.CalledProcessError as e:
+                self.state.setdefault("push_failures", []).append({"journal": (e.stderr or b"").decode()[-300:]})
+                return None
+        self._push(self.JOURNAL_BRANCH)
+        return sha
 
     def champion(self) -> str:
         return git(self.repo, "rev-parse", self.state["main"])
@@ -292,6 +382,9 @@ class Evolution:
             return {"changed": False}
         git(wt, "commit", "-q", "-m", f"evolve: {h.title}\n\n{h.rationale}\n\nSource: {h.source}")
         stat = git(wt, "diff", "--shortstat", "HEAD~1", "HEAD")
+        branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD")
+        if branch != "HEAD":  # the candidate's code reaches the remote before it is even measured
+            self._push(branch)
         return {"changed": True, "commit": git(wt, "rev-parse", "HEAD"), "diffstat": stat}
 
     # --- generation -----------------------------------------------------
@@ -595,7 +688,9 @@ class Evolution:
             if not git(self.repo, "diff", "--cached", "--name-only", check=False):
                 return None
             git(self.repo, "commit", "-q", "-m", message)
-            return git(self.repo, "rev-parse", "HEAD")
+            sha = git(self.repo, "rev-parse", "HEAD")
+        self._push(self.state["main"])
+        return sha
 
     def cycle(self, items: int = 2, study: int = 1, **opts) -> dict:
         """One turn of directed self-improvement: study the next unstudied harness from the registry

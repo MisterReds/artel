@@ -196,3 +196,25 @@ def test_population_finalists_cutoff_and_budget(repo, tmp_path):
     s = ev2.generation(hypotheses=hyps2, parallel=1, budget_usd=0.15)
     stages = s["stages"]
     assert stages["skipped"] >= 4  # budget stopped new implementations after the first one or two
+
+
+def test_everything_reaches_the_remote_and_a_fresh_home_restores(repo, tmp_path):
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    git(repo, "remote", "add", "origin", str(remote))
+    git(repo, "push", "-q", "origin", "main")
+    ev = make(repo, tmp_path, [_suite(0.5, 1.0), _suite(0.0, 1.0), _suite(1.0, 1.0)])
+    ev.generation(hypotheses=[Hypothesis("worse idea", "r", "p"), Hypothesis("better idea", "r", "p")])
+    heads = git(remote, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+    assert {"main", "evolve/g1-1-worse-idea", "evolve/g1-2-better-idea", "evolve/gen-1", "evolve/journal"} <= set(heads.split())
+    assert git(remote, "rev-parse", "main") == git(repo, "rev-parse", "main")
+    files = git(remote, "ls-tree", "-r", "--name-only", "evolve/journal").split()
+    assert "ledger.jsonl" in files and "state.json" in files and any(f.startswith("baseline/") for f in files)
+    # the main working tree was never touched by the journal commits
+    assert not git(repo, "status", "--porcelain")
+    # a reclaimed container: new clone, empty evolution home -> the ledger comes back from the remote
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(remote), str(clone)], check=True)
+    ev2 = make(clone, tmp_path / "fresh", [])
+    kinds = [e["kind"] for e in ev2.ledger()]
+    assert kinds.count("candidate") == 2 and "generation" in kinds and ev2.state["generation"] == 1
