@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import itertools
 import os
+import shutil
 import subprocess
 from pathlib import Path
 
@@ -81,6 +82,39 @@ def read_file(ctx: ToolContext, path: str, offset: int = 0, limit: int = 0) -> s
     return _bound(ctx, body, "read_file") or "(empty file)"
 
 
+def _diagnostics(path: Path, timeout: float = 10.0) -> str:
+    """Post-write checks for .py files: compile() syntax check plus ruff when on PATH.
+
+    Idea (feedback on the write result itself) borrowed from OpenCode's write tool /
+    LSP diagnostics (MIT, anomalyco/opencode). Never raises; returns "" when clean.
+    """
+    try:
+        if path.suffix != ".py":
+            return ""
+        errors: list[str] = []
+        try:
+            compile(path.read_text(errors="replace"), str(path), "exec")
+        except SyntaxError as exc:
+            errors.append(f"SyntaxError: {exc.msg} ({path.name}:{exc.lineno}:{exc.offset or 0})")
+        except Exception as exc:
+            errors.append(f"{type(exc).__name__}: {exc}")
+        ruff = shutil.which("ruff")
+        if ruff:
+            try:
+                proc = subprocess.run([ruff, "check", "--quiet", "--output-format", "concise", str(path)],
+                                      capture_output=True, text=True, timeout=timeout)
+                out = (proc.stdout or "").strip()
+                if proc.returncode == 1 and out:
+                    errors.append(out)
+            except Exception:
+                pass
+        if not errors:
+            return ""
+        return "\n\nDiagnostics:\n" + _clip("\n".join(errors), 4000)
+    except Exception:
+        return ""
+
+
 def write_file(ctx: ToolContext, path: str, content: str) -> str:
     p = ctx.resolve(path, write=True)
     p.parent.mkdir(parents=True, exist_ok=True)
@@ -88,7 +122,7 @@ def write_file(ctx: ToolContext, path: str, content: str) -> str:
     ctx.record_stamp(p)
     ctx.edited_files.append(ctx.display(p))
     ctx.project.log.append("file/written", actor=ctx.actor, path=ctx.display(p), bytes=len(content.encode()))
-    return f"wrote {len(content)} chars to {ctx.display(p)}"
+    return f"wrote {len(content)} chars to {ctx.display(p)}" + _diagnostics(p)
 
 
 # Fuzzy edit fallbacks (line-trimmed, block-anchor with Levenshtein similarity) adapted from
@@ -187,7 +221,7 @@ def edit_file(ctx: ToolContext, path: str, old: str, new: str) -> str:
     ctx.record_stamp(p)
     ctx.edited_files.append(ctx.display(p))
     ctx.project.log.append("file/edited", actor=ctx.actor, path=ctx.display(p))
-    return f"edited {ctx.display(p)}"
+    return f"edited {ctx.display(p)}" + _diagnostics(p)
 
 
 def list_files(ctx: ToolContext, path: str = ".", depth: int = 3) -> str:
