@@ -1,0 +1,11 @@
+id: lru-ttl-cache
+kind: build-hard
+goal: >-
+  Реализуй модуль ttlcache.py: класс TTLCache(maxsize: int, ttl: float, clock=time.monotonic) с методами
+  get(key, default=None), set(key, value), delete(key) -> bool, __len__, __contains__ и свойством stats
+  (dict с ключами hits, misses, evictions, expirations). Политика вытеснения — LRU (get и set обновляют
+  свежесть). Просроченные записи не возвращаются и считаются в expirations ровно один раз. Класс должен быть
+  потокобезопасным. Нужны pytest-тесты.
+timeout_s: 1800
+hidden:
+  - python3 .artel_eval/check_cache.py

@@ -1,0 +1,12 @@
+id: log-stats
+kind: data-hard
+goal: >-
+  В каталоге проекта лежит access.log (~200 тыс. строк в формате nginx combined, часть строк повреждена).
+  Сделай logstats.py и сгенерируй им stats.json: {"total": число валидных строк, "malformed": число
+  повреждённых, "status_counts": {"200": n, ...}, "top_paths": [[путь без query-строки, n], ...] — 5 самых
+  частых, при равенстве по алфавиту, "p95_bytes": 95-й перцентиль размера ответа (nearest-rank),
+  "unique_ips": n}. Скрипт должен обрабатывать файл быстрее чем за 5 секунд.
+seed: seed
+timeout_s: 1800
+hidden:
+  - python3 .artel_eval/check_logstats.py

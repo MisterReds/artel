@@ -180,6 +180,10 @@ def setup(kernel) -> None:
     scripted.register()
 
     name = kernel.config.get("provider", "anthropic")
+    spec = (kernel.config.get("providers") or {}).get(name)
+    if spec:
+        kernel.provide("llm_factory", lambda: OpenAICompatProvider({"openai_compat": spec}))
+        return
     if name not in PROVIDERS:
         raise LLMError(f"unknown provider {name!r}; known: {sorted(PROVIDERS)}")
     kernel.provide("llm_factory", lambda: PROVIDERS[name](kernel.config))

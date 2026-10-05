@@ -293,6 +293,11 @@ def cmd_evolution(args) -> int:
 
 
 def main(argv=None) -> int:
+    argv = sys.argv[1:] if argv is None else argv
+    if argv[:1] == ["local"]:
+        from . import local
+
+        return local.main(argv[1:])
     ap = argparse.ArgumentParser(prog="artel", description="Artel — a self-improving multi-agent harness")
     ap.add_argument("--config", help="extra YAML config merged over ~/.artel/artel.yaml")
     sub = ap.add_subparsers(dest="cmd", required=True)

@@ -47,13 +47,31 @@ class Outcome:
         return text if len(text) <= limit else text[: limit // 3] + "\n…\n" + text[-2 * limit // 3:]
 
 
-def get_llm(kernel) -> Any:
+def get_llm(kernel, role: Optional[str] = None) -> tuple[Any, Optional[str]]:
+    """The provider for a role and an optional model override.
+
+    ``provider_by_role`` routes a role to another provider; names in ``providers`` are
+    OpenAI-compatible endpoints (e.g. a local llama.cpp server with Gemma or Qwen).
+    """
+    cfg = kernel.config
+    name = (cfg.get("provider_by_role") or {}).get(role or "", cfg.get("provider", "anthropic"))
+    spec = (cfg.get("providers") or {}).get(name)
     with _llm_lock:
-        llm = kernel.get("llm")
+        key = f"llm:{name}"
+        llm = kernel.get(key)
         if llm is None:
-            llm = kernel.get("llm_factory")()
-            kernel.provide("llm", llm)
-        return llm
+            if spec:
+                from .plugins.llm_providers import OpenAICompatProvider
+
+                llm = OpenAICompatProvider({"openai_compat": spec})
+            elif name == cfg.get("provider", "anthropic"):
+                llm = kernel.get("llm") or kernel.get("llm_factory")()
+            else:
+                from .plugins.llm_providers import PROVIDERS
+
+                llm = PROVIDERS[name](cfg)
+            kernel.provide(key, llm)
+        return llm, (spec or {}).get("model")
 
 
 def _short(obj: Any, n: int = 240) -> str:
@@ -85,10 +103,10 @@ def execute_tool(kernel, ctx: ToolContext, name: str, args: dict) -> tuple[str, 
 def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: ToolContext, max_turns: int,
              purpose: str, persona=None, stop_event: Optional[threading.Event] = None,
              tool_names: Optional[list] = None) -> Outcome:
-    llm = get_llm(kernel)
+    llm, model_override = get_llm(kernel, role)
     specs = kernel.tools_for(role, tool_names)
     tools = [s.schema() for s in specs]
-    model = project.model_for(role, persona)
+    model = model_override or project.model_for(role, persona)
     effort = project.effort_for(role, persona)
     max_tokens = int(kernel.config.get("max_tokens", 16000))
     actor = persona.name if persona else role

@@ -61,6 +61,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "backoff_base_s": 10,                # no-progress retry backoff: 10s, 20s, 40s … (cap 600s)
     "heartbeat_stale_s": 900,
     "plugins": [],
+    "providers": {                       # named OpenAI-compatible endpoints usable as `provider` or per role
+        "local": {"base_url": "http://127.0.0.1:8090/v1", "api_key_env": "", "model": "local"},
+    },
+    "provider_by_role": {},              # e.g. {librarian: local}
+    "local_gate": {"skill_review": False, "refine": False},   # local yes/no filter before expensive roles
     "runtime": "native",                 # native | claude_code (Claude Code CLI as the agent)
     "runtime_by_role": {},               # e.g. {reviewer: native}
     "claude_code": {"model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,

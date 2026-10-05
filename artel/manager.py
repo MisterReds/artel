@@ -230,7 +230,20 @@ class Manager:
         return run_agent(self.kernel, self.project, role="auditor", system=prompts.AUDITOR, first_user=user, ctx=ctx,
                         max_turns=30, purpose="audit", stop_event=self.stop)
 
+    def _local_gate(self, kind: str, question: str, context: str) -> bool:
+        """Optional fast local-model filter in front of an expensive role; True = run it."""
+        if not (self.cfg.get("local_gate") or {}).get(kind):
+            return True
+        from . import local
+
+        go, raw = local.gate(question, context)
+        self.project.log.append("local/gate", gate=kind, run=go, answer=raw)
+        return go
+
     def job_skill_review(self, task: dict, out: Outcome) -> None:
+        if not self._local_gate("skill_review", "Does this task trajectory contain a reusable technique, a user "
+                                "correction, a fixed mistake or a pitfall worth saving as a skill?", out.digest_text(8000)):
+            return
         user = (f"{self.task_card(task, include_feedback=False)}\n\nOutcome: accepted by review.\n"
                 f"Result: {task.get('result') or ''}\n\n<trajectory>\n{out.digest_text()}\n</trajectory>")
         ctx = ToolContext(self.kernel, self.project, role="librarian", workspace=self.project.shared, task=task)
@@ -241,6 +254,10 @@ class Manager:
 
     def job_refine(self) -> None:
         from .refine import trajectory_digest
+
+        if not self._local_gate("refine", "Does this trajectory show failures, rejections, stalls or wasted effort "
+                                "that a project rule could prevent next time?", trajectory_digest(self.project, 120)):
+            return
 
         roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster())
         user = (f"<goal>\n{self.project.goal}\n</goal>\n\n<roster>\n{roster}\n</roster>\n\n<current_prompt_notes>\n"
