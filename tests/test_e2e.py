@@ -17,6 +17,8 @@ def kinds(project):
 
 
 def test_goal_to_done(cfg):
+    # a rejection plus a low threshold exercise the librarian and refiner on every task
+    cfg = deep_merge(cfg, {"scripted": {"review_failures": 1}, "skills": {"review_after_tool_calls": 1}})
     project, status = run_goal("Write a short guide to SQLite WAL mode", cfg)
     assert status == "done"
     snap = project.board.snapshot()
@@ -72,6 +74,7 @@ def test_human_unblock_and_resume(cfg):
 
 
 def test_refine_rollback(cfg):
+    cfg = deep_merge(cfg, {"scripted": {"review_failures": 1}})
     project, _ = run_goal("Anything", cfg)
     refine = new_kernel(cfg).get("refine")
     edit = refine.history(project)[0]
@@ -105,3 +108,44 @@ def test_portfolio_and_agent_analytics(cfg):
     assert model["rejections"] == 2 and model["first_pass_rate"] == round(4 / 6, 3)
     tl = analytics.task_timelines(analytics._events(Project.open(by_name["Project one"]["slug"], cfg)))
     assert any([s["to"] for s in steps][-1] == "done" for steps in tl.values())
+
+
+def test_clean_run_skips_refiner_and_librarian(cfg):
+    project, status = run_goal("Write a short guide to SQLite WAL mode", cfg)
+    assert status == "done"
+    k = kinds(project)
+    assert "harness/refine_skipped" in k and "harness/refined" not in k and "skills/reviewed" not in k
+    roles = {e.get("role") for e in project.log.read() if e["kind"] == "agent/start"}
+    assert not roles & {"refiner", "librarian"}
+
+
+def _reviewed(project):
+    return [e for e in project.log.read() if e["kind"] == "skills/reviewed"]
+
+
+def test_failure_run_still_refines(cfg):
+    cfg = deep_merge(cfg, {"scripted": {"review_failures": 1}})
+    project, status = run_goal("Write a short guide to SQLite WAL mode", cfg)
+    assert status == "done"
+    k = kinds(project)
+    assert "harness/refined" in k and "harness/refine_skipped" not in k
+    roles = {e.get("role") for e in project.log.read() if e["kind"] == "agent/start"}
+    assert "refiner" in roles
+
+
+@pytest.mark.parametrize("threshold,expect_review", [(4, False), (3, True), (1, True)])
+def test_librarian_threshold_gating_on_clean_run(cfg, threshold, expect_review):
+    # clean tasks use 6-7 tool calls: below 2x threshold (T=4) is skipped, at/above 2x (T=3) runs
+    cfg = deep_merge(cfg, {"skills": {"review_after_tool_calls": threshold}})
+    project, status = run_goal("Write a short guide to SQLite WAL mode", cfg)
+    assert status == "done"
+    roles = {e.get("role") for e in project.log.read() if e["kind"] == "agent/start"}
+    assert bool(_reviewed(project)) is expect_review
+    assert ("librarian" in roles) is expect_review
+
+
+def test_librarian_runs_below_2x_threshold_after_rejection(cfg):
+    cfg = deep_merge(cfg, {"scripted": {"review_failures": 1}, "skills": {"review_after_tool_calls": 4}})
+    project, status = run_goal("Write a short guide to SQLite WAL mode", cfg)
+    assert status == "done"
+    assert _reviewed(project)
