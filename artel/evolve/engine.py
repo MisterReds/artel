@@ -119,6 +119,9 @@ class Evolution:
         self.implement_fn = implement_fn or self._implement
         self.bench_fn = bench_fn or self._bench
         self.agent_fn = agent_fn or self._agent
+        import threading
+
+        self._git_lock = threading.RLock()  # worktree add/remove and commits touch shared repo state
         state = self.home / "state.json"
         if state.exists():
             self.state = json.loads(state.read_text())
@@ -149,10 +152,6 @@ class Evolution:
         return git(self.repo, "rev-parse", self.state["main"])
 
     # --- measurement ----------------------------------------------------
-    def _bench(self, code: Path, label: str) -> dict:
-        out = self.home / "bench" / f"{label}-{int(time.time())}"
-        tasks = bench_mod.load_tasks(only=self.tasks) if self.tasks else None
-        return bench_mod.run_suite(code, self.bench_config, out, tasks=tasks, parallel=self.parallel, label=label)
 
     def baseline(self, sha: str) -> dict:
         cache = self.home / "baseline" / f"{sha}.json"
@@ -176,6 +175,10 @@ class Evolution:
 
     # --- git ------------------------------------------------------------
     def _worktree(self, name: str, base: str, new_branch: bool = True, branch: str = "") -> Path:
+        with self._git_lock:
+            return self._worktree_locked(name, base, new_branch, branch)
+
+    def _worktree_locked(self, name: str, base: str, new_branch: bool, branch: str) -> Path:
         wt = self.home / "worktrees" / name
         if wt.exists():
             self._remove_worktree(wt)
@@ -187,6 +190,10 @@ class Evolution:
         return wt
 
     def _remove_worktree(self, wt: Path) -> None:
+        with self._git_lock:
+            self._remove_worktree_locked(wt)
+
+    def _remove_worktree_locked(self, wt: Path) -> None:
         git(self.repo, "worktree", "remove", "--force", str(wt), check=False)
         if wt.exists():
             shutil.rmtree(wt, ignore_errors=True)
@@ -261,6 +268,10 @@ class Evolution:
         return {"project": str(project.root), "status": status, "cost_usd": meta["usage"].get("cost_usd", 0.0)}
 
     def _commit(self, wt: Path, h: Hypothesis) -> dict:
+        with self._git_lock:
+            return self._commit_locked(wt, h)
+
+    def _commit_locked(self, wt: Path, h: Hypothesis) -> dict:
         git(wt, "add", "-A")
         if not git(wt, "status", "--porcelain"):
             return {"changed": False}
@@ -269,7 +280,71 @@ class Evolution:
         return {"changed": True, "commit": git(wt, "rev-parse", "HEAD"), "diffstat": stat}
 
     # --- generation -----------------------------------------------------
-    def generation(self, candidates: int = 2, hypotheses: Optional[list] = None, kind: str = "candidate") -> dict:
+    # --- population generation ------------------------------------------
+    def _bench_call(self, code: Path, label: str, tasks: Optional[list] = None) -> dict:
+        try:
+            return self.bench_fn(code, label, tasks=tasks) if tasks else self.bench_fn(code, label)
+        except TypeError:  # bench functions without task selection
+            return self.bench_fn(code, label)
+
+    def _bench(self, code: Path, label: str, tasks: Optional[list] = None) -> dict:  
+        out = self.home / "bench" / f"{label}-{int(time.time())}"
+        only = tasks or self.tasks
+        return bench_mod.run_suite(code, self.bench_config, out, tasks=bench_mod.load_tasks(only=only) if only else None,
+                                   parallel=self.parallel, label=label)
+
+    @staticmethod
+    def _subset(suite: dict, ids: Optional[list]) -> dict:
+        if not ids:
+            return suite
+        rows = [r for r in suite["results"] if r["id"] in ids]
+        return {**suite, "results": rows, "summary": bench_mod.summarize(rows)}
+
+    def _spent(self, entries: list) -> float:
+        total = 0.0
+        for e in entries:
+            total += float((e.get("implementation") or {}).get("cost_usd") or 0)
+            for key in ("screen", "summary"):
+                total += float((e.get(key) or {}).get("cost_usd") or 0)
+        return total
+
+    def _build_candidate(self, gen: int, k: int, h: Hypothesis, champ: str, kind: str, budget_left) -> dict:
+        branch = self._unique_branch(f"evolve/g{gen}-{k}-{slug(h.title)}")
+        entry = {"kind": kind, "generation": gen, "branch": branch, "parent": champ, "hypothesis": h.__dict__}
+        if budget_left() <= 0:
+            entry.update(accepted=False, reason="generation budget exhausted before implementation", stage="skipped")
+            return entry
+        wt = self._worktree(branch.replace("/", "_"), champ, branch=branch)
+        entry["worktree"] = str(wt)
+        try:
+            impl = self.implement_fn(h, wt)
+            commit = self._commit(wt, h)
+            entry.update(implementation=impl, commit=commit)
+            if not commit["changed"]:
+                entry.update(accepted=False, reason="implementation produced no changes", stage="implement")
+                return entry
+            tests = self.run_tests(wt)
+            entry["tests"] = {k2: v for k2, v in tests.items() if k2 != "tail"}
+            if not tests["ok"]:
+                entry.update(accepted=False, reason=f"tests fail: {tests['summary']}", tests_tail=tests["tail"][-800:],
+                             stage="tests")
+                return entry
+            entry["stage"] = "tested"
+        except Exception as exc:  # noqa: BLE001 - a broken candidate never stops evolution
+            entry.update(accepted=False, reason=f"error: {exc!r}", stage="error")
+        return entry
+
+    def generation(self, candidates: int = 2, hypotheses: Optional[list] = None, kind: str = "candidate",
+                   parallel: int = 1, screen_tasks: Optional[list] = None, finalists: Optional[int] = None,
+                   budget_usd: Optional[float] = None, stack: bool = True) -> dict:
+        """One generation over a population of hypotheses.
+
+        implement + test (in parallel) -> screen on a cheap task subset -> full benchmark for the best
+        ``finalists`` -> stack every accepted candidate on an integration branch, re-testing after each
+        merge -> merge the stack if it beats the best single candidate, else the best single candidate.
+        """
+        from concurrent.futures import ThreadPoolExecutor
+
         self.state["generation"] += 1
         gen = self.state["generation"]
         self.state["running"] = {"generation": gen, "since": time.time(), "phase": "baseline"}
@@ -282,62 +357,142 @@ class Evolution:
             (self.home / f"gen{gen}-diagnosis.md").write_text(diag_mod.render_markdown(report))
             self._phase("proposing")
             hypotheses = self.propose(report, candidates)
-        results = []
-        for k, h in enumerate(hypotheses, 1):
-            self._phase(f"candidate {k}/{len(hypotheses)}: {h.title}")
-            branch = f"evolve/g{gen}-{k}-{slug(h.title)}"
-            wt = self._worktree(branch.replace("/", "_"), champ, branch=branch)
-            entry = {"kind": kind, "generation": gen, "branch": branch, "parent": champ,
-                     "hypothesis": h.__dict__}
-            try:
-                impl = self.implement_fn(h, wt)
-                commit = self._commit(wt, h)
-                entry.update(implementation=impl, commit=commit)
-                if not commit["changed"]:
-                    entry.update(accepted=False, reason="implementation produced no changes")
-                else:
-                    tests = self.run_tests(wt)
-                    entry["tests"] = {k2: v for k2, v in tests.items() if k2 != "tail"}
-                    if not tests["ok"]:
-                        entry.update(accepted=False, reason=f"tests fail: {tests['summary']}",
-                                     tests_tail=tests["tail"][-800:])
-                    else:
-                        cand = self.bench_fn(wt, f"g{gen}-{k}")
-                        cmp = bench_mod.compare(base, cand)
-                        d = self.policy.decide(cmp, tests)
-                        entry.update(accepted=d.accepted, reason=d.reason, score=d.score, delta=cmp["delta"],
-                                     per_task=cmp["per_task"], improved=cmp["improved"], regressed=cmp["regressed"],
-                                     summary=cmp["candidate"])
-            except Exception as exc:  # noqa: BLE001 - a broken candidate never stops evolution
-                entry.update(accepted=False, reason=f"error: {exc!r}")
-            finally:
-                self._remove_worktree(wt)
-            results.append(entry)
+        results: list[dict] = []
+
+        def budget_left() -> float:
+            return float("inf") if budget_usd is None else budget_usd - self._spent(results)
+
+        # 1. implement + test, in parallel (worktrees are created inside each job)
+        self._phase(f"implementing {len(hypotheses)} candidates, {parallel} at a time")
+        with ThreadPoolExecutor(max(1, parallel)) as ex:
+            futs = [ex.submit(self._build_candidate, gen, k, h, champ, kind, budget_left)
+                    for k, h in enumerate(hypotheses, 1)]
+            for f in futs:
+                results.append(f.result())
+        alive = [e for e in results if e.get("stage") == "tested"]
+
+        # 2. screen on a cheap subset, rank, keep finalists
+        if screen_tasks and alive:
+            self._phase(f"screening {len(alive)} candidates on {', '.join(screen_tasks)}")
+            base_sub = self._subset(base, screen_tasks)
+            with ThreadPoolExecutor(max(1, parallel)) as ex:
+                screens = list(ex.map(lambda e: self._bench_call(Path(e["worktree"]), f"g{gen}-screen-"
+                                                                 f"{e['branch'].split('-')[1]}", screen_tasks), alive))
+            for e, sc in zip(alive, screens):
+                cmp = bench_mod.compare(base_sub, self._subset(sc, screen_tasks))
+                d = self.policy.decide(cmp, {"ok": True})
+                e.update(screen=cmp["candidate"], screen_delta=cmp["delta"], screen_score=d.score,
+                         screen_regressed=cmp["regressed"])
+            survivors = [e for e in alive if not e["screen_regressed"]]
+            for e in alive:
+                if e["screen_regressed"]:
+                    e.update(accepted=False, reason=f"screen regressed: {', '.join(e['screen_regressed'])}",
+                             stage="screen")
+            survivors.sort(key=lambda e: -e["screen_score"])
+            for e in survivors[finalists:] if finalists else []:
+                e.update(accepted=False, reason=f"screened out (rank below top {finalists})", stage="screen")
+            alive = survivors[:finalists] if finalists else survivors
+        elif finalists:
+            alive = alive[:finalists]
+
+        # 3. full benchmark for finalists
+        self._phase(f"benchmarking {len(alive)} finalists")
+        for e in alive:
+            if budget_left() <= 0:
+                e.update(accepted=False, reason="generation budget exhausted before full benchmark", stage="budget")
+                continue
+            cand = self._bench_call(Path(e["worktree"]), f"g{gen}-{e['branch'].split('-')[1]}")
+            cmp = bench_mod.compare(base, cand)
+            d = self.policy.decide(cmp, {"ok": True})
+            e.update(accepted=d.accepted, reason=d.reason, score=d.score, delta=cmp["delta"], per_task=cmp["per_task"],
+                     improved=cmp["improved"], regressed=cmp["regressed"], summary=cmp["candidate"], stage="benchmarked")
+
         winners = sorted([e for e in results if e.get("accepted")], key=lambda e: -e.get("score", 0))
-        merged = None
-        if winners:
+        merged, merged_what = None, []
+        stack_entry = None
+        if len(winners) >= 2 and stack:
+            stack_entry = self._stack(gen, champ, base, winners, budget_left)
+        git(self.repo, "checkout", "-q", self.state["main"])
+        if stack_entry and stack_entry.get("accepted") and stack_entry["score"] >= winners[0]["score"]:
+            git(self.repo, "merge", "--no-ff", "-q", "-m",
+                f"evolve gen {gen}: stack of {len(stack_entry['included'])} improvements\n\n{stack_entry['reason']}\n"
+                f"Included: {', '.join(stack_entry['included'])}\nDelta: {json.dumps(stack_entry.get('delta', {}))}",
+                stack_entry["branch"])
+            merged_what = stack_entry["included"]
+        elif winners:
             w = winners[0]
-            git(self.repo, "checkout", "-q", self.state["main"])
             git(self.repo, "merge", "--no-ff", "-q", "-m",
                 f"evolve gen {gen}: {w['hypothesis']['title']}\n\n{w['reason']}\nDelta: {json.dumps(w.get('delta', {}))}",
                 w["branch"])
+            merged_what = [w["branch"]]
+        if merged_what:
             merged = git(self.repo, "rev-parse", "HEAD")
             git(self.repo, "tag", "-f", f"evolve-gen-{gen}", merged)
             # Some git proxies refuse tag pushes; a branch marks the generation everywhere.
             git(self.repo, "branch", "-f", f"evolve/gen-{gen}", merged)
-            for e in winners[1:]:
-                e["reason"] += " (superseded by a better candidate this generation)"
-                e["accepted"] = False
+        for e in winners:
+            if e["branch"] not in merged_what:
+                e["reason"] += " (accepted alone, not merged: " + (
+                    "excluded from the stack)" if stack_entry else "a better candidate won)")
         for e in results:
-            e["merged"] = bool(merged) and e is (winners[0] if winners else None)
+            e["merged"] = e["branch"] in merged_what
+            wt = e.pop("worktree", None)
+            if wt:
+                self._remove_worktree(Path(wt))
             self.record(**e)
+        if stack_entry:
+            stack_entry["merged"] = bool(merged_what) and merged_what == stack_entry.get("included")
+            self.record(**stack_entry)
         summary = {"generation": gen, "champion_before": champ, "champion_after": merged or champ,
-                   "candidates": len(results), "accepted": [e["branch"] for e in results if e.get("merged")]}
+                   "candidates": len(results), "accepted": merged_what, "spent_usd": round(self._spent(results), 4),
+                   "stages": {st: sum(1 for e in results if e.get("stage") == st) for st in
+                              ("skipped", "implement", "tests", "error", "screen", "budget", "benchmarked")}}
         summary["published"] = self.publish()
         self.record(kind="generation", **summary)
         self.state.pop("running", None)
         self._save()
         return summary
+
+    def _unique_branch(self, name: str) -> str:
+        """Branch names must not collide with earlier runs (e.g. a fresh evolution home on the same repo)."""
+        with self._git_lock:
+            candidate, n = name, 2
+            while git(self.repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{candidate}", check=False):
+                candidate, n = f"{name}-{n}", n + 1
+            return candidate
+
+    def _stack(self, gen: int, champ: str, base: dict, winners: list, budget_left) -> dict:
+        """Merge accepted candidates one by one on an integration branch; keep those that merge cleanly and pass tests."""
+        self._phase(f"stacking {len(winners)} accepted candidates")
+        branch = self._unique_branch(f"evolve/g{gen}-stack")
+        wt = self._worktree(branch.replace("/", "_"), champ, branch=branch)
+        entry: dict = {"kind": "stack", "generation": gen, "branch": branch, "parent": champ, "included": [],
+                       "excluded": {}, "hypothesis": {"title": f"stack of generation {gen}", "source": "stack"}}
+        try:
+            for w in winners:
+                m = subprocess.run(["git", *GIT_ID, "merge", "--no-ff", "-q", "-m", f"stack: {w['hypothesis']['title']}",
+                                    w["branch"]], cwd=wt, capture_output=True, text=True)
+                if m.returncode != 0:
+                    git(wt, "merge", "--abort", check=False)
+                    entry["excluded"][w["branch"]] = "merge conflict"
+                    continue
+                tests = self.run_tests(wt)
+                if not tests["ok"]:
+                    git(wt, "reset", "--hard", "-q", "HEAD~1")
+                    entry["excluded"][w["branch"]] = f"tests fail in combination: {tests['summary']}"
+                    continue
+                entry["included"].append(w["branch"])
+            if len(entry["included"]) < 2 or budget_left() <= 0:
+                entry.update(accepted=False, reason="fewer than two compatible improvements, or no budget left")
+                return entry
+            suite = self._bench_call(wt, f"g{gen}-stack")
+            cmp = bench_mod.compare(base, suite)
+            d = self.policy.decide(cmp, {"ok": True})
+            entry.update(accepted=d.accepted, reason=d.reason, score=d.score, delta=cmp["delta"],
+                         per_task=cmp["per_task"], summary=cmp["candidate"])
+        finally:
+            self._remove_worktree(wt)
+        return entry
 
     def publish(self) -> dict:
         """Push the champion, every evolve/* branch and the generation tags to `origin` (best-effort)."""
@@ -355,8 +510,8 @@ class Evolution:
             self.state["running"]["phase"] = phase
             self._save()
 
-    def run(self, generations: int = 1, candidates: int = 2) -> list[dict]:
-        return [self.generation(candidates) for _ in range(generations)]
+    def run(self, generations: int = 1, candidates: int = 2, **opts) -> list[dict]:
+        return [self.generation(candidates, **opts) for _ in range(generations)]
 
     # --- absorb ---------------------------------------------------------
     def absorb(self, source: str, focus: str = "", top: int = 2, run: bool = False) -> dict:

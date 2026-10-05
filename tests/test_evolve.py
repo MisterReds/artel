@@ -131,3 +131,68 @@ def test_eval_tasks_are_well_formed():
     for t in tasks:
         assert t["goal"] and t["hidden"]
         assert (Path(t["dir"]) / "hidden").exists()
+
+
+# --- population generations: parallel, screening, finalists, stacking, budget -------------------
+
+POP = [("fix a", {"fix_a.txt": "1"}), ("fix b", {"fix_b.txt": "1"}), ("fix c one", {"artel/__init__.py": "C = 1\n"}),
+       ("fix c two", {"artel/__init__.py": "C = 2\n"}), ("break d", {"break_d.txt": "1"}),
+       ("break tests", {"tests/test_broken.py": "def test_no():\n    assert False\n"})]
+
+
+def _pop_suite(code, tasks=None):
+    code = Path(code)
+    ok = {"a": (code / "fix_a.txt").exists(), "b": (code / "fix_b.txt").exists(),
+          "c": "C =" in (code / "artel" / "__init__.py").read_text(), "d": not (code / "break_d.txt").exists()}
+    rows = [{"id": t, "pass": v, "partial": 1.0 if v else 0.0, "cost_usd": 0.5} for t, v in ok.items()
+            if not tasks or t in tasks]
+    return {"results": rows, "summary": bench.summarize(rows)}
+
+
+def _population(repo, tmp_path):
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    calls = []
+
+    def bench_fn(code, label, tasks=None):
+        calls.append((label, tuple(tasks or ())))
+        return _pop_suite(code, tasks)
+
+    def impl(h, wt):
+        for rel, text in dict(POP)[h.title].items():
+            (wt / rel).parent.mkdir(parents=True, exist_ok=True)
+            (wt / rel).write_text(text)
+        return {"cost_usd": 0.1}
+
+    ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    return ev, calls, [Hypothesis(t, "r", "p") for t, _ in POP]
+
+
+def test_population_screens_and_stacks_compatible_winners(repo, tmp_path):
+    ev, calls, hyps = _population(repo, tmp_path)
+    s = ev.generation(hypotheses=hyps, parallel=3, screen_tasks=["a", "d"])
+    led = {e["branch"].split("-", 2)[-1]: e for e in ev.ledger() if e["kind"] == "candidate"}
+    assert led["break-tests"]["stage"] == "tests"
+    assert led["break-d"]["stage"] == "screen" and "regressed" in led["break-d"]["reason"]
+    stack = next(e for e in ev.ledger() if e["kind"] == "stack")
+    assert set(stack["included"]) == {"evolve/g1-1-fix-a", "evolve/g1-2-fix-b", "evolve/g1-3-fix-c-one"}
+    assert stack["excluded"] == {"evolve/g1-4-fix-c-two": "merge conflict"}
+    assert s["accepted"] == stack["included"] and stack["merged"]
+    # the merged champion carries all three independent improvements
+    assert _pop_suite(repo)["summary"]["pass_rate"] == 1.0
+    assert "evolve/gen-1" in git(repo, "branch", "--list", "evolve/gen-1")
+    # screening ran on the subset only; full benchmarks only for survivors (+ baseline + stack)
+    screens = [c for c in calls if "screen" in c[0]]
+    assert len(screens) == 5 and all(c[1] == ("a", "d") for c in screens)  # all that passed tests
+    assert len([c for c in calls if c[0].startswith("g1-") and "screen" not in c[0] and "stack" not in c[0]]) == 4
+
+
+def test_population_finalists_cutoff_and_budget(repo, tmp_path):
+    ev, calls, hyps = _population(repo, tmp_path)
+    ev.generation(hypotheses=hyps, parallel=2, screen_tasks=["a", "d"], finalists=1)
+    led = [e for e in ev.ledger() if e["kind"] == "candidate"]
+    assert sum(1 for e in led if e.get("stage") == "benchmarked") == 1
+    assert any("screened out" in e["reason"] for e in led)
+    ev2, _, hyps2 = _population(repo, tmp_path / "second")
+    s = ev2.generation(hypotheses=hyps2, parallel=1, budget_usd=0.15)
+    stages = s["stages"]
+    assert stages["skipped"] >= 4  # budget stopped new implementations after the first one or two

@@ -261,7 +261,9 @@ def cmd_doctor(args) -> int:
 
 def cmd_evolve(args) -> int:
     ev = _evolution(args)
-    for s in ev.run(args.generations, args.candidates):
+    opts = {"parallel": args.parallel_candidates, "finalists": args.finalists, "budget_usd": args.budget,
+            "stack": not args.no_stack, "screen_tasks": args.screen_tasks.split(",") if args.screen_tasks else None}
+    for s in ev.run(args.generations, args.candidates, **opts):
         print(json.dumps(s, ensure_ascii=False))
     return 0
 
@@ -378,7 +380,12 @@ def main(argv=None) -> int:
     ev = sub.add_parser("evolve", help="recursive self-improvement: branches, measurement, selection")
     evo_common(ev)
     ev.add_argument("--generations", type=int, default=1)
-    ev.add_argument("--candidates", type=int, default=2)
+    ev.add_argument("--candidates", type=int, default=2, help="hypotheses per generation (10, 20, 100…)")
+    ev.add_argument("--parallel-candidates", type=int, default=2, help="candidates implemented at the same time")
+    ev.add_argument("--screen-tasks", help="cheap benchmark subset every candidate runs first, e.g. adr-doc,csv-report")
+    ev.add_argument("--finalists", type=int, help="how many screened candidates get the full benchmark")
+    ev.add_argument("--budget", type=float, help="USD cap for one generation")
+    ev.add_argument("--no-stack", action="store_true", help="merge only the single best candidate")
     ev.set_defaults(fn=cmd_evolve)
 
     ab = sub.add_parser("absorb", help="analyse another harness and port its best features")
