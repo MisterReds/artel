@@ -178,3 +178,86 @@ def test_event_log_is_complete_and_ordered(cfg):
     assert calls == results
     actors_started = {e["actor"] for e in ev if e["kind"] == "agent/start"}
     assert {e["actor"] for e in ev if e["kind"] == "llm/response"} <= actors_started
+
+
+# --- Pillar: loop detector ----------------------------------------------------------------------
+
+def test_loop_detector_tool_calls():
+    from artel.agent import TOOL_LOOP_THRESHOLD, LoopDetector
+
+    d = LoopDetector()
+    verdicts = [d.observe_tool("t", {"b": 1, "a": 2}) for _ in range(TOOL_LOOP_THRESHOLD)]
+    assert verdicts == [None] * (TOOL_LOOP_THRESHOLD - 1) + ["warn"]
+    assert d.observe_tool("t", {"a": 2, "b": 1}) == "stop"
+    d = LoopDetector()
+    for _ in range(TOOL_LOOP_THRESHOLD - 1):
+        d.observe_tool("t", {"a": 1})
+    assert d.observe_tool("t", {"a": 2}) is None          # a different call resets the counter
+    assert d.observe_tool("t", {"a": 2}) is None
+
+
+def test_loop_detector_text():
+    from artel.agent import LoopDetector
+
+    d = LoopDetector()
+    assert d.observe_text("Let me think about this problem step by step, carefully. " * 3) is None
+    assert d.observe_text("I will now try the exact same thing again and again. " * 14) == "warn"
+    assert d.observe_text("I will now try the exact same thing again and again. " * 14) == "stop"
+    prose = " ".join(f"word{i} and then some other text number {i * 7919}" for i in range(200))
+    assert LoopDetector().observe_text(prose) is None
+    assert LoopDetector().observe_text("-" * 400) is None
+
+
+class _RepeatLLM:
+    def __init__(self, blocks_fn):
+        self.blocks_fn, self.seen = blocks_fn, []
+
+    def chat(self, *, messages, **kw):
+        from artel.plugins.llm_providers import LLMResponse
+
+        self.seen.append(messages[-1])
+        blocks = self.blocks_fn(len(self.seen))
+        return LLMResponse(blocks=blocks, raw_content=blocks, stop_reason="tool_use", usage={}, model="x")
+
+
+def _loop_run(cfg, blocks_fn):
+    from artel.agent import run_loop
+
+    project, _ = run_goal("loop", cfg)
+    k = new_kernel(cfg)
+    llm = _RepeatLLM(blocks_fn)
+    k.provide(f"llm:{cfg['provider']}", llm)
+    ctx = ToolContext(k, project, role="librarian", workspace=project.shared)
+    out = run_loop(k, project, role="librarian", system="s", first_user="u", ctx=ctx, max_turns=30, purpose="t",
+                   tool_names=["skills_list"])
+    return project, llm, out
+
+
+def test_run_loop_identical_tool_calls_warn_then_stall(cfg):
+    project, llm, out = _loop_run(cfg, lambda n: [{"type": "tool_use", "id": f"c{n}", "name": "skills_list",
+                                                   "input": {}}])
+    assert out.status == "stalled" and "loop" in out.error and out.tool_calls == 5
+    assert any(b.get("type") == "text" and "repeating yourself" in b["text"] for b in llm.seen[-1]["content"])
+    ev = [e for e in project.log.read() if e["kind"] == "agent/loop"]
+    assert [(e["loop_kind"], e["details"]["tool"], e["stage"]) for e in ev] == [
+        ("tool", "skills_list", "warn"), ("tool", "skills_list", "stop")]
+
+
+def test_run_loop_repeated_text_stalls(cfg):
+    text = "I keep saying the very same sentence over and over. " * 12
+    project, llm, out = _loop_run(cfg, lambda n: [{"type": "text", "text": text}])
+    assert out.status == "stalled" and "loop" in out.error
+    assert [e["stage"] for e in project.log.read() if e["kind"] == "agent/loop"] == ["warn", "stop"]
+
+
+def test_loop_detector_negative_cases():
+    from artel.agent import TEXT_LOOP_THRESHOLD, TOOL_LOOP_THRESHOLD, LoopDetector
+
+    d = LoopDetector()
+    assert [d.observe_tool("t", {"a": 1}) for _ in range(TOOL_LOOP_THRESHOLD - 1)] == [None] * (TOOL_LOOP_THRESHOLD - 1)
+    d = LoopDetector()
+    for _ in range(TOOL_LOOP_THRESHOLD * 2):              # alternating calls are never consecutive repeats
+        assert d.observe_tool("t", {"a": 1}) is None
+        assert d.observe_tool("u", {"a": 1}) is None
+    sentence = "Checking the configuration file for the missing key now. "
+    assert LoopDetector().observe_text(sentence * (TEXT_LOOP_THRESHOLD - 3)) is None

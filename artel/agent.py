@@ -5,6 +5,10 @@ A turn that ends without one gets the continuation prompt (Prime Agent goal
 continuation); ``NO_PROGRESS_CAP`` consecutive turns without any tool call end the
 run as ``stalled`` so the manager can back off and retry with a fresh context.
 Every request and response is written to the event log.
+
+``LoopDetector`` watches for a model repeating itself: the same tool call in a row, or
+the same 50-character chunk of text over and over. The first detection injects a
+corrective note; a recurrence ends the run as ``stalled`` with error ``loop``.
 """
 
 from __future__ import annotations
@@ -20,7 +24,77 @@ from .prompts import CONTINUATION
 from .tooling import ToolContext, ToolError
 
 NO_PROGRESS_CAP = 3
+TOOL_LOOP_THRESHOLD = 5      # identical consecutive tool calls that count as a loop
+TEXT_CHUNK_SIZE = 50         # characters per hashed chunk of assistant text
+TEXT_LOOP_THRESHOLD = 10     # repeats of one chunk that count as a loop
+TEXT_HISTORY_CAP = 20_000    # characters of assistant text kept for chunk analysis
+LOOP_NOTE = ("System note: you are repeating yourself ({what}). Stop and change your approach: use a different "
+             "tool or different arguments, or finish with the terminal tool. If you repeat this again the run "
+             "will be ended.")
 _llm_lock = threading.Lock()
+
+
+class LoopDetector:
+    """Spot repeated tool calls and repeated text; each ``observe_*`` returns None, "warn" or "stop".
+
+    Derived from Qwen Code's loopDetectionService.ts (https://github.com/QwenLM/qwen-code),
+    Copyright Qwen Team, licensed under the Apache License, Version 2.0: the consecutive
+    identical tool-call counter (threshold 5) and the 50-char chunk repetition check
+    (threshold 10, chunks clustered within 1.5 chunk lengths on average).
+    The first detection of a kind warns; a recurrence after the warning stops the run.
+    """
+
+    def __init__(self) -> None:
+        self._tool_key: Optional[str] = None
+        self._tool_count = 0
+        self._tool_warned = False
+        self._text_warned = False
+        self._reset_text()
+
+    def _reset_text(self) -> None:
+        self._text = ""
+        self._chunks: dict[str, list[int]] = {}
+
+    def observe_tool(self, name: str, args: Any) -> Optional[str]:
+        key = f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
+        if key != self._tool_key:
+            self._tool_key, self._tool_count, self._tool_warned = key, 1, False
+            return None
+        self._tool_count += 1
+        if self._tool_warned:
+            return "stop"
+        if self._tool_count >= TOOL_LOOP_THRESHOLD:
+            self._tool_warned = True
+            return "warn"
+        return None
+
+    def observe_text(self, text: str) -> Optional[str]:
+        start = len(self._text)
+        self._text += text
+        if len(self._text) > TEXT_HISTORY_CAP:
+            self._text = self._text[-TEXT_HISTORY_CAP // 2:]
+            self._chunks, start = {}, 0
+        looped = False
+        for i in range(max(0, start - TEXT_CHUNK_SIZE + 1), len(self._text) - TEXT_CHUNK_SIZE + 1):
+            chunk = self._text[i:i + TEXT_CHUNK_SIZE]
+            if len(set(chunk)) <= 2:     # separators such as "-----" are not a loop
+                continue
+            seen = self._chunks.setdefault(chunk, [])
+            if seen and seen[-1] >= i:
+                continue
+            seen.append(i)
+            if len(seen) >= TEXT_LOOP_THRESHOLD:
+                recent = seen[-TEXT_LOOP_THRESHOLD:]
+                if (recent[-1] - recent[0]) / (TEXT_LOOP_THRESHOLD - 1) <= TEXT_CHUNK_SIZE * 1.5:
+                    looped = True
+                    break
+        if not looped:
+            return None
+        self._reset_text()
+        if self._text_warned:
+            return "stop"
+        self._text_warned = True
+        return "warn"
 
 
 @dataclass
@@ -117,6 +191,11 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
                        effort=effort, system=system, user=first_user, tools=[t["name"] for t in tools])
     seen_comments = len(project.board.comments(task_id)) if task_id else 0
     idle_turns = 0
+    detector = LoopDetector()
+
+    def loop_event(loop_kind: str, stage: str, **details: Any) -> None:
+        project.log.append("agent/loop", actor=actor, task_id=task_id, loop_kind=loop_kind,
+                           stage=stage, details=details)
 
     for turn in range(1, max_turns + 1):
         if stop_event is not None and stop_event.is_set():
@@ -157,11 +236,28 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
             out.status, out.error = "refused", "model declined the request"
             break
 
+        notes: list[str] = []
+        for b in resp.blocks:
+            if b["type"] == "text" and (verdict := detector.observe_text(b["text"])):
+                loop_event("text", verdict, chunk_size=TEXT_CHUNK_SIZE, repeats=TEXT_LOOP_THRESHOLD)
+                if verdict == "stop":
+                    out.status, out.error = "stalled", "loop: repeated text"
+                    break
+                notes.append(LOOP_NOTE.format(what="the same text keeps recurring"))
+        if out.error:
+            break
+
         uses = [b for b in resp.blocks if b["type"] == "tool_use"]
         if uses:
             idle_turns = 0
             results = []
             for b in uses:
+                if verdict := detector.observe_tool(b["name"], b["input"]):
+                    loop_event("tool", verdict, tool=b["name"], input=_short(b["input"]), count=TOOL_LOOP_THRESHOLD)
+                    if verdict == "stop":
+                        out.status, out.error = "stalled", f"loop: repeated tool call {b['name']}"
+                        break
+                    notes.append(LOOP_NOTE.format(what=f"identical {b['name']} calls"))
                 out.tool_calls += 1
                 project.log.append("tool/call", actor=actor, task_id=task_id, tool=b["name"], input=b["input"],
                                    call_id=b["id"])
@@ -171,6 +267,8 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
                 out.digest.append(f"TOOL {b['name']}({_short(b['input'])}) -> {'ERROR ' if is_error else ''}"
                                   f"{_short(text, 300)}")
                 results.append({"type": "tool_result", "tool_use_id": b["id"], "content": text, "is_error": is_error})
+            if out.error:
+                break
             content: list[dict] = results
             if task_id:
                 comments = project.board.comments(task_id)
@@ -179,6 +277,7 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
                 if fresh:
                     content = results + [{"type": "text", "text": "Message from the human operator:\n" +
                                           "\n".join(c["body"] for c in fresh)}]
+            content = content + [{"type": "text", "text": n} for n in notes]
             messages.append({"role": "user", "content": content})
             if ctx.terminal:
                 out.status, out.terminal = "terminal", ctx.terminal
@@ -186,15 +285,16 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
             continue
 
         if resp.stop_reason == "max_tokens":
-            messages.append({"role": "user", "content": "Your output was cut off at the token limit. Continue, "
-                                                         "and put large content into files with tools."})
+            messages.append({"role": "user", "content": "\n\n".join(
+                ["Your output was cut off at the token limit. Continue, and put large content into files with "
+                 "tools."] + notes)})
             continue
         idle_turns += 1
         if idle_turns >= NO_PROGRESS_CAP:
             out.status, out.error = "stalled", f"{idle_turns} consecutive turns without tool use"
             break
         project.log.append("agent/continuation", actor=actor, task_id=task_id, idle_turns=idle_turns)
-        messages.append({"role": "user", "content": CONTINUATION})
+        messages.append({"role": "user", "content": "\n\n".join([CONTINUATION] + notes)})
 
     project.log.append("agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
                        terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage, error=out.error)
