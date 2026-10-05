@@ -25,6 +25,8 @@ from typing import Optional
 
 import yaml
 
+from ..tooling import window_text
+
 DEFAULT_TASKS = Path(__file__).resolve().parents[2] / "evals" / "tasks"
 METRICS = ("pass", "partial", "cost_usd", "tokens", "duration_s", "attempts", "rejections", "stalls", "audit_rounds")
 
@@ -77,7 +79,7 @@ def run_hidden(task: dict, workdir: Path) -> dict:
     for cmd in task.get("hidden", []):
         try:
             p = subprocess.run(cmd, shell=True, cwd=workdir, capture_output=True, text=True, timeout=300)
-            results.append({"command": cmd, "exit": p.returncode, "output": (p.stdout + p.stderr)[-1500:]})
+            results.append({"command": cmd, "exit": p.returncode, "output": window_text(p.stdout + p.stderr, 1500)})
         except subprocess.TimeoutExpired:
             results.append({"command": cmd, "exit": -1, "output": "timeout"})
     if dest.exists():
@@ -100,7 +102,7 @@ def run_task(task: dict, code: Path, config: dict, out_dir: Path) -> dict:
     try:
         p = subprocess.run(cmd, cwd=home, env=env, capture_output=True, text=True,
                            timeout=int(task.get("timeout_s", 1800)))
-        exit_code, tail = p.returncode, (p.stdout + p.stderr)[-3000:]
+        exit_code, tail = p.returncode, window_text(p.stdout + p.stderr, 3000)
     except subprocess.TimeoutExpired as exc:
         exit_code, tail = -1, f"timeout after {task.get('timeout_s')}s\n{str(exc.stdout or '')[-1500:]}"
     pdir = _project_dir(home)

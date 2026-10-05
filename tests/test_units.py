@@ -124,3 +124,18 @@ def test_openai_message_translation():
     assert [m["role"] for m in out] == ["system", "user", "assistant", "tool", "user"]
     assert out[2]["tool_calls"][0]["function"]["name"] == "bash"
     assert out[3] == {"role": "tool", "tool_call_id": "c1", "content": "a.txt"}
+
+
+def test_window_text_keeps_head_and_larger_tail():
+    from artel.tooling import window_text
+    short = "short output"
+    assert window_text(short, 100) == short
+    lines = ["===== test session starts ====="] + [f"tests/test_x.py::test_{i} PASSED" for i in range(500)]
+    out = "\n".join(lines + ["===== 412 passed in 3.2s ====="])
+    win = window_text(out, 1000)
+    assert len(win) <= 1000
+    assert win.startswith("===== test session starts")
+    assert win.endswith("412 passed in 3.2s =====")
+    assert "chars cut]" in win
+    head, tail = win.split("\n…[", 1)[0], win.rsplit("]…\n", 1)[1]
+    assert len(tail) > len(head)

@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from ..kernel import ToolSpec
-from ..tooling import ToolContext, ToolError
+from ..tooling import ToolContext, ToolError, window_text
 
 PLUGIN = {"name": "artel.plugins.builtin_tools", "version": "1",
           "provides": ["tool:bash", "tool:read_file", "tool:write_file", "tool:edit_file", "tool:list_files",
@@ -33,7 +33,7 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
         raise ToolError(f"timed out after {timeout}s; partial output:\n{_clip(str(exc.stdout or ''), 4000)}")
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
     result = f"[exit {proc.returncode}]\n{_clip(out)}"
-    ctx.outputs.append(f"$ {command}\n{result[:3000]}")
+    ctx.outputs.append(f"$ {command}\n{window_text(result, 3000)}")
     return result
 
 

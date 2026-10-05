@@ -7,6 +7,25 @@ from pathlib import Path
 from typing import Any, Optional
 
 
+def window_text(text: str, limit: int, head_frac: float = 0.3, marker: str = "\n…[{n} chars cut]…\n") -> str:
+    """Keep the head and the (larger) tail of ``text``, cutting the middle; total length is ~``limit``.
+
+    Tails carry summary lines ("412 passed"), heads carry the command context. Idea adapted from
+    Qwen Code packages/core/src/goals/goal-evidence.ts (Apache-2.0).
+    """
+    if len(text) <= limit:
+        return text
+    cut = len(text) - limit
+    # the marker text depends on the cut size, so size it with the final count and give the rest to head/tail
+    for _ in range(3):
+        mark = marker.format(n=cut)
+        keep = max(limit - len(mark), 2)
+        head = int(keep * min(max(head_frac, 0.0), 0.5))
+        cut = len(text) - keep
+    mark = marker.format(n=cut)
+    return text[:head] + mark + (text[len(text) - (keep - head):] if keep - head else "")
+
+
 class ToolError(Exception):
     """Raised by a tool to return ``is_error`` to the model without crashing the loop."""
 
