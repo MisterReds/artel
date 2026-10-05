@@ -40,7 +40,13 @@ class ToolContext:
             target = (self.project.shared / Path(*p.parts[1:])).resolve()
         else:
             target = (self.workspace / p).resolve()
-        if target != root and root not in target.parents:
+        def inside(base: Path) -> bool:
+            base = base.resolve()
+            return target == base or base in target.parents
+
+        if not inside(root) and not inside(self.project.shared):
+            if not write and any(inside(r) for r in getattr(self.project, "refs", [])):
+                return target  # read-only reference sources
             raise ToolError(f"path {path!r} is outside the project; use a workspace-relative path or shared/...")
         if write:
             protected = {"events.jsonl", "board.db", "project.json"}

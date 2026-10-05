@@ -1,0 +1,9 @@
+id: adr-doc
+kind: writing
+goal: >-
+  Напиши ADR (architecture decision record) adr-001.md о выборе SQLite против PostgreSQL для локального
+  трекера задач на одного пользователя. Обязательные разделы: Context, Decision, Alternatives, Consequences.
+  Учти конкурентную запись, бэкапы и миграции. Объём 300-900 слов.
+timeout_s: 1200
+hidden:
+  - python3 .artel_eval/check_adr.py

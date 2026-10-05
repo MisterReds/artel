@@ -1,0 +1,9 @@
+id: wordfreq-cli
+kind: build
+goal: >-
+  Создай Python-пакет wordfreq: функция top_words(text: str, n: int) -> list[tuple[str, int]] возвращает n самых
+  частых слов (регистр не важен, пунктуация отбрасывается, при равенстве частот — по алфавиту) и CLI
+  `python -m wordfreq FILE -n N`, печатающий строки вида `слово<TAB>число`. Нужны pytest-тесты и README.
+timeout_s: 1800
+hidden:
+  - python3 .artel_eval/check_wordfreq.py

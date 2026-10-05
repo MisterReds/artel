@@ -10,7 +10,7 @@ from ..kernel import ToolSpec
 from ..tooling import ToolContext, ToolError
 
 MAX_OUT = 20_000
-EXEC_ROLES = ("worker", "reviewer", "auditor")
+EXEC_ROLES = ("worker", "reviewer", "auditor", "evolver", "absorber")
 
 
 def _clip(text: str, limit: int = MAX_OUT) -> str:
@@ -119,6 +119,7 @@ def setup(kernel) -> None:
         "list_files", "List files under a directory (workspace-relative or shared/).",
         {**S, "properties": {"path": {"type": "string"}, "depth": {"type": "integer"}}, "required": []},
         list_files, roles=EXEC_ROLES + ("librarian", "refiner", "manager")))
+
     kernel.register_tool(ToolSpec(
         "memory_write", "Persist a durable note to your MEMORY.md (facts, decisions, lessons about this project). "
         "mode=append (default) or replace.",

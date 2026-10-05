@@ -25,7 +25,8 @@ from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Optional
 
 from . import prompts
-from .agent import Outcome, run_loop
+from .agent import Outcome
+from .runtimes import run_agent
 from .project import Persona, Project, persona_from_dict
 from .tooling import ToolContext
 
@@ -86,7 +87,7 @@ class Manager:
         user = (f"<goal>\n{self.project.goal}\n</goal>\n\nSkill library index:\n{skills.index() or '(empty)'}\n\n"
                 "Plan the project now.")
         ctx = ToolContext(self.kernel, self.project, role="planner", workspace=self.project.shared)
-        out = run_loop(self.kernel, self.project, role="planner", system=prompts.PLANNER, first_user=user, ctx=ctx,
+        out = run_agent(self.kernel, self.project, role="planner", system=prompts.PLANNER, first_user=user, ctx=ctx,
                        max_turns=12, purpose="plan", stop_event=self.stop)
         if out.name != "submit_plan":
             raise RuntimeError(f"planning failed: {out.status} {out.error}")
@@ -167,7 +168,7 @@ class Manager:
         ctx = ToolContext(self.kernel, self.project, role="worker", workspace=workspace, persona=persona, task=task,
                           run_id=run_id)
         try:
-            out = run_loop(self.kernel, self.project, role="worker", system=self.worker_system(persona),
+            out = run_agent(self.kernel, self.project, role="worker", system=self.worker_system(persona),
                            first_user=self.task_card(task), ctx=ctx, max_turns=int(self.b["max_turns_per_run"]),
                            purpose="work", persona=persona, stop_event=self.stop)
         except Exception as exc:  # noqa: BLE001 - a crashed run is retried, never fatal
@@ -175,7 +176,8 @@ class Manager:
         status = {"task_submit": "submitted", "task_block": "blocked"}.get(out.name or "", out.status)
         summary = out.payload.get("summary") or out.payload.get("reason") or out.error
         self.board.finish_run(run_id, status, summary or "", turns=out.turns, tool_calls=out.tool_calls,
-                              tokens_in=out.usage["input_tokens"], tokens_out=out.usage["output_tokens"])
+                              tokens_in=out.usage["input_tokens"], tokens_out=out.usage["output_tokens"],
+                              cost_usd=round(out.cost_usd, 6))
         return out, ctx
 
     def run_gates(self, task: dict) -> list[dict]:
@@ -199,7 +201,7 @@ class Manager:
                 f"</summary>\n<evidence>\n{task['evidence']}\n</evidence>\n</submission>\n\n"
                 f"<gate_results>\n{gate_text}\n</gate_results>\n\nReview it now.")
         ctx = ToolContext(self.kernel, self.project, role="reviewer", workspace=self.project.shared, task=task)
-        out = run_loop(self.kernel, self.project, role="reviewer", system=prompts.REVIEWER, first_user=user, ctx=ctx,
+        out = run_agent(self.kernel, self.project, role="reviewer", system=prompts.REVIEWER, first_user=user, ctx=ctx,
                        max_turns=25, purpose="review", stop_event=self.stop)
         return gates, out
 
@@ -213,7 +215,7 @@ class Manager:
                 "\n".join(f"[{t['status']}] {t['id']} ({t['assignee']}) {t['title']}" for t in self.board.list()) +
                 "\n\nDecide now.")
         ctx = ToolContext(self.kernel, self.project, role="manager", workspace=self.project.shared, task=task)
-        return run_loop(self.kernel, self.project, role="manager", system=prompts.MANAGER, first_user=user, ctx=ctx,
+        return run_agent(self.kernel, self.project, role="manager", system=prompts.MANAGER, first_user=user, ctx=ctx,
                         max_turns=15, purpose="replan", stop_event=self.stop)
 
     def job_audit(self) -> Outcome:
@@ -225,14 +227,14 @@ class Manager:
                 f"\n</completed_tasks>\n\n<roster>\n{roster}\n</roster>\n\nAudit round "
                 f"{self.project.meta.get('audit_rounds', 0) + 1}. Inspect shared/ and audit now.")
         ctx = ToolContext(self.kernel, self.project, role="auditor", workspace=self.project.shared)
-        return run_loop(self.kernel, self.project, role="auditor", system=prompts.AUDITOR, first_user=user, ctx=ctx,
+        return run_agent(self.kernel, self.project, role="auditor", system=prompts.AUDITOR, first_user=user, ctx=ctx,
                         max_turns=30, purpose="audit", stop_event=self.stop)
 
     def job_skill_review(self, task: dict, out: Outcome) -> None:
         user = (f"{self.task_card(task, include_feedback=False)}\n\nOutcome: accepted by review.\n"
                 f"Result: {task.get('result') or ''}\n\n<trajectory>\n{out.digest_text()}\n</trajectory>")
         ctx = ToolContext(self.kernel, self.project, role="librarian", workspace=self.project.shared, task=task)
-        res = run_loop(self.kernel, self.project, role="librarian", system=prompts.LIBRARIAN, first_user=user,
+        res = run_agent(self.kernel, self.project, role="librarian", system=prompts.LIBRARIAN, first_user=user,
                        ctx=ctx, max_turns=15, purpose="skill_review")
         self.project.log.append("skills/reviewed", task_id=task["id"], status=res.status,
                                 summary=res.payload.get("summary", ""), actions=ctx.state.get("skill_actions", []))
@@ -245,7 +247,7 @@ class Manager:
                 f"{self.project.prompt_notes() or '(empty)'}\n</current_prompt_notes>\n\n<trajectory_digest>\n"
                 f"{trajectory_digest(self.project)}\n</trajectory_digest>")
         ctx = ToolContext(self.kernel, self.project, role="refiner", workspace=self.project.shared)
-        res = run_loop(self.kernel, self.project, role="refiner", system=prompts.REFINER, first_user=user, ctx=ctx,
+        res = run_agent(self.kernel, self.project, role="refiner", system=prompts.REFINER, first_user=user, ctx=ctx,
                        max_turns=12, purpose="refine")
         self.project.log.append("harness/refined", status=res.status, summary=res.payload.get("summary", ""),
                                 edits=ctx.state.get("harness_edits", []))
@@ -535,9 +537,9 @@ def new_kernel(config: dict):
 
 
 def run_goal(goal: str, config: dict, name: Optional[str] = None, stop_event: Optional[threading.Event] = None,
-             kernel=None) -> tuple[Project, str]:
+             kernel=None, workdir=None, refs: tuple = (), seed=None) -> tuple[Project, str]:
     kernel = kernel or new_kernel(config)
-    project = Project.create(goal, config, name=name)
+    project = Project.create(goal, config, name=name, workdir=workdir, refs=refs, seed=seed)
     return project, Manager(kernel, project, stop_event).run()
 
 

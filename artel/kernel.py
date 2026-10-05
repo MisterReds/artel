@@ -162,6 +162,7 @@ DEFAULT_PLUGINS = [
     "artel.plugins.builtin_tools",
     "artel.plugins.skill_tools",
     "artel.plugins.board_tools",
+    "artel.plugins.evolve_tools",
 ]
 
 

@@ -8,7 +8,7 @@ from ..kernel import ToolSpec
 from ..skills import SkillError
 from ..tooling import ToolContext, ToolError
 
-READ_ROLES = ("worker", "reviewer", "auditor", "librarian", "refiner", "manager", "planner")
+READ_ROLES = ("worker", "reviewer", "auditor", "librarian", "refiner", "manager", "planner", "evolver", "absorber")
 
 
 def _store(ctx: ToolContext):

@@ -1,0 +1,10 @@
+id: fix-inventory
+kind: bugfix
+goal: >-
+  В каталоге проекта лежит модуль inventory.py. Пользователи жалуются: остатки иногда уходят в минус, а итоговая
+  стоимость склада считается неверно. Найди и исправь ошибки, не меняя публичный API, и добавь регрессионные
+  pytest-тесты.
+seed: seed
+timeout_s: 1800
+hidden:
+  - python3 .artel_eval/check_inventory.py

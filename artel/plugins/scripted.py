@@ -182,6 +182,16 @@ class ScriptedProvider:
                          evidence="review/verdict and gate/result events in the trajectory")]
         return [_use("refine_done", summary="Added one project note.")]
 
+    def _evolver(self, messages, system):
+        return [_use("propose_hypotheses", hypotheses=[{
+            "title": "Add an evolution marker file", "rationale": "scripted evidence",
+            "plan": "write EVOLVED.md", "expected": "no metric change", "files": ["EVOLVED.md"]}])]
+
+    def _absorber(self, messages, system):
+        return [_use("absorb_report", summary="scripted analysis", features=[{
+            "name": "marker", "description": "a marker feature", "source_files": ["README.md"],
+            "value": "demonstrates absorb", "fit": 0.9, "target": "artel/", "port_plan": "write ABSORBED.md"}])]
+
     def _replan(self, messages, system):
         return [_use("replan_decision", action="retry", rationale="transient failure",
                      guidance="Re-read the criteria and verify each with a command.")]

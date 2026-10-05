@@ -1,0 +1,10 @@
+id: csv-report
+kind: data
+goal: >-
+  В каталоге проекта лежит sales.csv (date,region,product,qty,price). Сделай скрипт report.py и сгенерируй им
+  report.json: {"total_revenue": число, "by_region": {регион: выручка}, "top_product": название товара с
+  наибольшей выручкой}. Выручка = qty*price, округление до 2 знаков.
+seed: seed
+timeout_s: 1500
+hidden:
+  - python3 .artel_eval/check_report.py

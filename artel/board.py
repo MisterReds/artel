@@ -72,6 +72,7 @@ CREATE TABLE IF NOT EXISTS runs (
     tool_calls  INTEGER NOT NULL DEFAULT 0,
     tokens_in   INTEGER NOT NULL DEFAULT 0,
     tokens_out  INTEGER NOT NULL DEFAULT 0,
+    cost_usd    REAL NOT NULL DEFAULT 0,
     summary     TEXT,
     heartbeat   REAL,
     started_at  REAL NOT NULL,
@@ -93,6 +94,9 @@ class Board:
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.executescript(SCHEMA)
+        cols = {r[1] for r in self._db.execute("PRAGMA table_info(runs)")}
+        if "cost_usd" not in cols:  # boards created before cost tracking
+            self._db.execute("ALTER TABLE runs ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0")
 
     # --- helpers --------------------------------------------------------
     def _event(self, kind: str, **payload: Any) -> None:

@@ -28,6 +28,8 @@ def _cfg(args) -> dict:
     cfg = load_config(getattr(args, "config", None))
     if getattr(args, "provider", None):
         cfg["provider"] = args.provider
+    if getattr(args, "runtime", None):
+        cfg["runtime"] = args.runtime
     if getattr(args, "model", None):
         cfg["models"] = {**cfg["models"], "default": args.model}
     if getattr(args, "parallel", None):
@@ -83,7 +85,8 @@ def cmd_run(args) -> int:
     holder: dict = {}
 
     def target():
-        holder["result"] = run_goal(args.goal, cfg, name=args.name, stop_event=stop)
+        holder["result"] = run_goal(args.goal, cfg, name=args.name, stop_event=stop, workdir=args.workdir,
+                                    refs=tuple(args.ref or ()), seed=args.seed)
 
     th = threading.Thread(target=target)
     th.start()
@@ -197,6 +200,98 @@ def cmd_refine(args) -> int:
     return 0
 
 
+def _repo(args) -> "Path":
+    from pathlib import Path
+
+    from .evolve.engine import git
+
+    start = Path(getattr(args, "repo", None) or Path(__file__).resolve().parent.parent)
+    return Path(git(start, "rev-parse", "--show-toplevel"))
+
+
+def _evolution(args):
+    from .evolve.engine import Evolution, Policy
+    from .project import artel_home
+
+    cfg = _cfg(args)
+    repo = _repo(args)
+    tasks = args.tasks.split(",") if getattr(args, "tasks", None) else None
+    return Evolution(repo, artel_home() / "evolution" / repo.name, cfg, cfg, tasks=tasks, policy=Policy(),
+                     parallel=getattr(args, "parallel_bench", 2) or 2)
+
+
+def cmd_bench(args) -> int:
+    import time
+    from pathlib import Path
+
+    from .evolve import bench
+    from .project import artel_home
+
+    code = Path(args.code) if args.code else _repo(args)
+    tasks = bench.load_tasks(only=args.tasks.split(",") if args.tasks else None)
+    out = artel_home() / "bench" / f"{args.label or 'manual'}-{int(time.time())}"
+    suite = bench.run_suite(code, _cfg(args), out, tasks=tasks, parallel=args.parallel_bench, label=args.label or "",
+                            repeats=args.repeats)
+    for r in suite["results"]:
+        print(f"{'PASS' if r.get('pass') else 'FAIL'} {r['id']:<16} partial {r.get('partial', 0):.2f}  "
+              f"${r.get('cost_usd', 0):.3f}  {r.get('duration_s', 0)}s  rejections {r.get('rejections', 0)}  "
+              f"stalls {r.get('stalls', 0)}  {r.get('status', r.get('error', '')[:80])}")
+    print(json.dumps(suite["summary"], ensure_ascii=False))
+    print(f"suite: {out / 'suite.json'}")
+    return 0
+
+
+def cmd_doctor(args) -> int:
+    from pathlib import Path
+
+    from .evolve import diagnose
+    from .project import artel_home
+
+    code = Path(args.code) if args.code else _repo(args)
+    home = Path(args.home) if args.home else artel_home()
+    projects = sorted(home.rglob("project.json"))
+    bench_suite = json.loads(Path(args.bench).read_text()) if args.bench else None
+    rep = diagnose.doctor(code, [p.parent for p in projects], bench=bench_suite, run_tests=not args.no_tests)
+    md = diagnose.render_markdown(rep)
+    print(md)
+    if args.json:
+        Path(args.json).write_text(json.dumps(rep, ensure_ascii=False, indent=1))
+    return 0 if not rep["health"] or rep["health"]["ok"] else 1
+
+
+def cmd_evolve(args) -> int:
+    ev = _evolution(args)
+    for s in ev.run(args.generations, args.candidates):
+        print(json.dumps(s, ensure_ascii=False))
+    return 0
+
+
+def cmd_absorb(args) -> int:
+    ev = _evolution(args)
+    out = ev.absorb(args.source, focus=args.focus or "", top=args.top, run=args.run)
+    print(f"{out['source']} ({out['license']}): {out['summary'][:300]}")
+    for f in out["features"]:
+        print(f"  {f.get('fit', 0):.2f}  {f['name']} → {f.get('target', '?')}: {f.get('value', '')[:120]}")
+    if out.get("generation"):
+        print(json.dumps(out["generation"], ensure_ascii=False))
+    return 0
+
+
+def cmd_evolution(args) -> int:
+    ev = _evolution(args)
+    for e in ev.ledger():
+        if e["kind"] in ("candidate", "absorb_candidate"):
+            mark = "MERGED" if e.get("merged") else ("ok" if e.get("accepted") else "rejected")
+            print(f"g{e['generation']} {mark:<8} {e['branch']:<52} {e.get('reason', '')[:110]}")
+        elif e["kind"] == "baseline":
+            s = e["summary"]
+            print(f"baseline {e['commit'][:10]}  pass {s['pass_rate']:.0%}  partial {s['partial_mean']:.2f}  "
+                  f"${s['cost_usd']}  {s['duration_mean_s']}s")
+        elif e["kind"] == "absorb":
+            print(f"absorb   {e['source']} ({e['license']}): {', '.join(e['features'][:6])}")
+    return 0
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(prog="artel", description="Artel — a self-improving multi-agent harness")
     ap.add_argument("--config", help="extra YAML config merged over ~/.artel/artel.yaml")
@@ -210,6 +305,10 @@ def main(argv=None) -> int:
     r.add_argument("--parallel", type=int)
     r.add_argument("--max-tokens-total", type=int)
     r.add_argument("--web", action="store_true", help="also serve the dashboard")
+    r.add_argument("--workdir", help="work directly in this directory (e.g. a git worktree) instead of shared/")
+    r.add_argument("--ref", action="append", help="read-only source directory the team may study (repeatable)")
+    r.add_argument("--seed", help="copy this directory into the deliverables directory before planning")
+    r.add_argument("--runtime", choices=["native", "claude_code"])
     r.add_argument("--port", type=int, default=8765)
     r.set_defaults(fn=cmd_run)
 
@@ -247,6 +346,47 @@ def main(argv=None) -> int:
     sk.add_argument("--include", default="*")
     sk.add_argument("--force", action="store_true")
     sk.set_defaults(fn=cmd_skills)
+
+    def evo_common(p):
+        p.add_argument("--repo", help="Artel git repo to evolve (default: this installation)")
+        p.add_argument("--tasks", help="comma-separated benchmark task ids")
+        p.add_argument("--parallel-bench", type=int, default=2)
+        p.add_argument("--runtime", choices=["native", "claude_code"])
+        p.add_argument("--provider", choices=["anthropic", "openai_compat", "scripted"])
+
+    bn = sub.add_parser("bench", help="run the benchmark suite with hidden checks")
+    evo_common(bn)
+    bn.add_argument("--code", help="code revision directory to measure (default: this repo)")
+    bn.add_argument("--label")
+    bn.add_argument("--repeats", type=int, default=1)
+    bn.set_defaults(fn=cmd_bench)
+
+    dr = sub.add_parser("doctor", help="code health + trajectory diagnostics")
+    dr.add_argument("--code")
+    dr.add_argument("--repo")
+    dr.add_argument("--home", help="directory whose projects to analyse (default: ARTEL_HOME)")
+    dr.add_argument("--bench", help="suite.json to include")
+    dr.add_argument("--json", help="also write the report as JSON")
+    dr.add_argument("--no-tests", action="store_true")
+    dr.set_defaults(fn=cmd_doctor)
+
+    ev = sub.add_parser("evolve", help="recursive self-improvement: branches, measurement, selection")
+    evo_common(ev)
+    ev.add_argument("--generations", type=int, default=1)
+    ev.add_argument("--candidates", type=int, default=2)
+    ev.set_defaults(fn=cmd_evolve)
+
+    ab = sub.add_parser("absorb", help="analyse another harness and port its best features")
+    evo_common(ab)
+    ab.add_argument("source", help="git URL, owner/repo, or local path")
+    ab.add_argument("--focus")
+    ab.add_argument("--top", type=int, default=2)
+    ab.add_argument("--run", action="store_true", help="implement and measure the top features as candidates")
+    ab.set_defaults(fn=cmd_absorb)
+
+    el = sub.add_parser("evolution", help="show the experiment ledger")
+    evo_common(el)
+    el.set_defaults(fn=cmd_evolution)
 
     rf = sub.add_parser("refine")
     rf.add_argument("action", choices=["history", "rollback"])

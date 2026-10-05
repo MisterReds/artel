@@ -32,6 +32,7 @@ class Outcome:
     usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0})
     digest: list = field(default_factory=list)
     error: str = ""
+    cost_usd: float = 0.0
 
     @property
     def name(self) -> Optional[str]:
@@ -119,7 +120,11 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
         out.turns = turn
         for k in ("input_tokens", "output_tokens"):
             out.usage[k] += resp.usage.get(k, 0)
-        project.add_usage(resp.usage.get("input_tokens", 0), resp.usage.get("output_tokens", 0))
+        from .analytics import cost_usd as _price
+
+        cost = _price(resp.model, resp.usage.get("input_tokens", 0), resp.usage.get("output_tokens", 0)) or 0.0
+        out.cost_usd += cost
+        project.add_usage(resp.usage.get("input_tokens", 0), resp.usage.get("output_tokens", 0), cost_usd=cost)
         project.log.append("llm/response", actor=actor, role=role, task_id=task_id, turn=turn, model=resp.model,
                            stop_reason=resp.stop_reason, usage=resp.usage, blocks=resp.blocks)
         if ctx.run_id:

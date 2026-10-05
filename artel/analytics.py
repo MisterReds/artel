@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Optional
 
 from .project import Project, artel_home
+from .runtimes import runtime_for
 
 # USD per million tokens (input, output). Unknown models report no cost.
 PRICES = {
@@ -129,7 +130,13 @@ def project_stats(project: Project, live: bool = False) -> dict:
                       and sum(1 for r in my_runs if r["task_id"] == t["id"]) == 1]
         tin = sum(r["tokens_in"] for r in my_runs)
         tout = sum(r["tokens_out"] for r in my_runs)
-        model = "scripted" if scripted else (p.model or project.config["models"].get("worker", default_model))
+        recorded = sum(r.get("cost_usd") or 0 for r in my_runs)
+        if scripted:
+            model = "scripted"
+        elif runtime_for(project.config, "worker") == "claude_code":
+            model = "claude-code:" + (project.config.get("claude_code") or {}).get("model", "sonnet")
+        else:
+            model = p.model or project.config["models"].get("worker", default_model)
         workers.append({
             "name": name, "role": p.role, "model": model,
             "tasks": len(mine), "done": len(accepted), "first_pass": len(first_pass),
@@ -137,7 +144,8 @@ def project_stats(project: Project, live: bool = False) -> dict:
             "runs": len(my_runs),
             "stalls": sum(1 for r in my_runs if r["status"] in ("stalled", "turn_limit", "error", "refused")),
             "blocked": sum(1 for r in my_runs if r["status"] == "blocked"),
-            "tokens_in": tin, "tokens_out": tout, "cost_usd": cost_usd(model, tin, tout),
+            "tokens_in": tin, "tokens_out": tout,
+            "cost_usd": round(recorded, 4) if recorded else cost_usd(model, tin, tout),
             "busy_on": next((t["title"] for t in mine if t["status"] == "running"), None),
         })
 
@@ -155,7 +163,8 @@ def project_stats(project: Project, live: bool = False) -> dict:
         "tasks_total": len(work), "tasks_done": done, "counts": dict(counts),
         "progress": round(done / len(work), 3) if work else 0.0,
         "audit_rounds": meta.get("audit_rounds", 0),
-        "usage": usage, "cost_usd": cost_usd(default_model, usage["input_tokens"], usage["output_tokens"]),
+        "usage": usage, "cost_usd": round(usage["cost_usd"], 4) if usage.get("cost_usd") else
+        cost_usd(default_model, usage["input_tokens"], usage["output_tokens"]),
         "workers": workers, "active_workers": sum(1 for w in workers if w["busy_on"]),
         "attention": attention,
         "last_event": {"ts": last["ts"], "text": _summary(last)} if last else None,

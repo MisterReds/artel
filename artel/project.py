@@ -61,6 +61,10 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "backoff_base_s": 10,                # no-progress retry backoff: 10s, 20s, 40s … (cap 600s)
     "heartbeat_stale_s": 900,
     "plugins": [],
+    "runtime": "native",                 # native | claude_code (Claude Code CLI as the agent)
+    "runtime_by_role": {},               # e.g. {reviewer: native}
+    "claude_code": {"model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
+                    "timeout_s": 2400},
 }
 
 
@@ -110,15 +114,20 @@ class Project:
         self.slug = self.root.name
         self.log = EventLog(self.root / "events.jsonl")
         self.board = Board(self.root / "board.db", log=self.log)
-        self.shared = self.root / "shared"
+        meta = json.loads((self.root / "project.json").read_text()) if (self.root / "project.json").exists() else {}
+        # workdir: the team works directly in an external directory (e.g. a git worktree) instead of shared/
+        self.shared = Path(meta["workdir"]) if meta.get("workdir") else self.root / "shared"
         self.shared.mkdir(parents=True, exist_ok=True)
+        # refs: read-only source directories the team may study (e.g. another harness to absorb from)
+        self.refs = [Path(r) for r in meta.get("refs", [])]
         (self.root / "workers").mkdir(exist_ok=True)
         (self.root / "harness" / "snapshots").mkdir(parents=True, exist_ok=True)
         self._meta_lock = threading.Lock()
 
     # --- lifecycle ------------------------------------------------------
     @classmethod
-    def create(cls, goal: str, config: dict, home: Optional[Path] = None, name: Optional[str] = None) -> "Project":
+    def create(cls, goal: str, config: dict, home: Optional[Path] = None, name: Optional[str] = None,
+               workdir: Optional[Path] = None, refs: tuple = (), seed: Optional[Path] = None) -> "Project":
         base = (home or artel_home()) / "projects"
         slug = slugify(name or goal)
         root = base / slug
@@ -130,9 +139,18 @@ class Project:
         meta = {"goal": goal, "name": name or goal[:80], "status": "planning", "created_at": time.time(),
                 "usage": {"input_tokens": 0, "output_tokens": 0, "requests": 0}, "audit_rounds": 0,
                 "root_task": None}
+        if workdir:
+            meta["workdir"] = str(Path(workdir).resolve())
+        if refs:
+            meta["refs"] = [str(Path(r).resolve()) for r in refs]
         (root / "project.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2))
         project = cls(root, config)
-        project.log.append("project/created", goal=goal, slug=project.slug)
+        if seed:
+            import shutil
+
+            shutil.copytree(seed, project.shared, dirs_exist_ok=True)
+        project.log.append("project/created", goal=goal, slug=project.slug, workdir=meta.get("workdir"),
+                           refs=meta.get("refs", []), seeded=bool(seed))
         return project
 
     @classmethod
@@ -163,13 +181,14 @@ class Project:
             self.log.append("project/status", status=fields["status"])
         return m
 
-    def add_usage(self, input_tokens: int, output_tokens: int) -> dict:
+    def add_usage(self, input_tokens: int, output_tokens: int, cost_usd: float = 0.0) -> dict:
         with self._meta_lock:
             m = self.meta
             u = m["usage"]
             u["input_tokens"] += input_tokens
             u["output_tokens"] += output_tokens
             u["requests"] += 1
+            u["cost_usd"] = round(u.get("cost_usd", 0.0) + (cost_usd or 0.0), 6)
             self._write_meta(m)
         return u
 
