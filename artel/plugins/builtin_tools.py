@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import uuid
 from pathlib import Path
 
 from ..kernel import ToolSpec
@@ -14,6 +15,32 @@ PLUGIN = {"name": "artel.plugins.builtin_tools", "version": "1",
                        "tool:memory_write"]}
 MAX_OUT = 20_000
 EXEC_ROLES = ("worker", "reviewer", "auditor", "evolver", "absorber")
+
+
+# Output spill adapted from OpenCode packages/opencode/src/tool/truncate.ts (MIT License,
+# Copyright (c) opencode contributors): oversized output goes to a file, the model gets a preview and the path.
+MAX_LINES = 2000
+MAX_BYTES = 50 * 1024
+SPILL_DIR = ".artel/tool-output"
+PREVIEW_HEAD, PREVIEW_TAIL, PREVIEW_CHARS = 40, 60, 4000
+
+
+def spill_output(ctx: ToolContext, text: str) -> str:
+    """Return text unchanged if within MAX_LINES/MAX_BYTES; else save it in full under the run workspace
+    and return a head/tail preview plus the file path."""
+    lines = text.split("\n")
+    if len(lines) <= MAX_LINES and len(text.encode("utf-8", "replace")) <= MAX_BYTES:
+        return text
+    d = Path(ctx.workspace) / SPILL_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"tool_{uuid.uuid4().hex[:12]}.txt"
+    f.write_text(text, errors="replace")
+    head = "\n".join(lines[:PREVIEW_HEAD])[:PREVIEW_CHARS]
+    tail = "\n".join(lines[-PREVIEW_TAIL:])[-PREVIEW_CHARS:]
+    omitted = max(len(lines) - PREVIEW_HEAD - PREVIEW_TAIL, 0)
+    rel = f.relative_to(Path(ctx.workspace))
+    return (f"{head}\n\n…[{omitted} lines omitted; output is {len(lines)} lines, {len(text.encode('utf-8', 'replace'))} "
+            f"bytes; full output saved to {rel} (read it with read_file offset/limit or grep)]…\n\n{tail}")
 
 
 def _clip(text: str, limit: int = MAX_OUT) -> str:
@@ -32,7 +59,7 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
     except subprocess.TimeoutExpired as exc:
         raise ToolError(f"timed out after {timeout}s; partial output:\n{_clip(str(exc.stdout or ''), 4000)}")
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
-    result = f"[exit {proc.returncode}]\n{_clip(out)}"
+    result = f"[exit {proc.returncode}]\n{spill_output(ctx, out)}"
     ctx.outputs.append(f"$ {command}\n{result[:3000]}")
     return result
 
@@ -44,7 +71,7 @@ def read_file(ctx: ToolContext, path: str, offset: int = 0, limit: int = 0) -> s
     lines = p.read_text(errors="replace").splitlines()
     end = offset + limit if limit else len(lines)
     body = "\n".join(f"{i + 1:>5}\t{ln}" for i, ln in enumerate(lines[offset:end], start=offset))
-    return _clip(body) or "(empty file)"
+    return spill_output(ctx, body) or "(empty file)"
 
 
 def write_file(ctx: ToolContext, path: str, content: str) -> str:
