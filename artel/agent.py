@@ -33,6 +33,98 @@ LOOP_NOTE = ("System note: you are repeating yourself ({what}). Stop and change 
              "will be ended.")
 _llm_lock = threading.Lock()
 
+# Context compaction: adapted from OpenCode's session/compaction.ts (https://github.com/anomalyco/opencode),
+# MIT License, Copyright (c) opencode contributors. Stage 1 prunes old tool outputs (cf. prune/PRUNE_PROTECT),
+# stage 2 summarizes the head of the conversation and keeps the most recent turns.
+COMPACT_PRUNE_TOKENS = 60_000       # estimated tokens above which old tool results are cleared
+COMPACT_SUMMARIZE_TOKENS = 120_000  # estimated tokens above which the conversation head is summarized
+COMPACT_KEEP_TURNS = 2              # most recent assistant turns kept verbatim
+PRUNED_PLACEHOLDER = "[old tool result cleared to save context]"
+_SUMMARY_PROMPT = ("Summarize the conversation so far for an agent that will continue the work: the goal, what was "
+                   "done, key findings, files touched, and what remains. Be concise and factual.")
+
+
+def _blocks(content: Any) -> list:
+    return content if isinstance(content, list) else []
+
+
+def estimate_tokens(messages: list) -> int:
+    """Rough token estimate (about 4 characters per token) of a message list."""
+    return len(json.dumps(messages, default=str)) // 4
+
+
+def _recent_start(messages: list, keep_turns: int) -> int:
+    """Index of the assistant message that starts the last ``keep_turns`` turns, or 0 if there are fewer."""
+    idx = [i for i, m in enumerate(messages) if m.get("role") == "assistant"]
+    return idx[-keep_turns] if len(idx) > keep_turns else 0
+
+
+def prune_tool_results(messages: list, keep_turns: int = COMPACT_KEEP_TURNS) -> tuple[list, int]:
+    """Replace tool_result contents older than the last ``keep_turns`` turns with a placeholder.
+
+    Returns (new messages, number of results cleared). tool_use_id, is_error and message structure are kept.
+    """
+    cut = _recent_start(messages, keep_turns)
+    cleared = 0
+    out = []
+    for i, m in enumerate(messages):
+        if i >= cut or not any(isinstance(b, dict) and b.get("type") == "tool_result" for b in _blocks(m["content"])):
+            out.append(m)
+            continue
+        blocks = []
+        for b in m["content"]:
+            if isinstance(b, dict) and b.get("type") == "tool_result" and b.get("content") != PRUNED_PLACEHOLDER:
+                b = {**b, "content": PRUNED_PLACEHOLDER}
+                cleared += 1
+            blocks.append(b)
+        out.append({**m, "content": blocks})
+    return out, cleared
+
+
+def _render(messages: list, limit: int = 400) -> str:
+    lines = []
+    for m in messages:
+        c = m["content"]
+        if isinstance(c, str):
+            lines.append(f"{m['role'].upper()}: {_short(c, limit)}")
+            continue
+        for b in _blocks(c):
+            if not isinstance(b, dict):
+                b = {"type": getattr(b, "type", ""), "text": getattr(b, "text", ""), "name": getattr(b, "name", ""),
+                     "input": getattr(b, "input", "")}
+            if b.get("type") == "text" and b.get("text"):
+                lines.append(f"{m['role'].upper()}: {_short(b['text'], limit)}")
+            elif b.get("type") == "tool_use":
+                lines.append(f"TOOL_CALL {b.get('name')}({_short(b.get('input'), 200)})")
+            elif b.get("type") == "tool_result":
+                lines.append(f"TOOL_RESULT: {_short(b.get('content'), 200)}")
+    return "\n".join(lines)
+
+
+def compact_messages(messages: list, summarize=None, keep_turns: int = COMPACT_KEEP_TURNS) -> Optional[list]:
+    """Summarize everything before the last ``keep_turns`` turns into the first user message.
+
+    ``summarize(transcript) -> str`` may call an LLM; on failure or empty output a deterministic transcript
+    digest is used. The kept tail starts at an assistant message, so tool_use/tool_result pairs stay valid.
+    Returns None when there is nothing to compact.
+    """
+    cut = _recent_start(messages, keep_turns)
+    if cut < 2:
+        return None
+    transcript = _render(messages[1:cut])
+    summary = ""
+    if summarize is not None:
+        try:
+            summary = (summarize(transcript) or "").strip()
+        except Exception:
+            summary = ""
+    if not summary:
+        summary = _short(transcript, 6000)
+    first = messages[0]["content"]
+    goal = [{"type": "text", "text": first}] if isinstance(first, str) else list(first)
+    goal.append({"type": "text", "text": "Summary of earlier work (older context was compacted):\n" + summary})
+    return [{"role": "user", "content": goal}] + messages[cut:]
+
 
 class LoopDetector:
     """Spot repeated tool calls and repeated text; each ``observe_*`` returns None, "warn" or "stop".
@@ -206,6 +298,26 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
         if reason:
             out.status, out.error = "budget", reason
             break
+        threshold = int(kernel.config.get("compact_prune_tokens", COMPACT_PRUNE_TOKENS))
+        if estimate_tokens(messages) > threshold:
+            messages, cleared = prune_tool_results(messages)
+            if cleared:
+                project.log.append("agent/compaction", actor=actor, task_id=task_id, stage="prune", cleared=cleared,
+                                   tokens=estimate_tokens(messages))
+            if estimate_tokens(messages) > int(kernel.config.get("compact_summarize_tokens",
+                                                                 COMPACT_SUMMARIZE_TOKENS)):
+                def _summarize(transcript: str) -> str:
+                    r = llm.chat(system=_SUMMARY_PROMPT, messages=[{"role": "user", "content": transcript}],
+                                 tools=[], model=model, effort=effort, max_tokens=2000, purpose="compaction")
+                    return "\n".join(b["text"] for b in r.blocks if b["type"] == "text")
+
+                before = len(messages)
+                compacted = compact_messages(messages, _summarize)
+                if compacted:
+                    messages = compacted
+                    project.log.append("agent/compaction", actor=actor, task_id=task_id, stage="summarize",
+                                       messages_before=before, messages_after=len(messages),
+                                       tokens=estimate_tokens(messages))
         req = {"system": system, "messages": messages, "tools": tools, "model": model, "effort": effort,
                "max_tokens": max_tokens, "purpose": purpose}
         try:

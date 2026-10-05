@@ -261,3 +261,49 @@ def test_loop_detector_negative_cases():
         assert d.observe_tool("u", {"a": 1}) is None
     sentence = "Checking the configuration file for the missing key now. "
     assert LoopDetector().observe_text(sentence * (TEXT_LOOP_THRESHOLD - 3)) is None
+
+
+def _long_convo(n=8, size=2000):
+    msgs = [{"role": "user", "content": "GOAL: build it"}]
+    for i in range(n):
+        msgs.append({"role": "assistant", "content": [{"type": "text", "text": f"step {i}"},
+                                                      {"type": "tool_use", "id": f"t{i}", "name": "read_file", "input": {}}]})
+        msgs.append({"role": "user", "content": [{"type": "tool_result", "tool_use_id": f"t{i}",
+                                                  "content": "x" * size, "is_error": False}]})
+    return msgs
+
+
+def _paired(msgs):
+    for a, u in zip(msgs, msgs[1:]):
+        uses = [b["id"] for b in a["content"] if isinstance(a["content"], list) and b.get("type") == "tool_use"] \
+            if a["role"] == "assistant" else []
+        res = [b["tool_use_id"] for b in u["content"] if isinstance(u["content"], list) and b.get("type") == "tool_result"] \
+            if u["role"] == "user" else []
+        if a["role"] == "assistant" and uses != res:
+            return False
+    return msgs[0]["role"] == "user" and all(x["role"] != y["role"] for x, y in zip(msgs, msgs[1:]))
+
+
+def test_prune_tool_results_keeps_recent_and_pairing():
+    from artel.agent import PRUNED_PLACEHOLDER, estimate_tokens, prune_tool_results
+    msgs = _long_convo()
+    out, cleared = prune_tool_results(msgs)
+    assert cleared == 6 and len(out) == len(msgs)
+    assert out[2]["content"][0]["content"] == PRUNED_PLACEHOLDER
+    assert out[2]["content"][0]["tool_use_id"] == "t0"
+    assert out[-1]["content"][0]["content"] == "x" * 2000 and out[-3]["content"][0]["content"] == "x" * 2000
+    assert estimate_tokens(out) < estimate_tokens(msgs)
+    assert msgs[2]["content"][0]["content"] == "x" * 2000  # input untouched
+    assert _paired(out)
+
+
+def test_compact_messages_summarizes_head():
+    from artel.agent import compact_messages
+    msgs = _long_convo()
+    out = compact_messages(msgs, lambda t: "SUMMARY-OK")
+    assert out[0]["content"][0]["text"] == "GOAL: build it"
+    assert "SUMMARY-OK" in out[0]["content"][1]["text"]
+    assert out[1:] == msgs[-4:] and _paired(out)
+    fb = compact_messages(msgs, lambda t: 1 / 0)  # deterministic fallback
+    assert "step 0" in fb[0]["content"][1]["text"] and _paired(fb)
+    assert compact_messages(_long_convo(2), None) is None
