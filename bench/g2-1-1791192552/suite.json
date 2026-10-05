@@ -1,0 +1,223 @@
+{
+ "label": "g2-1",
+ "code": "/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i",
+ "commit": "77209bb38d2c02352508fc5e8ce6724d04ca587d",
+ "ts": 1791192562.6406856,
+ "repeats": 1,
+ "config": {
+  "provider": "anthropic",
+  "runtime": "claude_code",
+  "claude_code": {
+   "model": "sonnet",
+   "permission_mode": "bypassPermissions",
+   "max_resumes": 2,
+   "timeout_s": 1800
+  },
+  "models": {
+   "default": "claude-opus-5-5"
+  }
+ },
+ "results": [
+  {
+   "id": "adr-doc",
+   "kind": "writing",
+   "exit": 1,
+   "wall_s": 4.6,
+   "status": "planning",
+   "cost_usd": 0.0,
+   "tokens": 0,
+   "requests": 1,
+   "duration_s": 4.1,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 0,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_adr.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/adr-doc/projects/bench-adr-doc/shared/.artel_eval/check_adr.py\", line 2, in <module>\n    t = open(\"adr-001.md\").read()\n        ^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'adr-001.md'\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/adr-doc/projects/bench-adr-doc",
+   "error": "Exception in thread Thread-1 (target):\nTraceback (most recent call last):\n  File \"/usr/lib/python3.11/threading.py\", line 1045, in _bootstrap_inner\n    self.run()\n  File \"/usr/lib/python3.11/threading.py\", line 982, in run\n    self._target(*self._args, **self._kwargs)\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 88, in target\n    holder[\"result\"] = run_goal(args.goal, cfg, name=args.name, stop_event=stop, workdir=args.workdir,\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 619, in run_goal\n    return project, Manager(kernel, project, stop_event).run()\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 541, in run\n    self.plan()\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 94, in plan\n    raise RuntimeError(f\"planning failed: {out.status} {out.error}\")\nRuntimeError: planning failed: error claude code failed: You've hit your session limit · resets 11:20am (UTC)\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 458, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 454, in main\n    return args.fn(args)\n           ^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 100, in cmd_run\n    project, status = holder[\"result\"]\n                      ~~~~~~^^^^^^^^^^\nKeyError: 'result'\n"
+  },
+  {
+   "id": "csv-report",
+   "kind": "data",
+   "exit": 1,
+   "wall_s": 3.8,
+   "status": "planning",
+   "cost_usd": 0.0,
+   "tokens": 0,
+   "requests": 1,
+   "duration_s": 3.6,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 0,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_report.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/csv-report/projects/bench-csv-report/shared/.artel_eval/check_report.py\", line 9, in <module>\n    rep = json.load(open(\"report.json\"))\n                    ^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'report.json'\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/csv-report/projects/bench-csv-report",
+   "error": "Exception in thread Thread-1 (target):\nTraceback (most recent call last):\n  File \"/usr/lib/python3.11/threading.py\", line 1045, in _bootstrap_inner\n    self.run()\n  File \"/usr/lib/python3.11/threading.py\", line 982, in run\n    self._target(*self._args, **self._kwargs)\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 88, in target\n    holder[\"result\"] = run_goal(args.goal, cfg, name=args.name, stop_event=stop, workdir=args.workdir,\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 619, in run_goal\n    return project, Manager(kernel, project, stop_event).run()\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 541, in run\n    self.plan()\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 94, in plan\n    raise RuntimeError(f\"planning failed: {out.status} {out.error}\")\nRuntimeError: planning failed: error claude code failed: You've hit your session limit · resets 11:20am (UTC)\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 458, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 454, in main\n    return args.fn(args)\n           ^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 100, in cmd_run\n    project, status = holder[\"result\"]\n                      ~~~~~~^^^^^^^^^^\nKeyError: 'result'\n"
+  },
+  {
+   "id": "fix-inventory",
+   "kind": "bugfix",
+   "exit": 1,
+   "wall_s": 3.9,
+   "status": "planning",
+   "cost_usd": 0.0,
+   "tokens": 0,
+   "requests": 1,
+   "duration_s": 3.6,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 0,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_inventory.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/fix-inventory/projects/bench-fix-inventory/shared/.artel_eval/check_inventory.py\", line 6, in <module>\n    inv.remove(\"a\", 3); raise AssertionError(\"should raise OutOfStock\")\n                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: should raise OutOfStock\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/fix-inventory/projects/bench-fix-inventory",
+   "error": "Exception in thread Thread-1 (target):\nTraceback (most recent call last):\n  File \"/usr/lib/python3.11/threading.py\", line 1045, in _bootstrap_inner\n    self.run()\n  File \"/usr/lib/python3.11/threading.py\", line 982, in run\n    self._target(*self._args, **self._kwargs)\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 88, in target\n    holder[\"result\"] = run_goal(args.goal, cfg, name=args.name, stop_event=stop, workdir=args.workdir,\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 619, in run_goal\n    return project, Manager(kernel, project, stop_event).run()\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 541, in run\n    self.plan()\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 94, in plan\n    raise RuntimeError(f\"planning failed: {out.status} {out.error}\")\nRuntimeError: planning failed: error claude code failed: You've hit your session limit · resets 11:20am (UTC)\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 458, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 454, in main\n    return args.fn(args)\n           ^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 100, in cmd_run\n    project, status = holder[\"result\"]\n                      ~~~~~~^^^^^^^^^^\nKeyError: 'result'\n"
+  },
+  {
+   "id": "log-stats",
+   "kind": "data-hard",
+   "exit": 1,
+   "wall_s": 3.4,
+   "status": "planning",
+   "cost_usd": 0.0,
+   "tokens": 0,
+   "requests": 1,
+   "duration_s": 2.5,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 0,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_logstats.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/log-stats/projects/bench-log-stats/shared/.artel_eval/check_logstats.py\", line 12, in <module>\n    t0 = time.time(); subprocess.run([sys.executable, \"logstats.py\"], check=True, capture_output=True); dt = time.time() - t0\n                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.11/subprocess.py\", line 571, in run\n    raise CalledProcessError(retcode, process.args,\nsubprocess.CalledProcessError: Command '['/usr/local/bin/python3', 'logstats.py']' returned non-zero exit status 2.\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/log-stats/projects/bench-log-stats",
+   "error": "Exception in thread Thread-1 (target):\nTraceback (most recent call last):\n  File \"/usr/lib/python3.11/threading.py\", line 1045, in _bootstrap_inner\n    self.run()\n  File \"/usr/lib/python3.11/threading.py\", line 982, in run\n    self._target(*self._args, **self._kwargs)\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 88, in target\n    holder[\"result\"] = run_goal(args.goal, cfg, name=args.name, stop_event=stop, workdir=args.workdir,\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 619, in run_goal\n    return project, Manager(kernel, project, stop_event).run()\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 541, in run\n    self.plan()\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 94, in plan\n    raise RuntimeError(f\"planning failed: {out.status} {out.error}\")\nRuntimeError: planning failed: error claude code failed: You've hit your session limit · resets 11:20am (UTC)\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 458, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 454, in main\n    return args.fn(args)\n           ^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 100, in cmd_run\n    project, status = holder[\"result\"]\n                      ~~~~~~^^^^^^^^^^\nKeyError: 'result'\n"
+  },
+  {
+   "id": "lru-ttl-cache",
+   "kind": "build-hard",
+   "exit": 1,
+   "wall_s": 3.1,
+   "status": "planning",
+   "cost_usd": 0.0,
+   "tokens": 0,
+   "requests": 1,
+   "duration_s": 2.4,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 0,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_cache.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/lru-ttl-cache/projects/bench-lru-ttl-cache/shared/.artel_eval/check_cache.py\", line 3, in <module>\n    from ttlcache import TTLCache\nModuleNotFoundError: No module named 'ttlcache'\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/lru-ttl-cache/projects/bench-lru-ttl-cache",
+   "error": "Exception in thread Thread-1 (target):\nTraceback (most recent call last):\n  File \"/usr/lib/python3.11/threading.py\", line 1045, in _bootstrap_inner\n    self.run()\n  File \"/usr/lib/python3.11/threading.py\", line 982, in run\n    self._target(*self._args, **self._kwargs)\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 88, in target\n    holder[\"result\"] = run_goal(args.goal, cfg, name=args.name, stop_event=stop, workdir=args.workdir,\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 619, in run_goal\n    return project, Manager(kernel, project, stop_event).run()\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 541, in run\n    self.plan()\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 94, in plan\n    raise RuntimeError(f\"planning failed: {out.status} {out.error}\")\nRuntimeError: planning failed: error claude code failed: You've hit your session limit · resets 11:20am (UTC)\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 458, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 454, in main\n    return args.fn(args)\n           ^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 100, in cmd_run\n    project, status = holder[\"result\"]\n                      ~~~~~~^^^^^^^^^^\nKeyError: 'result'\n"
+  },
+  {
+   "id": "multi-module-bugs",
+   "kind": "bugfix-hard",
+   "exit": 1,
+   "wall_s": 2.7,
+   "status": "planning",
+   "cost_usd": 0.0,
+   "tokens": 0,
+   "requests": 1,
+   "duration_s": 2.5,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 0,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_billing.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/multi-module-bugs/projects/bench-multi-module-bugs/shared/.artel_eval/check_billing.py\", line 7, in <module>\n    assert round_money(D(\"2.675\")) == D(\"2.68\"), round_money(D(\"2.675\"))   # half-up, no float drift\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nAssertionError: 2.67\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/multi-module-bugs/projects/bench-multi-module-bugs",
+   "error": "Exception in thread Thread-1 (target):\nTraceback (most recent call last):\n  File \"/usr/lib/python3.11/threading.py\", line 1045, in _bootstrap_inner\n    self.run()\n  File \"/usr/lib/python3.11/threading.py\", line 982, in run\n    self._target(*self._args, **self._kwargs)\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 88, in target\n    holder[\"result\"] = run_goal(args.goal, cfg, name=args.name, stop_event=stop, workdir=args.workdir,\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 619, in run_goal\n    return project, Manager(kernel, project, stop_event).run()\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 541, in run\n    self.plan()\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 94, in plan\n    raise RuntimeError(f\"planning failed: {out.status} {out.error}\")\nRuntimeError: planning failed: error claude code failed: You've hit your session limit · resets 11:20am (UTC)\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 458, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 454, in main\n    return args.fn(args)\n           ^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 100, in cmd_run\n    project, status = holder[\"result\"]\n                      ~~~~~~^^^^^^^^^^\nKeyError: 'result'\n"
+  },
+  {
+   "id": "wordfreq-cli",
+   "kind": "build",
+   "exit": 1,
+   "wall_s": 2.6,
+   "status": "planning",
+   "cost_usd": 0.0,
+   "tokens": 0,
+   "requests": 1,
+   "duration_s": 2.4,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 0,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_wordfreq.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/wordfreq-cli/projects/bench-wordfreq-cli/shared/.artel_eval/check_wordfreq.py\", line 3, in <module>\n    from wordfreq import top_words\nModuleNotFoundError: No module named 'wordfreq'\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-1-1791192552/wordfreq-cli/projects/bench-wordfreq-cli",
+   "error": "Exception in thread Thread-1 (target):\nTraceback (most recent call last):\n  File \"/usr/lib/python3.11/threading.py\", line 1045, in _bootstrap_inner\n    self.run()\n  File \"/usr/lib/python3.11/threading.py\", line 982, in run\n    self._target(*self._args, **self._kwargs)\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 88, in target\n    holder[\"result\"] = run_goal(args.goal, cfg, name=args.name, stop_event=stop, workdir=args.workdir,\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 619, in run_goal\n    return project, Manager(kernel, project, stop_event).run()\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 541, in run\n    self.plan()\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/manager.py\", line 94, in plan\n    raise RuntimeError(f\"planning failed: {out.status} {out.error}\")\nRuntimeError: planning failed: error claude code failed: You've hit your session limit · resets 11:20am (UTC)\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 458, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 454, in main\n    return args.fn(args)\n           ^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i/artel/cli.py\", line 100, in cmd_run\n    project, status = holder[\"result\"]\n                      ~~~~~~^^^^^^^^^^\nKeyError: 'result'\n"
+  }
+ ],
+ "summary": {
+  "tasks": 7,
+  "pass_rate": 0.0,
+  "partial_mean": 0.0,
+  "cost_usd": 0.0,
+  "tokens": 0,
+  "duration_mean_s": 3.0,
+  "attempts": 0,
+  "rejections": 0,
+  "stalls": 0,
+  "audit_rounds": 0
+ }
+}

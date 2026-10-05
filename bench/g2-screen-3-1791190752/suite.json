@@ -1,0 +1,115 @@
+{
+ "label": "g2-screen-3",
+ "code": "/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-3-w1-output-spill-oversized-tool-o",
+ "commit": "37fd16793f120bfb0e382dce11b342ae13a98c0d",
+ "ts": 1791192552.8880517,
+ "repeats": 1,
+ "config": {
+  "provider": "anthropic",
+  "runtime": "claude_code",
+  "claude_code": {
+   "model": "sonnet",
+   "permission_mode": "bypassPermissions",
+   "max_resumes": 2,
+   "timeout_s": 1800
+  },
+  "models": {
+   "default": "claude-opus-5-5"
+  }
+ },
+ "results": [
+  {
+   "id": "adr-doc",
+   "kind": "writing",
+   "exit": -1,
+   "wall_s": 1200.1,
+   "status": "running",
+   "cost_usd": 0.0668,
+   "tokens": 70300,
+   "requests": 13,
+   "duration_s": 934.2,
+   "attempts": 2,
+   "rejections": 0,
+   "stalls": 8,
+   "audit_rounds": 0,
+   "tasks": 2,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_adr.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-screen-3-1791190752/adr-doc/projects/bench-adr-doc/shared/.artel_eval/check_adr.py\", line 2, in <module>\n    t = open(\"adr-001.md\").read()\n        ^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'adr-001.md'\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-screen-3-1791190752/adr-doc/projects/bench-adr-doc",
+   "error": "timeout after 1200s\n"
+  },
+  {
+   "id": "csv-report",
+   "kind": "data",
+   "exit": -1,
+   "wall_s": 1500.1,
+   "status": "running",
+   "cost_usd": 0.066,
+   "tokens": 70219,
+   "requests": 13,
+   "duration_s": 933.9,
+   "attempts": 2,
+   "rejections": 0,
+   "stalls": 8,
+   "audit_rounds": 0,
+   "tasks": 2,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_report.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-screen-3-1791190752/csv-report/projects/bench-csv-report/shared/.artel_eval/check_report.py\", line 9, in <module>\n    rep = json.load(open(\"report.json\"))\n                    ^^^^^^^^^^^^^^^^^^^\nFileNotFoundError: [Errno 2] No such file or directory: 'report.json'\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-screen-3-1791190752/csv-report/projects/bench-csv-report",
+   "error": "timeout after 1500s\n"
+  },
+  {
+   "id": "lru-ttl-cache",
+   "kind": "build-hard",
+   "exit": -1,
+   "wall_s": 1800.1,
+   "status": "running",
+   "cost_usd": 0.0687,
+   "tokens": 70641,
+   "requests": 16,
+   "duration_s": 1549.3,
+   "attempts": 1,
+   "rejections": 0,
+   "stalls": 10,
+   "audit_rounds": 0,
+   "tasks": 3,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_cache.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/g2-screen-3-1791190752/lru-ttl-cache/projects/bench-lru-ttl-cache/shared/.artel_eval/check_cache.py\", line 3, in <module>\n    from ttlcache import TTLCache\nModuleNotFoundError: No module named 'ttlcache'\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-screen-3-1791190752/lru-ttl-cache/projects/bench-lru-ttl-cache",
+   "error": "timeout after 1800s\n"
+  }
+ ],
+ "summary": {
+  "tasks": 3,
+  "pass_rate": 0.0,
+  "partial_mean": 0.0,
+  "cost_usd": 0.2015,
+  "tokens": 211160,
+  "duration_mean_s": 1139.1,
+  "attempts": 5,
+  "rejections": 0,
+  "stalls": 26,
+  "audit_rounds": 0
+ }
+}

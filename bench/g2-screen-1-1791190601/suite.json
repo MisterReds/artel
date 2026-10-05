@@ -1,0 +1,112 @@
+{
+ "label": "g2-screen-1",
+ "code": "/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g2-1-w1-loop-detector-loop-detector-i",
+ "commit": "77209bb38d2c02352508fc5e8ce6724d04ca587d",
+ "ts": 1791190752.6887457,
+ "repeats": 1,
+ "config": {
+  "provider": "anthropic",
+  "runtime": "claude_code",
+  "claude_code": {
+   "model": "sonnet",
+   "permission_mode": "bypassPermissions",
+   "max_resumes": 2,
+   "timeout_s": 1800
+  },
+  "models": {
+   "default": "claude-opus-5-5"
+  }
+ },
+ "results": [
+  {
+   "id": "adr-doc",
+   "kind": "writing",
+   "exit": 0,
+   "wall_s": 110.8,
+   "status": "done",
+   "cost_usd": 0.6065,
+   "tokens": 909267,
+   "requests": 6,
+   "duration_s": 110.5,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_adr.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-screen-1-1791190601/adr-doc/projects/bench-adr-doc"
+  },
+  {
+   "id": "csv-report",
+   "kind": "data",
+   "exit": 0,
+   "wall_s": 105.0,
+   "status": "done",
+   "cost_usd": 0.5386,
+   "tokens": 914036,
+   "requests": 6,
+   "duration_s": 104.7,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_report.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-screen-1-1791190601/csv-report/projects/bench-csv-report"
+  },
+  {
+   "id": "lru-ttl-cache",
+   "kind": "build-hard",
+   "exit": 0,
+   "wall_s": 150.3,
+   "status": "done",
+   "cost_usd": 0.6842,
+   "tokens": 1007582,
+   "requests": 6,
+   "duration_s": 150.0,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_cache.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g2-screen-1-1791190601/lru-ttl-cache/projects/bench-lru-ttl-cache"
+  }
+ ],
+ "summary": {
+  "tasks": 3,
+  "pass_rate": 1.0,
+  "partial_mean": 1.0,
+  "cost_usd": 1.8293,
+  "tokens": 2830885,
+  "duration_mean_s": 121.7,
+  "attempts": 0,
+  "rejections": 0,
+  "stalls": 0,
+  "audit_rounds": 3
+ }
+}
