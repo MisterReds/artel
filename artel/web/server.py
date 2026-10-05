@@ -208,6 +208,10 @@ def make_handler(runner: Runner):
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
+                elif parts and parts[0] == "static":
+                    self._static("/".join(parts[1:]))
+                elif parts == ["favicon.ico"] or parts == ["favicon.svg"]:
+                    self._static("favicon.svg")
                 elif parts == ["api", "update"]:
                     self._json(runner.update_status(fetch=q.get("check", ["0"])[0] == "1"))
                 elif parts == ["api", "evolution"]:
@@ -229,6 +233,21 @@ def make_handler(runner: Runner):
                 self._json({"error": str(exc)}, 404)
             except (BrokenPipeError, ConnectionResetError):
                 pass
+
+        def _static(self, rel: str) -> None:
+            root = (Path(__file__).parent / "static").resolve()
+            f = (root / rel).resolve()
+            if root not in f.parents or not f.is_file():
+                return self._json({"error": "not found"}, 404)
+            types = {".svg": "image/svg+xml", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2",
+                     ".png": "image/png"}
+            body = f.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", types.get(f.suffix, "application/octet-stream"))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
 
         def _files(self, project: Project, rel: str) -> None:
             base = project.root.resolve()
@@ -302,7 +321,9 @@ def serve(port: int = 8765, config: dict | None = None, host: str = "127.0.0.1")
     runner.start_update_loop()
     httpd = ThreadingHTTPServer((host, port), make_handler(runner))
     httpd.daemon_threads = True
-    print(f"artel dashboard on http://{host}:{port}")
+    from ..brand import banner
+
+    print(banner(f"дашборд http://{host}:{port}"), flush=True)
     httpd.serve_forever()
 
 

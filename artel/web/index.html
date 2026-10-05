@@ -4,29 +4,38 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Artel</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/fonts/fonts.css">
 <style>
 :root{
-  --bg:#f6f5f2;--panel:#ffffff;--ink:#1c1b19;--muted:#6b675f;--line:#e4e1da;--accent:#2f5bd3;--accent-ink:#fff;
-  --ok:#1f8a4c;--warn:#b7791f;--bad:#c2410c;--run:#2f5bd3;--rev:#7c3aed;--chip:#efede8;--todo:#a8a29e;
-  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  /* Artel brand: copper on warm paper. Status colours are distinct from the brand so a running task never
+     looks like a button. Fonts: Unbounded (display), Onest (text), JetBrains Mono (logs, code). */
+  --brand:#B5522B;--brand-ink:#fff;--brand-soft:#F3E3D9;
+  --bg:#F7F4EE;--panel:#FFFDF9;--ink:#1E1A16;--muted:#6E665C;--line:#E6DFD3;--chip:#EFE9DF;
+  --accent:var(--brand);--accent-ink:var(--brand-ink);
+  --ok:#2E8549;--warn:#B07F12;--bad:#C0392B;--run:#1F7A72;--rev:#7A55C9;--todo:#A39E96;
+  --display:"Unbounded",system-ui,sans-serif;--text:"Onest",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
 }
 @media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
-  --bg:#141413;--panel:#1d1c1a;--ink:#ece9e3;--muted:#9b968c;--line:#2e2c29;--accent:#7aa2ff;--accent-ink:#0d1220;
-  --ok:#4ade80;--warn:#fbbf24;--bad:#fb923c;--run:#7aa2ff;--rev:#c4a5ff;--chip:#272522;--todo:#57534e;}}
-:root[data-theme="dark"]{--bg:#141413;--panel:#1d1c1a;--ink:#ece9e3;--muted:#9b968c;--line:#2e2c29;--accent:#7aa2ff;--accent-ink:#0d1220;
-  --ok:#4ade80;--warn:#fbbf24;--bad:#fb923c;--run:#7aa2ff;--rev:#c4a5ff;--chip:#272522;--todo:#57534e;}
+  --brand:#E07B4E;--brand-ink:#1A0E08;--brand-soft:#3A2418;
+  --bg:#15120F;--panel:#1E1A16;--ink:#EFE8DD;--muted:#A39A8D;--line:#332C25;--chip:#2A241E;
+  --ok:#5CCB7C;--warn:#E0B34A;--bad:#F07A6A;--run:#4FC1B5;--rev:#B69BF0;--todo:#5E574F;}}
+:root[data-theme="dark"]{--brand:#E07B4E;--brand-ink:#1A0E08;--brand-soft:#3A2418;
+  --bg:#15120F;--panel:#1E1A16;--ink:#EFE8DD;--muted:#A39A8D;--line:#332C25;--chip:#2A241E;
+  --ok:#5CCB7C;--warn:#E0B34A;--bad:#F07A6A;--run:#4FC1B5;--rev:#B69BF0;--todo:#5E574F;}
 *{box-sizing:border-box}
-body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.5 var(--text);font-feature-settings:"tnum" 0}
 a{color:var(--accent);text-decoration:none}
 button,input,textarea,select{font:inherit;color:inherit}
 button{background:var(--chip);border:1px solid var(--line);border-radius:8px;padding:6px 12px;cursor:pointer}
 button.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
 textarea,input,select{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:8px;width:100%}
 header{display:flex;align-items:center;gap:14px;padding:10px 20px;background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:3;flex-wrap:wrap}
-header .logo{font-weight:700;font-size:17px}
+header .logo{display:flex;align-items:center;gap:9px;font:700 18px/1 var(--display);letter-spacing:.01em;color:var(--ink)}header .logo svg{width:26px;height:26px;color:var(--ink)}header{box-shadow:inset 0 -2px 0 var(--brand)}
 nav{display:flex;gap:4px;flex:1;flex-wrap:wrap}
 nav a{padding:6px 12px;border-radius:8px;color:var(--muted)}
-nav a.on{background:var(--chip);color:var(--ink);font-weight:600}
+nav a.on{background:var(--brand-soft);color:var(--brand);font-weight:600}nav a:hover{color:var(--ink)}
 .wrap{padding:16px 20px;max-width:1500px;margin:0 auto}
 .layout{display:grid;grid-template-columns:1fr 360px;gap:0;height:calc(100vh - 53px)}
 .layout main{overflow:auto;padding:16px 20px;min-width:0}
@@ -38,7 +47,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .badge.audit,.badge.planning{color:var(--warn);border-color:var(--warn)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px}
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
-.kpi b{display:block;font-size:22px}.kpi span{color:var(--muted);font-size:12px}
+.kpi b{display:block;font:600 22px/1.2 var(--display)}.kpi span{color:var(--muted);font-size:12px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
 .pcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;cursor:pointer;display:flex;flex-direction:column;gap:8px}
 .pcard:hover{border-color:var(--accent)}
@@ -81,6 +90,7 @@ th{color:var(--muted);font-weight:600;font-size:12px;background:color-mix(in srg
 td.n,th.n{text-align:right;font-variant-numeric:tabular-nums}
 .tablewrap{overflow-x:auto}
 .ft{display:inline-block;font-size:11px;padding:0 6px;border-radius:99px;background:var(--chip);margin:1px}
+.dlg h3,.wrap>h3{font:600 16px/1.3 var(--display)}h4{font-weight:600;margin:14px 0 6px}
 dialog{border:1px solid var(--line);border-radius:14px;background:var(--panel);color:var(--ink);width:min(860px,94vw);max-height:88vh;padding:0}
 dialog::backdrop{background:rgba(0,0,0,.35)}
 .dlg{padding:18px 20px;overflow:auto;max-height:84vh}
@@ -93,11 +103,14 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(-
 @media (max-width:1100px){.layout{grid-template-columns:1fr}.feed{display:none}.feed.show{display:flex;position:fixed;inset:0;z-index:5}.feedbtn{display:inline-block}}
 @media (max-width:720px){.wrap,.layout main{padding:12px 16px}header{padding:10px 16px;gap:8px}header .logo{flex:1}nav{order:3;flex:0 0 100%;flex-wrap:nowrap;overflow-x:auto}nav a{white-space:nowrap}.board{grid-template-columns:1fr}.col{min-height:0}.grid{grid-template-columns:1fr}}
 button:disabled{opacity:.45;cursor:default}
+.ri{display:inline-flex;width:15px;height:15px;vertical-align:-2px;margin-right:4px;color:var(--muted)}.ri svg{width:100%;height:100%}
+.worker .role{display:flex;align-items:center;gap:2px}.worker .ri{color:var(--brand)}
+.empty .mark{width:56px;height:56px;color:var(--line);margin:0 auto 12px;display:block}
 </style>
 </head>
 <body>
 <header>
-  <span class="logo">Artel</span>
+  <a class="logo" href="#/portfolio"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"><line x1="32" y1="9" x2="11" y2="55"/><line x1="32" y1="9" x2="53" y2="55"/><line x1="20.5" y1="36" x2="43.5" y2="36"/></g><g fill="var(--brand)"><circle cx="32" cy="9" r="6.2"/><circle cx="11" cy="55" r="6.2"/><circle cx="53" cy="55" r="6.2"/><circle cx="20.5" cy="36" r="5"/><circle cx="43.5" cy="36" r="5"/></g></svg>Artel</a>
   <nav id="nav">
     <a href="#/portfolio" data-v="portfolio">Портфель</a>
     <a href="#/agents" data-v="agents">Агенты</a>
@@ -112,6 +125,23 @@ button:disabled{opacity:.45;cursor:default}
 <div id="view"></div>
 <dialog id="dlg"><div class="dlg" id="dlgbody"></div></dialog>
 <script>
+// --- brand: role icons (16px line icons, currentColor) ----------------------------------------------
+const RI={
+ manager:'<path d="M4 21V4m0 0h11l-2 4 2 4H4"/>',
+ planner:'<path d="M9 6h11M9 12h11M9 18h11M4 6h.01M4 12h.01M4 18h.01"/>',
+ worker:'<path d="M14 6l4 4M3 21l9-9M12 4l8 8-3 3-8-8z"/>',
+ tester:'<path d="M9 3h6M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3M7 15h10"/>',
+ reviewer:'<circle cx="11" cy="11" r="6"/><path d="M20 20l-4.5-4.5"/>',
+ auditor:'<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+ librarian:'<path d="M4 5a2 2 0 0 1 2-2h13v16H6a2 2 0 0 0-2 2zM4 19V5M8 7h7"/>',
+ refiner:'<path d="M4 6h10M18 6h2M4 12h4M12 12h8M4 18h12M20 18h0"/><circle cx="16" cy="6" r="2"/><circle cx="10" cy="12" r="2"/><circle cx="18" cy="18" r="2"/>',
+ evolver:'<circle cx="6" cy="6" r="2"/><circle cx="6" cy="18" r="2"/><circle cx="18" cy="8" r="2"/><path d="M6 8v8M18 10c0 4-6 3-11 7"/>',
+ absorber:'<path d="M6 3v8a6 6 0 0 0 12 0V3M6 7h4M14 7h4"/>',
+ human:'<circle cx="12" cy="8" r="4"/><path d="M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6"/>'};
+function roleKey(r){r=(r||'').toLowerCase();for(const [k,re] of [['reviewer',/review|ревью/],['tester',/test|тест|qa/],['auditor',/audit|аудит/],
+  ['manager',/manag|менедж/],['planner',/plan|план/],['librarian',/librar|библиот/],['refiner',/refin/],['evolver',/evol/],
+  ['absorber',/absorb/],['human',/human|user|человек/]])if(re.test(r))return k;return 'worker'}
+function ri(role){return `<span class="ri" title="${esc(role||'')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${RI[roleKey(role)]}</svg></span>`}
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const api=(p,o)=>fetch(p,o).then(r=>r.json());
 const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
@@ -155,7 +185,7 @@ function renderPortfolio(){const ps=state.ps;const att=ps.flatMap(p=>(p.attentio
   ${att.length?`<h2>Требует внимания</h2>${att.map(a=>`<div class="alert" data-s="${esc(a.p.slug)}"><b>${esc(a.p.name)}</b> · ${esc(a.title)} <span class="stat">· @${esc(a.assignee)} · ${esc(a.reason)}</span></div>`).join('')}`:''}
   <h2>Проекты</h2><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><div class="chips">${stages.map(s=>`<button data-f="${s}" class="${state.pfilter===s?'on':''}">${s==='all'?'все':esc(STAGE[s]||s)} ${s==='all'?ps.length:ps.filter(p=>p.stage===s).length}</button>`).join('')}</div>
     <input id="pq" placeholder="Поиск по проектам" value="${esc(state.pq)}" style="max-width:280px"></div>
-  ${shown.length?`<div class="grid">${shown.map(pcard).join('')}</div>`:'<div class="empty">Нет проектов. Нажмите «+ Новая цель».</div>'}`;
+  ${shown.length?`<div class="grid">${shown.map(pcard).join('')}</div>`:`<div class="empty"><svg class="mark" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"><line x1="32" y1="9" x2="11" y2="55"/><line x1="32" y1="9" x2="53" y2="55"/><line x1="20.5" y1="36" x2="43.5" y2="36"/></g></svg>Артель ждёт цель. Нажмите «+ Новая цель».</div>`}`;
   document.querySelectorAll('.pcard,.alert').forEach(e=>e.onclick=()=>location.hash='#/p/'+encodeURIComponent(e.dataset.s));
   document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{state.pfilter=b.dataset.f;renderPortfolio()});
   const q=$('#pq');q.oninput=()=>{state.pq=q.value.toLowerCase();renderPortfolio();const n=$('#pq');n.focus();n.setSelectionRange(n.value.length,n.value.length)}}
@@ -164,7 +194,7 @@ function pcard(p){const c=p.counts||{};return `<div class="pcard" data-s="${esc(
   <div class="top"><span class="dot ${p.live?'live':''}"></span><span class="nm">${esc(p.name)}</span><span class="badge ${p.stage}">${esc(STAGE[p.stage]||p.stage)}</span></div>
   ${segbar(c,p.tasks_total)}
   <div class="stat">${p.tasks_done}/${p.tasks_total} задач · аудитов ${p.audit_rounds||0} · ${money(p.cost_usd)}${p.budget&&p.budget.alert?` · <span class="human">бюджет ${pct(p.budget.fraction)}</span>`:''}</div>
-  <div class="avatars">${(p.workers||[]).map(w=>`<span class="av ${w.busy_on?'busy':''}" title="${esc(w.role)}${w.busy_on?' — '+esc(w.busy_on):''}">${w.busy_on?'▶ ':''}${esc(w.name)}</span>`).join('')}</div>
+  <div class="avatars">${(p.workers||[]).map(w=>`<span class="av ${w.busy_on?'busy':''}" title="${esc(w.role)}${w.busy_on?' — '+esc(w.busy_on):''}">${ri(w.role)}${esc(w.name)}</span>`).join('')}</div>
   ${p.last_event?`<div class="stat" style="overflow-wrap:anywhere">${esc(p.last_event.text)} · ${ago(p.last_event.ts)}</div>`:''}
   ${(p.attention||[]).length?`<div class="human">⚠ ${p.attention.length} требует внимания</div>`:''}</div>`}
 
@@ -190,7 +220,7 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
   ${segbar(st.counts,st.tasks_total)}
   <div class="goal"><b>Цель.</b> ${esc(m.goal)}${root&&root.result?`<div style="margin-top:6px;color:var(--ok)">${esc(root.result)}</div>`:''}</div>
   ${st.attention.length?`<h2>Требует внимания</h2>${st.attention.map(a=>`<div class="alert" data-t="${a.task_id}"><b>${esc(a.title)}</b> <span class="stat">· @${esc(a.assignee)} · ${esc(a.reason)} — откройте и напишите исполнителю</span></div>`).join('')}`:''}
-  <h2>Команда</h2><div class="team">${v.workers.map(w=>{const s=st.workers.find(x=>x.name===w.name)||{};return `<div class="worker" data-w="${esc(w.name)}"><b>${esc(w.name)}</b><span class="role">${esc(w.role)}</span>
+  <h2>Команда</h2><div class="team">${v.workers.map(w=>{const s=st.workers.find(x=>x.name===w.name)||{};return `<div class="worker" data-w="${esc(w.name)}"><b>${esc(w.name)}</b><span class="role">${ri(w.role)}${esc(w.role)}</span>
     <div class="now">${w.current?'▶ '+esc((tasks.find(t=>t.id===w.current)||{}).title||w.current):'<span class="stat">свободен</span>'}</div>
     <div class="stat" style="font-size:12px">готово ${s.done||0}/${s.tasks||0} · с 1-й попытки ${s.first_pass||0} · отказов ${s.rejections||0} · ${money(s.cost_usd)}</div></div>`}).join('')}</div>
   <h2>Доска</h2><div class="board">${COLS.map(([s,l])=>`<div class="col"><h3>${l}<span>${by(s).length}</span></h3>${by(s).map(card).join('')}</div>`).join('')}</div>
@@ -221,7 +251,7 @@ function showTask(id){const t=state.v.board.tasks.find(x=>x.id===id);if(!t)retur
   $('#send').onclick=async()=>{const b=$('#cmt').value.trim();if(!b)return;await post(`/api/projects/${state.slug}/tasks/${id}/comment`,{body:b});dlgEl.close();refresh()}}
 function showWorker(name){const w=state.v.workers.find(x=>x.name===name);const f=w.files;let tab='SOUL.md';
   const render=()=>{$('#wtab').innerHTML=`<pre>${esc(f[tab]||'')}</pre>`;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.f===tab))};
-  dlg(`<h3>${esc(w.name)} <span class="stat">${esc(w.role)}</span></h3><div class="tabs">${Object.keys(f).map(k=>`<button data-f="${k}">${k}</button>`).join('')}</div><div id="wtab"></div>`);
+  dlg(`<h3>${ri(w.role)}${esc(w.name)} <span class="stat">${esc(w.role)}</span></h3><div class="tabs">${Object.keys(f).map(k=>`<button data-f="${k}">${k}</button>`).join('')}</div><div id="wtab"></div>`);
   document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.f;render()});render()}
 function describe(e){const k=e.kind;
   if(k==='tool/call')return [`🔧 ${e.tool}`,JSON.stringify(e.input).slice(0,220)];
@@ -254,7 +284,7 @@ function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter
   if(f&&!`${e.kind} ${who} ${h} ${b}`.toLowerCase().includes(f))return;
   const cls=(e.is_error||(e.kind==='review/verdict'&&!e.passed)||e.kind.endsWith('error'))?'err':(e.kind==='audit/verdict'&&e.complete)?'good':'';
   const d=document.createElement('div');d.className='ev '+cls;
-  d.innerHTML=`<div class="k">#${e.seq} ${new Date(e.ts*1000).toLocaleTimeString()} · ${esc(e.kind)}</div><span class="a">${esc(who)}</span> ${esc(h)} <span>${esc(b)}</span>`;
+  d.innerHTML=`<div class="k">#${e.seq} ${new Date(e.ts*1000).toLocaleTimeString()} · ${esc(e.kind)}</div><span class="a">${who||e.role?ri(e.role||who):''}${esc(who)}</span> ${esc(h)} <span>${esc(b)}</span>`;
   const stick=box.scrollTop+box.clientHeight>=box.scrollHeight-40;box.appendChild(d);if(stick)box.scrollTop=box.scrollHeight}
 
 /* ---------- Агенты ---------- */
@@ -264,7 +294,7 @@ async function agents(){$('#view').innerHTML='<div class="wrap" id="ag"><div cla
     $('#ag').innerHTML=`<p class="stat">Как разные модели, роли и конкретные боты справляются с задачами во всех проектах. «С 1-й попытки» — принято ревьюером без отказов и повторных запусков. «Срывы» — запуски, закончившиеся зависанием, лимитом ходов или ошибкой.</p>
     <h2>По моделям</h2>${t(a.by_model,'модель')}<h2>По ролям</h2>${t(a.by_role,'роль')}
     <h2>Все боты</h2><div class="tablewrap"><table><tr><th>бот</th><th>роль</th><th>проект</th><th>модель</th><th class="n">готово</th><th class="n">с 1-й</th><th class="n">отказов</th><th class="n">срывов</th><th class="n">токены</th><th class="n">$</th><th>сейчас</th></tr>
-    ${a.workers.map(w=>`<tr><td>${esc(w.name)}</td><td>${esc(w.role)}</td><td><a href="#/p/${encodeURIComponent(w.project)}">${esc(w.project_name)}</a></td><td>${esc(w.model)}</td><td class="n">${w.done}/${w.tasks}</td><td class="n">${w.first_pass}</td><td class="n">${w.rejections}</td><td class="n">${w.stalls}</td><td class="n">${num(w.tokens_in+w.tokens_out)}</td><td class="n">${money(w.cost_usd)}</td><td>${w.busy_on?'▶ '+esc(w.busy_on):''}</td></tr>`).join('')}</table></div>`};
+    ${a.workers.map(w=>`<tr><td>${esc(w.name)}</td><td>${ri(w.role)}${esc(w.role)}</td><td><a href="#/p/${encodeURIComponent(w.project)}">${esc(w.project_name)}</a></td><td>${esc(w.model)}</td><td class="n">${w.done}/${w.tasks}</td><td class="n">${w.first_pass}</td><td class="n">${w.rejections}</td><td class="n">${w.stalls}</td><td class="n">${num(w.tokens_in+w.tokens_out)}</td><td class="n">${money(w.cost_usd)}</td><td>${w.busy_on?'▶ '+esc(w.busy_on):''}</td></tr>`).join('')}</table></div>`};
   await draw();timer=setInterval(draw,5000)}
 
 /* ---------- Реестр ---------- */
@@ -326,6 +356,7 @@ async function skills(){const sk=await api('/api/skills');
   document.querySelectorAll('[data-k]').forEach(a=>a.onclick=async()=>{const r=await api(`/api/skills/${encodeURIComponent(a.dataset.k)}`);
     dlg(`<h3>${esc(a.dataset.k)}</h3><pre>${esc(r.text)}</pre><h2>История изменений</h2>${r.ledger.map(e=>`<div class="ev">${new Date(e.ts*1000).toLocaleString()} · ${esc(e.action)} · ${esc(e.actor)} · ${esc(e.reason||'')}</div>`).join('')}`)})}
 route();
+
 // --- self-update -----------------------------------------------------------------------------------
 async function checkUpdate(force){const u=await api('/api/update'+(force?'?check=1':''));const b=$('#updbtn');
   const busy=u.state&&u.state.phase==='restart_pending';

@@ -42,14 +42,17 @@ def _cfg(args) -> dict:
 def print_board(project: Project) -> None:
     m = project.meta
     u = m["usage"]
-    print(f"{project.slug}  [{m['status']}]  {m['name']}")
+    from .brand import banner, paint, status
+
+    print(f"{banner()}  {m['name']}  [{status(m['status'])}]  "
+          f"{project.slug}")
     print(f"  tokens in/out {u['input_tokens']}/{u['output_tokens']}  requests {u['requests']}  "
           f"audits {m.get('audit_rounds', 0)}")
     for p in project.personas():
         print(f"  @{p.name} — {p.role}")
     for t in project.board.list():
         flag = " [needs human]" if t["needs_human"] else ""
-        print(f"  {ICONS.get(t['status'], '?')} {t['status']:<9} {t['id']}  {t['assignee'] or '-':<10} "
+        print(f"  {ICONS.get(t['status'], '?')} {status(t['status']):<9} {t['id']}  {t['assignee'] or '-':<10} "
               f"{t['title']}{flag}  (attempts {t['attempts']})")
 
 
@@ -81,7 +84,9 @@ def cmd_run(args) -> int:
         from .web.server import serve
 
         threading.Thread(target=serve, kwargs={"port": args.port, "config": cfg}, daemon=True).start()
-        print(f"dashboard: http://127.0.0.1:{args.port}")
+        from .brand import banner
+
+        print(banner(f"дашборд http://127.0.0.1:{args.port}"))
     holder: dict = {}
 
     def target():
@@ -318,6 +323,9 @@ def cmd_update(args) -> int:
         if not st.get("available"):
             print(st.get("reason") or "up to date")
             return 0
+        from .brand import banner
+
+        print(banner("обновление"))
         print(f"{st['behind']} new commits on {st['channel']} ({st['current'][:10]} -> {st['remote'][:10]})")
         for r in st["roadmap_done"]:
             print(f"  done: {r['id']} — {r['title']} (from {r['from']})")
