@@ -45,7 +45,10 @@ def env(tmp_path, monkeypatch):
 
 
 def cfg_with(url, **points):
+    # One rejected review makes the run "troubled", so the rule-based gate (evolved in gen 1:
+    # no failures -> no librarian/refine) lets learning through and the System One gate decides.
     return deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05,
+                                       "skills": {"review_after_tool_calls": 1}, "scripted": {"review_failures": 1},
                                        "decide": {"backend": "jev", "url": url, "points": points}})
 
 

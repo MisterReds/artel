@@ -247,7 +247,9 @@ class Evolution:
                 f"Likely files: {', '.join(h.files) or 'decide after reading the code'}{refs}\n\n"
                 "Constraints: keep the change focused; keep `python -m pytest -q` passing in the worktree and add "
                 "tests for new behavior; keep the CLI contract `artel run GOAL --name --seed --workdir --ref` and "
-                "the `scripted` provider working; do not edit evals/tasks. Every task must include the check "
+                "the `scripted` provider working; do not edit evals/tasks. Do not add notes, summaries, scratch files or a "
+                "shared/ directory to the repository: only source, tests and docs that belong to Artel. Every task "
+                "must include the check "
                 "`python -m pytest -q -x -p no:cacheprovider`.")
 
     def _implement(self, h: Hypothesis, wt: Path) -> dict:
