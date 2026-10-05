@@ -24,7 +24,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
-from ..agent import Outcome, _short, execute_tool
+from ..agent import LoopDetector, Outcome, _short, execute_tool
 from ..prompts import CONTINUATION
 from ..tooling import ToolContext
 
@@ -127,6 +127,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
     task_id = (ctx.task or {}).get("id")
     out = Outcome(status="stalled")
     out.cost_usd = 0.0
+    detector = LoopDetector()
     bridge = ToolBridge(kernel, project, ctx, role, tool_names, actor)
     cfg_dir = project.root / ".cc"
     cfg_dir.mkdir(exist_ok=True)
@@ -205,6 +206,13 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                                 if b["name"].startswith(MCP_PREFIX):
                                     out.digest.append(f"TOOL {b['name'][len(MCP_PREFIX):]}({_short(b['input'])})")
                                     continue
+                                if (verdict := detector.observe_tool(b["name"], b["input"])):
+                                    project.log.append("agent/loop", actor=actor, task_id=task_id, loop_kind="tool",
+                                                       stage=verdict, details={"tool": b["name"],
+                                                                               "input": _short(b["input"])})
+                                    if verdict == "stop":
+                                        out.status, out.error = "stalled", f"loop: repeated tool call {b['name']}"
+                                        proc.terminate()
                                 out.tool_calls += 1
                                 pending[b["id"]] = (b["name"], b["input"])
                                 project.log.append("tool/call", actor=actor, task_id=task_id, tool=b["name"],
@@ -251,7 +259,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
             if ctx.terminal:
                 out.status, out.terminal = "terminal", ctx.terminal
                 break
-            if out.status in ("turn_limit", "stopped"):
+            if out.status in ("turn_limit", "stopped") or out.error.startswith("loop"):
                 break
             if proc.returncode not in (0, None) or (result_ev and result_ev.get("is_error")):
                 detail = (result_ev or {}).get("result") or stderr[-800:] or f"exit {proc.returncode}"

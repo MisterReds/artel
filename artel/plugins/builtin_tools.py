@@ -7,7 +7,7 @@ import subprocess
 from pathlib import Path
 
 from ..kernel import ToolSpec
-from ..tooling import ToolContext, ToolError
+from ..tooling import ToolContext, ToolError, window_text
 
 PLUGIN = {"name": "artel.plugins.builtin_tools", "version": "1",
           "provides": ["tool:bash", "tool:read_file", "tool:write_file", "tool:edit_file", "tool:list_files",
@@ -33,7 +33,7 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
         raise ToolError(f"timed out after {timeout}s; partial output:\n{_clip(str(exc.stdout or ''), 4000)}")
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
     result = f"[exit {proc.returncode}]\n{_clip(out)}"
-    ctx.outputs.append(f"$ {command}\n{result[:3000]}")
+    ctx.outputs.append(f"$ {command}\n{window_text(result, 3000)}")
     return result
 
 
@@ -43,6 +43,7 @@ def read_file(ctx: ToolContext, path: str, offset: int = 0, limit: int = 0) -> s
         raise ToolError(f"{path} is not a file")
     lines = p.read_text(errors="replace").splitlines()
     end = offset + limit if limit else len(lines)
+    ctx.record_stamp(p)
     body = "\n".join(f"{i + 1:>5}\t{ln}" for i, ln in enumerate(lines[offset:end], start=offset))
     return _clip(body) or "(empty file)"
 
@@ -51,6 +52,7 @@ def write_file(ctx: ToolContext, path: str, content: str) -> str:
     p = ctx.resolve(path, write=True)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content)
+    ctx.record_stamp(p)
     ctx.edited_files.append(ctx.display(p))
     ctx.project.log.append("file/written", actor=ctx.actor, path=ctx.display(p), bytes=len(content.encode()))
     return f"wrote {len(content)} chars to {ctx.display(p)}"
@@ -60,11 +62,14 @@ def edit_file(ctx: ToolContext, path: str, old: str, new: str) -> str:
     p = ctx.resolve(path, write=True)
     if not p.is_file():
         raise ToolError(f"{path} is not a file")
+    if ctx.is_stale(p):
+        raise ToolError(f"{path} changed on disk since you last read it; re-read the file with read_file before editing it")
     text = p.read_text()
     n = text.count(old)
     if n != 1:
         raise ToolError(f"old text must match exactly once (matched {n})")
     p.write_text(text.replace(old, new))
+    ctx.record_stamp(p)
     ctx.edited_files.append(ctx.display(p))
     ctx.project.log.append("file/edited", actor=ctx.actor, path=ctx.display(p))
     return f"edited {ctx.display(p)}"
