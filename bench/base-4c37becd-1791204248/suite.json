@@ -1,0 +1,220 @@
+{
+ "label": "base-4c37becd",
+ "code": "/tmp/claude-0/artel-evo/evolution/artel/worktrees/baseline-4c37becd55",
+ "commit": "4c37becd55382b56cb42fcf26b575d1fee5dcfea",
+ "ts": 1791206195.9702246,
+ "repeats": 1,
+ "config": {
+  "provider": "anthropic",
+  "runtime": "claude_code",
+  "claude_code": {
+   "model": "sonnet",
+   "permission_mode": "bypassPermissions",
+   "max_resumes": 2,
+   "timeout_s": 1800
+  },
+  "models": {
+   "default": "claude-opus-5-5"
+  }
+ },
+ "results": [
+  {
+   "id": "adr-doc",
+   "kind": "writing",
+   "exit": 0,
+   "wall_s": 109.8,
+   "status": "done",
+   "cost_usd": 0.5746,
+   "tokens": 795039,
+   "requests": 6,
+   "duration_s": 109.6,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_adr.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/base-4c37becd-1791204248/adr-doc/projects/bench-adr-doc"
+  },
+  {
+   "id": "csv-report",
+   "kind": "data",
+   "exit": 0,
+   "wall_s": 81.2,
+   "status": "done",
+   "cost_usd": 0.4825,
+   "tokens": 825961,
+   "requests": 6,
+   "duration_s": 81.0,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_report.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/base-4c37becd-1791204248/csv-report/projects/bench-csv-report"
+  },
+  {
+   "id": "fix-inventory",
+   "kind": "bugfix",
+   "exit": 0,
+   "wall_s": 147.6,
+   "status": "done",
+   "cost_usd": 0.7711,
+   "tokens": 1297956,
+   "requests": 8,
+   "duration_s": 147.4,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 3,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_inventory.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/base-4c37becd-1791204248/fix-inventory/projects/bench-fix-inventory"
+  },
+  {
+   "id": "log-stats",
+   "kind": "data-hard",
+   "exit": -1,
+   "wall_s": 1800.1,
+   "status": "running",
+   "cost_usd": 0.4935,
+   "tokens": 789187,
+   "requests": 670,
+   "duration_s": 1799.8,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 662,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_logstats.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/base-4c37becd-1791204248/log-stats/projects/bench-log-stats",
+   "error": "timeout after 1800s\n"
+  },
+  {
+   "id": "lru-ttl-cache",
+   "kind": "build-hard",
+   "exit": -1,
+   "wall_s": 1800.0,
+   "status": "running",
+   "cost_usd": 0.3781,
+   "tokens": 489233,
+   "requests": 18,
+   "duration_s": 1603.1,
+   "attempts": 1,
+   "rejections": 0,
+   "stalls": 10,
+   "audit_rounds": 0,
+   "tasks": 3,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_cache.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/base-4c37becd-1791204248/lru-ttl-cache/projects/bench-lru-ttl-cache",
+   "error": "timeout after 1800s\n"
+  },
+  {
+   "id": "multi-module-bugs",
+   "kind": "bugfix-hard",
+   "exit": -1,
+   "wall_s": 1800.1,
+   "status": "running",
+   "cost_usd": 0.1632,
+   "tokens": 182889,
+   "requests": 16,
+   "duration_s": 1573.8,
+   "attempts": 1,
+   "rejections": 0,
+   "stalls": 10,
+   "audit_rounds": 0,
+   "tasks": 3,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_billing.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/base-4c37becd-1791204248/multi-module-bugs/projects/bench-multi-module-bugs",
+   "error": "timeout after 1800s\n"
+  },
+  {
+   "id": "wordfreq-cli",
+   "kind": "build",
+   "exit": 1,
+   "wall_s": 2.6,
+   "status": "planning",
+   "cost_usd": 0.0,
+   "tokens": 0,
+   "requests": 1,
+   "duration_s": 2.4,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 0,
+   "pass": false,
+   "partial": 0.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_wordfreq.py",
+     "exit": 1,
+     "output": "Traceback (most recent call last):\n  File \"/tmp/claude-0/artel-evo/evolution/artel/bench/base-4c37becd-1791204248/wordfreq-cli/projects/bench-wordfreq-cli/shared/.artel_eval/check_wordfreq.py\", line 3, in <module>\n    from wordfreq import top_words\nModuleNotFoundError: No module named 'wordfreq'\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/base-4c37becd-1791204248/wordfreq-cli/projects/bench-wordfreq-cli",
+   "error": "Exception in thread Thread-1 (target):\nTraceback (most recent call last):\n  File \"/usr/lib/python3.11/threading.py\", line 1045, in _bootstrap_inner\n    self.run()\n  File \"/usr/lib/python3.11/threading.py\", line 982, in run\n    self._target(*self._args, **self._kwargs)\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/baseline-4c37becd55/artel/cli.py\", line 88, in target\n    holder[\"result\"] = run_goal(args.goal, cfg, name=args.name, stop_event=stop, workdir=args.workdir,\n                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/baseline-4c37becd55/artel/manager.py\", line 624, in run_goal\n    return project, Manager(kernel, project, stop_event).run()\n                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/baseline-4c37becd55/artel/manager.py\", line 546, in run\n    self.plan()\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/baseline-4c37becd55/artel/manager.py\", line 95, in plan\n    raise RuntimeError(f\"planning failed: {out.status} {out.error}\")\nRuntimeError: planning failed: error claude code failed: You've hit your session limit · resets 4:20pm (UTC)\nTraceback (most recent call last):\n  File \"<frozen runpy>\", line 198, in _run_module_as_main\n  File \"<frozen runpy>\", line 88, in _run_code\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/baseline-4c37becd55/artel/cli.py\", line 514, in <module>\n    sys.exit(main())\n             ^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/baseline-4c37becd55/artel/cli.py\", line 510, in main\n    return args.fn(args)\n           ^^^^^^^^^^^^^\n  File \"/tmp/claude-0/artel-evo/evolution/artel/worktrees/baseline-4c37becd55/artel/cli.py\", line 100, in cmd_run\n    project, status = holder[\"result\"]\n                      ~~~~~~^^^^^^^^^^\nKeyError: 'result'\n"
+  }
+ ],
+ "summary": {
+  "tasks": 7,
+  "pass_rate": 0.857,
+  "partial_mean": 0.857,
+  "cost_usd": 2.863,
+  "tokens": 4380265,
+  "duration_mean_s": 759.6,
+  "attempts": 2,
+  "rejections": 0,
+  "stalls": 20,
+  "audit_rounds": 665
+ }
+}
