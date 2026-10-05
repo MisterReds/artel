@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import threading
 import time
@@ -28,6 +29,7 @@ from typing import Any, Optional
 from . import prompts
 from .agent import Outcome
 from .runtimes import run_agent
+from .snapshot import Snapshot
 from .project import Persona, Project, persona_from_dict
 from .tooling import ToolContext, window_text
 
@@ -35,6 +37,14 @@ TICK_S = 0.5
 BACKOFF_BASE_S = 10
 BACKOFF_CAP_S = 600
 REFINE_EVERY_FAILURES = 3
+
+
+START_OVER_RE = re.compile(r"start(ing)?\s+(over|from\s+scratch)|\brevert|\bdiscard", re.I)
+
+
+def wants_start_over(feedback: str) -> bool:
+    """True when reviewer feedback asks to throw the attempt away (e.g. 'START OVER')."""
+    return bool(START_OVER_RE.search(feedback or ""))
 
 
 def _fmt_list(items: list) -> str:
@@ -56,6 +66,8 @@ class Manager:
         self.review_retries: dict[str, int] = {}
         self.failures_since_refine = 0
         self.run_failures = 0  # never reset; gates the final refine
+        self.snapshots: dict[str, str] = {}  # task id -> tree hash of shared/ before the pending attempt
+        self.snapper = Snapshot(project.root / "snapshot.git", project.shared)
         self.last_refine = 0.0
 
     # --- helpers --------------------------------------------------------
@@ -172,6 +184,11 @@ class Manager:
         effort = self.difficulty_effort(task)
         if effort:
             ctx.state["effort"] = effort
+        if task["id"] not in self.snapshots:  # a pending snapshot predates the first run of this attempt
+            tree = self.snapper.track()
+            if tree:
+                self.snapshots[task["id"]] = tree
+                self.note("snapshot", task_id=task["id"], tree=tree)
         try:
             out = run_agent(self.kernel, self.project, role="worker", system=self.worker_system(persona),
                            first_user=self.task_card(task), ctx=ctx, max_turns=int(self.b["max_turns_per_run"]),
@@ -385,6 +402,7 @@ class Manager:
                 feedback = "Automated gates failed:\n" + "\n".join(
                     f"$ {g['command']} -> exit {g['exit']}\n{window_text(g['output'], 800)}" for g in gates if g["exit"] != 0)
         self.review_retries.pop(task_id, None)
+        snapshot = self.snapshots.pop(task_id, None)
         self.project.log.append("review/verdict", task_id=task_id, passed=passed, feedback=feedback,
                                 gates=[{"command": g["command"], "exit": g["exit"]} for g in gates])
         if passed:
@@ -397,6 +415,9 @@ class Manager:
                 self._bg(self.job_skill_review, self.board.get(task_id), digest)
         else:
             self.board.comment(task_id, "reviewer", f"REJECTED: {feedback}")
+            if snapshot and wants_start_over(feedback) and self.snapper.restore(snapshot):
+                self.board.comment(task_id, "manager", "manager: restored deliverables to pre-attempt snapshot")
+                self.note("snapshot_restore", task_id=task_id, tree=snapshot)
             attempts = task["attempts"] + 1
             self.failures_since_refine += 1
             self.run_failures += 1
