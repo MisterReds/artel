@@ -43,6 +43,7 @@ def read_file(ctx: ToolContext, path: str, offset: int = 0, limit: int = 0) -> s
         raise ToolError(f"{path} is not a file")
     lines = p.read_text(errors="replace").splitlines()
     end = offset + limit if limit else len(lines)
+    ctx.record_stamp(p)
     body = "\n".join(f"{i + 1:>5}\t{ln}" for i, ln in enumerate(lines[offset:end], start=offset))
     return _clip(body) or "(empty file)"
 
@@ -51,6 +52,7 @@ def write_file(ctx: ToolContext, path: str, content: str) -> str:
     p = ctx.resolve(path, write=True)
     p.parent.mkdir(parents=True, exist_ok=True)
     p.write_text(content)
+    ctx.record_stamp(p)
     ctx.edited_files.append(ctx.display(p))
     ctx.project.log.append("file/written", actor=ctx.actor, path=ctx.display(p), bytes=len(content.encode()))
     return f"wrote {len(content)} chars to {ctx.display(p)}"
@@ -60,11 +62,14 @@ def edit_file(ctx: ToolContext, path: str, old: str, new: str) -> str:
     p = ctx.resolve(path, write=True)
     if not p.is_file():
         raise ToolError(f"{path} is not a file")
+    if ctx.is_stale(p):
+        raise ToolError(f"{path} changed on disk since you last read it; re-read the file with read_file before editing it")
     text = p.read_text()
     n = text.count(old)
     if n != 1:
         raise ToolError(f"old text must match exactly once (matched {n})")
     p.write_text(text.replace(old, new))
+    ctx.record_stamp(p)
     ctx.edited_files.append(ctx.display(p))
     ctx.project.log.append("file/edited", actor=ctx.actor, path=ctx.display(p))
     return f"edited {ctx.display(p)}"
