@@ -123,6 +123,8 @@ class Evolution:
 
         self._git_lock = threading.RLock()  # worktree add/remove and commits touch shared repo state
         state = self.home / "state.json"
+        if not self.ledger_path.exists():
+            self.restore_journal()
         if state.exists():
             self.state = json.loads(state.read_text())
         else:
@@ -146,7 +148,95 @@ class Evolution:
         entry = {"id": uuid.uuid4().hex[:10], "ts": time.time(), **entry}
         with self.ledger_path.open("a") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
+        if entry.get("kind") in self.JOURNAL_KINDS:
+            self.sync_journal(f"{entry['kind']}: {entry.get('branch') or entry.get('source') or entry.get('generation', '')}")
         return entry
+
+    # --- durability: everything worth keeping goes to the git remote as it happens ---------------
+    JOURNAL_BRANCH = "evolve/journal"
+    JOURNAL_KINDS = ("baseline", "candidate", "absorb_candidate", "stack", "generation", "absorb", "absorb_error",
+                     "roadmap_pick")
+
+    def restore_journal(self) -> bool:
+        """A fresh machine (or a reclaimed container) continues from the journal on the remote."""
+        import io
+        import tarfile
+
+        if not git(self.repo, "remote", check=False):
+            return False
+        f = subprocess.run(["git", "fetch", "--quiet", "origin",
+                            f"+refs/heads/{self.JOURNAL_BRANCH}:refs/heads/{self.JOURNAL_BRANCH}"],
+                           cwd=self.repo, capture_output=True, timeout=600)
+        if f.returncode != 0:
+            return False
+        tar = subprocess.run(["git", "archive", "--format=tar", self.JOURNAL_BRANCH], cwd=self.repo,
+                             capture_output=True, check=True).stdout
+        with tarfile.open(fileobj=io.BytesIO(tar)) as tf:
+            tf.extractall(self.home, filter="data")
+        return True
+
+    def _has_remote(self) -> bool:
+        return bool(git(self.repo, "remote", check=False)) and self.state.get("push", True)
+
+    def _push(self, *refs: str) -> bool:
+        """Best-effort push of exact refs to origin with backoff (git proxies drop connections)."""
+        if not self._has_remote():
+            return False
+        for attempt in range(4):
+            p = subprocess.run(["git", "push", "--quiet", "origin",
+                                *[f"refs/heads/{r}:refs/heads/{r}" for r in refs]],
+                               cwd=self.repo, capture_output=True, text=True, timeout=600)
+            if p.returncode == 0:
+                return True
+            time.sleep(2 ** (attempt + 1))
+        self.state.setdefault("push_failures", []).append({"refs": list(refs), "error": p.stderr.strip()[-300:]})
+        return False
+
+    def _journal_files(self) -> dict:
+        """Relative path -> bytes: the ledger, state, baselines, diagnoses, absorb reports, gzipped transcripts."""
+        import gzip
+
+        out = {}
+        for pat in ("ledger.jsonl", "state.json", "baseline/*.json", "*-diagnosis.md", "absorb/*.json"):
+            for f in self.home.glob(pat):
+                out[str(f.relative_to(self.home))] = f.read_bytes()
+        for f in list(self.home.glob("projects/*/events.jsonl")) + list(self.home.glob("bench/**/events.jsonl")):
+            if f.stat().st_size < 50_000_000:
+                out[str(f.relative_to(self.home)) + ".gz"] = gzip.compress(f.read_bytes(), mtime=0)
+        for f in self.home.glob("bench/**/suite.json"):
+            out[str(f.relative_to(self.home))] = f.read_bytes()
+        return out
+
+    def sync_journal(self, message: str = "journal") -> Optional[str]:
+        """Commit the evolution journal to the orphan branch evolve/journal (git plumbing: no checkout, the
+        main working tree is untouched) and push it. Returns the commit sha, or None when nothing changed."""
+        import os
+        import tempfile
+
+        with self._git_lock:
+            try:
+                with tempfile.TemporaryDirectory() as tmp:
+                    env = {**os.environ, "GIT_INDEX_FILE": str(Path(tmp) / "index")}
+
+                    def g(*args, data=None):
+                        return subprocess.run(["git", *GIT_ID, *args], cwd=self.repo, env=env, input=data,
+                                              capture_output=True, check=True).stdout.decode().strip()
+
+                    for rel, data in sorted(self._journal_files().items()):
+                        blob = g("hash-object", "-w", "--stdin", data=data)
+                        g("update-index", "--add", "--cacheinfo", f"100644,{blob},{rel}")
+                    tree = g("write-tree")
+                    parent = git(self.repo, "rev-parse", "--verify", "--quiet", f"refs/heads/{self.JOURNAL_BRANCH}",
+                                 check=False)
+                    if parent and git(self.repo, "rev-parse", f"{parent}^{{tree}}") == tree:
+                        return None
+                    sha = g("commit-tree", tree, *(["-p", parent] if parent else []), "-m", message)
+                    g("update-ref", f"refs/heads/{self.JOURNAL_BRANCH}", sha)
+            except subprocess.CalledProcessError as e:
+                self.state.setdefault("push_failures", []).append({"journal": (e.stderr or b"").decode()[-300:]})
+                return None
+        self._push(self.JOURNAL_BRANCH)
+        return sha
 
     def champion(self) -> str:
         return git(self.repo, "rev-parse", self.state["main"])
@@ -172,7 +262,7 @@ class Evolution:
         self.record(kind="baseline", commit=sha, summary=suite["summary"])
         return suite
 
-    NON_CODE = ("roadmap.yaml", "docs/")
+    NON_CODE = ("roadmap.yaml", "studied.yaml", "docs/")
 
     def _equivalent_baseline(self, sha: str) -> Optional[Path]:
         """A cached baseline of a commit that differs from ``sha`` only in non-code files (roadmap, docs)."""
@@ -282,6 +372,45 @@ class Evolution:
         meta = project.meta
         return {"project": str(project.root), "status": status, "cost_usd": meta["usage"].get("cost_usd", 0.0)}
 
+    def _continue_implementation(self, h: Hypothesis, wt: Path) -> Optional[dict]:
+        """Resume the interrupted implementation project that worked in ``wt`` (None if there is none)."""
+        if self.implement_fn != self._implement:
+            return None
+        from ..manager import resume as resume_project
+        from ..project import artel_home
+
+        for meta_path in sorted((artel_home() / "projects").glob("*/project.json"), key=lambda p: -p.stat().st_mtime):
+            try:
+                meta = json.loads(meta_path.read_text())
+            except ValueError:
+                continue
+            if meta.get("workdir") == str(wt) and meta.get("status") != "done":
+                project, status = resume_project(meta_path.parent.name, self.config)
+                return {"project": str(project.root), "status": status, "resumed": True,
+                        "cost_usd": project.meta["usage"].get("cost_usd", 0.0)}
+        return None
+
+    def resume_plan_from_ledger(self) -> bool:
+        """Rebuild the plan of an interrupted generation started before plans were saved (one-time migration)."""
+        run = self.state.get("running")
+        if not run or run.get("plan"):
+            return bool(run)
+        from ..roadmap import Roadmap
+
+        gen = run["generation"]
+        picks = [e for e in self.ledger() if e["kind"] == "roadmap_pick"]
+        branches = sorted(git(self.repo, "branch", "--list", f"evolve/g{gen}-*", "--format=%(refname:short)").split())
+        if not picks or not branches:
+            return False
+        rm = Roadmap.of_repo(self.repo)
+        hyps = [rm.to_hypothesis(rm.get(i), self.home / "sources") for i in picks[-1]["items"]]
+        champ = git(self.repo, "merge-base", branches[0], self.state["main"])
+        by_k = {b.split("-")[1]: b for b in branches}
+        run["plan"] = {"champ": champ, "kind": "candidate", "hypotheses": [h.__dict__ for h in hyps],
+                       "branches": by_k, "roadmap": picks[-1]["items"]}
+        self._save()
+        return True
+
     def _commit(self, wt: Path, h: Hypothesis) -> dict:
         with self._git_lock:
             return self._commit_locked(wt, h)
@@ -292,6 +421,9 @@ class Evolution:
             return {"changed": False}
         git(wt, "commit", "-q", "-m", f"evolve: {h.title}\n\n{h.rationale}\n\nSource: {h.source}")
         stat = git(wt, "diff", "--shortstat", "HEAD~1", "HEAD")
+        branch = git(wt, "rev-parse", "--abbrev-ref", "HEAD")
+        if branch != "HEAD":  # the candidate's code reaches the remote before it is even measured
+            self._push(branch)
         return {"changed": True, "commit": git(wt, "rev-parse", "HEAD"), "diffstat": stat}
 
     # --- generation -----------------------------------------------------
@@ -324,16 +456,41 @@ class Evolution:
         return total
 
     def _build_candidate(self, gen: int, k: int, h: Hypothesis, champ: str, kind: str, budget_left) -> dict:
-        branch = self._unique_branch(f"evolve/g{gen}-{k}-{slug(h.title)}")
+        plan = self.state["running"]["plan"]
+        with self._git_lock:
+            branch = plan["branches"].get(str(k)) or self._unique_branch(f"evolve/g{gen}-{k}-{slug(h.title)}")
+            plan["branches"][str(k)] = branch
+            self._save()
         entry = {"kind": kind, "generation": gen, "branch": branch, "parent": champ, "hypothesis": h.__dict__}
         if budget_left() <= 0:
             entry.update(accepted=False, reason="generation budget exhausted before implementation", stage="skipped")
             return entry
-        wt = self._worktree(branch.replace("/", "_"), champ, branch=branch)
+        wt = self.home / "worktrees" / branch.replace("/", "_")
+        exists = bool(git(self.repo, "branch", "--list", branch))
+        ahead = exists and int(git(self.repo, "rev-list", "--count", f"{champ}..{branch}") or 0) > 0
+        try:
+            if not exists:
+                wt = self._worktree(branch.replace("/", "_"), champ, branch=branch)
+            elif not (wt / ".git").exists():
+                with self._git_lock:
+                    if wt.exists():
+                        self._remove_worktree_locked(wt)
+                    git(self.repo, "worktree", "prune", check=False)
+                    git(self.repo, "worktree", "add", str(wt), branch)
+        except Exception as exc:  # noqa: BLE001
+            entry.update(accepted=False, reason=f"error: worktree: {exc!r}", stage="error")
+            return entry
         entry["worktree"] = str(wt)
         try:
-            impl = self.implement_fn(h, wt)
-            commit = self._commit(wt, h)
+            if ahead:  # the commit happens only after the implementation finished
+                impl = {"resumed": "implementation already committed"}
+            else:
+                impl = self._continue_implementation(h, wt) if exists else None
+                impl = impl or self.implement_fn(h, wt)
+            commit = self._commit(wt, h) if not ahead else {"changed": False}
+            if ahead:
+                commit = {"changed": True, "commit": git(wt, "rev-parse", "HEAD"),
+                          "diffstat": git(wt, "diff", "--shortstat", champ, "HEAD")}
             entry.update(implementation=impl, commit=commit)
             if not commit["changed"]:
                 entry.update(accepted=False, reason="implementation produced no changes", stage="implement")
@@ -351,8 +508,13 @@ class Evolution:
 
     def generation(self, candidates: int = 2, hypotheses: Optional[list] = None, kind: str = "candidate",
                    parallel: int = 1, screen_tasks: Optional[list] = None, finalists: Optional[int] = None,
-                   budget_usd: Optional[float] = None, stack: bool = True) -> dict:
+                   budget_usd: Optional[float] = None, stack: bool = True, resume: bool = False,
+                   plan_extra: Optional[dict] = None) -> dict:
         """One generation over a population of hypotheses.
+
+        The plan (parent commit, hypotheses, candidate branches) is saved in state.json before any work, so a
+        generation interrupted by a crash or a reclaimed container continues with ``resume=True``: committed
+        candidates are kept, half-done implementations continue in their worktree from their own project.
 
         implement + test (in parallel) -> screen on a cheap task subset -> full benchmark for the best
         ``finalists`` -> stack every accepted candidate on an integration branch, re-testing after each
@@ -360,11 +522,20 @@ class Evolution:
         """
         from concurrent.futures import ThreadPoolExecutor
 
-        self.state["generation"] += 1
-        gen = self.state["generation"]
-        self.state["running"] = {"generation": gen, "since": time.time(), "phase": "baseline"}
+        plan = (self.state.get("running") or {}).get("plan") if resume else None
+        if plan:
+            gen, champ = self.state["running"]["generation"], plan["champ"]
+            hypotheses = [Hypothesis.from_dict(h) for h in plan["hypotheses"]]
+            kind = plan.get("kind", kind)
+            self.state["running"].update(phase="baseline", resumed_at=time.time())
+            self.record(kind="resume", generation=gen, branches=plan.get("branches", {}))
+        else:
+            self.state["generation"] += 1
+            gen = self.state["generation"]
+            champ = self.champion()
+            self.state["running"] = {"generation": gen, "since": time.time(), "phase": "baseline",
+                                     "plan": {"champ": champ, "kind": kind, "branches": {}, **(plan_extra or {})}}
         self._save()
-        champ = self.champion()
         base = self.baseline(champ)
         if hypotheses is None:
             report = diag_mod.doctor(None, [Path(r["project"]) for r in base["results"] if r.get("project")],
@@ -372,6 +543,8 @@ class Evolution:
             (self.home / f"gen{gen}-diagnosis.md").write_text(diag_mod.render_markdown(report))
             self._phase("proposing")
             hypotheses = self.propose(report, candidates)
+        self.state["running"]["plan"]["hypotheses"] = [h.__dict__ for h in hypotheses]
+        self._save()
         results: list[dict] = []
 
         def budget_left() -> float:
@@ -525,22 +698,42 @@ class Evolution:
             self.state["running"]["phase"] = phase
             self._save()
 
+    def resume(self, **opts) -> Optional[dict]:
+        """Finish the generation that was interrupted (None if nothing was running)."""
+        if not self.resume_plan_from_ledger():
+            return None
+        if self.state["running"]["plan"].get("roadmap"):
+            return self.roadmap_generation(0, resume=True, **opts)
+        return self.generation(resume=True, **opts)
+
     def run(self, generations: int = 1, candidates: int = 2, **opts) -> list[dict]:
         return [self.generation(candidates, **opts) for _ in range(generations)]
 
     # --- roadmap --------------------------------------------------------
-    def roadmap_generation(self, n: int, wave: Optional[int] = None, **opts) -> dict:
-        """Implement the next ``n`` evolve items of roadmap.yaml as one population; mark merged items done."""
+    def roadmap_generation(self, n: int, wave: Optional[int] = None, ids: Optional[list] = None,
+                           resume: bool = False, **opts) -> dict:
+        """Implement the next ``n`` evolve items of roadmap.yaml (or exactly ``ids``) as one population;
+        mark merged items done."""
         from ..roadmap import Roadmap
 
         rm = Roadmap.of_repo(self.repo)
-        items = rm.next_items(n, wave=wave)
+        resume = resume and self.resume_plan_from_ledger()
+        if resume:
+            ids = self.state["running"]["plan"].get("roadmap") or ids
+            n = max(n, len(ids or []))
+        if ids:
+            items = [rm.get(i) for i in ids if rm.get(i).get("status") in ("planned", "partial")
+                     and rm.get(i).get("mode") == "evolve"][:n]
+        else:
+            items = rm.next_items(n, wave=wave)
         if not items:
             return {"roadmap": [], "reason": "no open evolve items"}
         hyps = [rm.to_hypothesis(it, self.home / "sources") for it in items]
-        self.record(kind="roadmap_pick", items=[it["id"] for it in items],
-                    refs={h.source: h.refs for h in hyps})
-        s = self.generation(len(hyps), hypotheses=hyps, kind="candidate", **opts)
+        if not resume:
+            self.record(kind="roadmap_pick", items=[it["id"] for it in items],
+                        refs={h.source: h.refs for h in hyps})
+        s = self.generation(len(hyps), hypotheses=None if resume else hyps, kind="candidate", resume=resume,
+                            plan_extra={"roadmap": [it["id"] for it in items]}, **opts)
         gen = s["generation"]
         cands = {e["branch"]: e for e in self.ledger() if e["kind"] == "candidate" and e.get("generation") == gen}
         outcome = {}
@@ -569,55 +762,120 @@ class Evolution:
             rm = Roadmap.of_repo(self.repo)
             for item_id, (status, note) in outcome.items():
                 rm.set_status(item_id, status, note)
-            (self.repo / "docs").mkdir(exist_ok=True)
-            (self.repo / "docs" / "ROADMAP.md").write_text(rm.render_markdown())
-            git(self.repo, "add", "roadmap.yaml", "docs/ROADMAP.md")
-            if not git(self.repo, "diff", "--cached", "--name-only", check=False):
-                return None
             done = [k for k, v in outcome.items() if v[0] == "done"]
-            git(self.repo, "commit", "-q", "-m",
-                f"roadmap: gen {gen} — done: {', '.join(done) or 'none'}; attempted: {', '.join(outcome)}")
-            sha = git(self.repo, "rev-parse", "HEAD")
+            sha = self._commit_roadmap(f"roadmap: gen {gen} — done: {', '.join(done) or 'none'}; "
+                                       f"attempted: {', '.join(outcome)}")
+            if not sha:
+                return None
             if git(self.repo, "branch", "--list", f"evolve/gen-{gen}"):
                 git(self.repo, "branch", "-f", f"evolve/gen-{gen}", sha)
             return sha
 
+    def _commit_roadmap(self, message: str) -> Optional[str]:
+        """Re-render docs/ROADMAP.md and commit roadmap.yaml, studied.yaml and the render on the main branch."""
+        from ..roadmap import Roadmap
+
+        with self._git_lock:
+            (self.repo / "docs").mkdir(exist_ok=True)
+            (self.repo / "docs" / "ROADMAP.md").write_text(Roadmap.of_repo(self.repo).render_markdown())
+            paths = [p for p in ("roadmap.yaml", "studied.yaml", "docs/ROADMAP.md") if (self.repo / p).exists()]
+            git(self.repo, "add", *paths)
+            if not git(self.repo, "diff", "--cached", "--name-only", check=False):
+                return None
+            git(self.repo, "commit", "-q", "-m", message)
+            sha = git(self.repo, "rev-parse", "HEAD")
+        self._push(self.state["main"])
+        return sha
+
+    def cycle(self, items: int = 2, study: int = 1, **opts) -> dict:
+        """One turn of directed self-improvement: study the next unstudied harness from the registry
+        (its findings join the roadmap), then implement the next roadmap items in plan order."""
+        from ..roadmap import next_to_study
+
+        studied = []
+        for h in next_to_study(self.repo, n=study):
+            try:
+                out = self.absorb(h["repo"])
+                studied.append({"repo": h["repo"], "added": out["roadmap_added"]})
+            except Exception as e:  # an unreachable or broken source must not stop the cycle
+                self.record(kind="absorb_error", source=h["repo"], error=str(e)[:500])
+                studied.append({"repo": h["repo"], "error": str(e)[:200]})
+        gen = self.roadmap_generation(items, **opts) if items else {}
+        return {"studied": studied, "generation": gen}
+
     # --- absorb ---------------------------------------------------------
-    def absorb(self, source: str, focus: str = "", top: int = 2, run: bool = False) -> dict:
+    def absorb(self, source: str, focus: str = "", top: int = 3, run: bool = False, min_fit: float = 0.6) -> dict:
+        """Study another harness's code; its worthwhile features become roadmap items (wave ABSORB_WAVE) with the
+        donor's source files attached. ``run`` implements the new evolve items right away (out of plan order)."""
+        from ..roadmap import ABSORB_WAVE, Roadmap, add_studied
+
         src = Path(source).expanduser()
-        name = slug(src.name if src.exists() else source.rstrip("/").split("/")[-1].removesuffix(".git"))
+        label = source.rstrip("/").removesuffix(".git")
+        label = "/".join(label.split("/")[-2:]) if not src.exists() else str(src)
+        name = slug(src.name if src.exists() else label.split("/")[-1])
         if not src.exists():
             url = source if "://" in source or source.startswith("git@") else f"https://github.com/{source}.git"
-            dest = self.home / "sources" / name
+            dest = self.home / "sources" / label.replace("/", "__")
             if not dest.exists():
                 dest.parent.mkdir(parents=True, exist_ok=True)
-                subprocess.run(["git", "clone", "-q", "--depth", "1", url, str(dest)], check=True, timeout=900)
+                subprocess.run(["git", "clone", "-q", "--depth", "1", url, str(dest)], check=True, timeout=900,
+                               capture_output=True)
             src = dest
         lic = detect_license(src)
+        rm = Roadmap.of_repo(self.repo) if (self.repo / "roadmap.yaml").exists() else None
         goal = (f"Study the harness at {src} completely and find features worth absorbing into Artel (codebase at "
                 f"{self.repo}). {('Focus: ' + focus) if focus else ''}\n\nArtel today:\n<code_map>\n{self.code_map()}"
-                f"\n</code_map>\n\nAlready adopted vs planned (from docs/HARNESS_REGISTRY.md):\n"
-                f"{adopted_table(self.repo)}\n\nLicense of the source: {lic}. Finish with absorb_report.")
+                f"\n</code_map>\n\n<roadmap>\n{rm.text_for_agents() if rm else adopted_table(self.repo)}\n</roadmap>"
+                f"\n\nLicense of the source: {lic}. Finish with absorb_report.")
         report = self.agent_fn("absorber", goal, [str(src)], "absorb_report")
         feats = sorted(report["features"], key=lambda f: -float(f.get("fit", 0)))
         out = {"source": source, "path": str(src), "license": lic, "summary": report.get("summary", ""),
-               "features": feats}
+               "features": feats, "roadmap_added": []}
         adir = self.home / "absorb"
         adir.mkdir(exist_ok=True)
         (adir / f"{name}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
+        if rm:
+            items = []
+            for f in feats:
+                if float(f.get("fit", 0)) < min_fit or f.get("duplicates"):
+                    continue
+                mode = "design" if f.get("pillar") or f.get("mode") == "design" else "evolve"
+                items.append({
+                    "id": f"A-{slug(name, 16)}-{slug(f['name'], 28)}", "wave": ABSORB_WAVE, "mode": mode,
+                    "status": "planned", "title": f"{f['name']} — {f.get('description', '')}"[:200],
+                    "source": {"harness": name, "repo": label, "paths": list(f.get("source_files") or []),
+                               "license": lic},
+                    "target": [f["target"]] if f.get("target") else [], "fit": round(float(f.get("fit", 0)), 2),
+                    **({"pillar": f["pillar"]} if f.get("pillar") else {}),
+                    "plan": f.get("port_plan", ""),
+                    "acceptance": [x for x in (f.get("expected"), "tests for the new behavior",
+                                               "no benchmark regression") if x]})
+            out["roadmap_added"] = rm.add_items(items, header=f"absorbed from {label} ({lic})")
+            add_studied(self.repo, {"repo": label, "license": lic, "found": len(feats),
+                                    "added": out["roadmap_added"],
+                                    "skipped": {f["name"]: (f"duplicates {f['duplicates']}" if f.get("duplicates")
+                                                            else f"fit {f.get('fit')}") for f in feats
+                                                if f.get("duplicates") or float(f.get("fit", 0)) < min_fit},
+                                    "summary": report.get("summary", "")[:400]})
+            out["commit"] = self._commit_roadmap(
+                f"roadmap: absorbed {label} ({lic}) — {len(out['roadmap_added'])} items: "
+                f"{', '.join(out['roadmap_added']) or 'none'}")
         self.record(kind="absorb", source=source, license=lic, features=[f["name"] for f in feats],
-                    summary=report.get("summary", ""))
+                    summary=report.get("summary", ""), roadmap_added=out["roadmap_added"])
         if run and feats:
-            copy_ok = lic in ("MIT", "Apache-2.0", "BSD")
-            hyps = [Hypothesis.from_dict({
-                "title": f"Absorb from {name}: {f['name']}", "rationale": f.get("value", ""),
-                "plan": f.get("port_plan", ""), "expected": f.get("expected", ""),
-                "files": [f.get("target", "")] if f.get("target") else []},
-                refs=[str(src)], source=f"absorb:{name}",
-                license_note=("Source license allows copying with attribution; keep the notice in a comment."
-                              if copy_ok else "Reimplement the idea; do not copy code (license not permissive)."))
-                for f in feats[:top]]
-            out["generation"] = self.generation(len(hyps), hypotheses=hyps, kind="absorb_candidate")
+            if rm:
+                out["generation"] = self.roadmap_generation(top, ids=out["roadmap_added"])
+            else:
+                copy_ok = lic in ("MIT", "Apache-2.0", "BSD")
+                hyps = [Hypothesis.from_dict({
+                    "title": f"Absorb from {name}: {f['name']}", "rationale": f.get("value", ""),
+                    "plan": f.get("port_plan", ""), "expected": f.get("expected", ""),
+                    "files": [f.get("target", "")] if f.get("target") else []},
+                    refs=[str(src)], source=f"absorb:{name}",
+                    license_note=("Source license allows copying with attribution; keep the notice in a comment."
+                                  if copy_ok else "Reimplement the idea; do not copy code (license not permissive)."))
+                    for f in feats[:top]]
+                out["generation"] = self.generation(len(hyps), hypotheses=hyps, kind="absorb_candidate")
         return out
 
 

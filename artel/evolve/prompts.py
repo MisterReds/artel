@@ -25,4 +25,9 @@ Method:
 - For each feature give: what it does, the exact source files, the value for Artel, a fit score 0..1, the Artel
   module where it belongs, and a concrete port plan (functions/classes to add or change, tests to write).
 - Respect the license: if not permissive, the plan must reimplement the idea rather than copy code.
+- Artel follows a roadmap. Its pillars (modularity from DeepSeek Harness, skills from Hermes Agent, the goal loop
+  from Prime Agent, souls, the event log, the kanban, measured evolution) are fixed: a feature may strengthen a
+  pillar but never replace it. Mark such a feature `mode: design` with its `pillar`; local, testable changes are
+  `mode: evolve`. If a roadmap item already covers the feature, set `duplicates` to its id.
+- Name the exact `source_files` the implementer must study. Report only what you verified in the code.
 Finish with absorb_report."""

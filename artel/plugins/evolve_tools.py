@@ -17,7 +17,11 @@ FEAT = {"type": "object", "properties": {
     "name": {"type": "string"}, "description": {"type": "string"},
     "source_files": {"type": "array", "items": {"type": "string"}}, "value": {"type": "string"},
     "fit": {"type": "number"}, "target": {"type": "string", "description": "Artel module to change"},
-    "port_plan": {"type": "string"}, "expected": {"type": "string"}},
+    "port_plan": {"type": "string"}, "expected": {"type": "string"},
+    "mode": {"type": "string", "enum": ["evolve", "design"],
+             "description": "design if it changes a pillar or Artel's structure; evolve if it is a local, testable change"},
+    "pillar": {"type": "string", "description": "id of the pillar it touches, if any"},
+    "duplicates": {"type": "string", "description": "id of a roadmap item that already covers it, if any"}},
     "required": ["name", "description", "value", "fit", "port_plan"]}
 
 

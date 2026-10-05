@@ -263,6 +263,15 @@ def cmd_evolve(args) -> int:
     ev = _evolution(args)
     opts = {"parallel": args.parallel_candidates, "finalists": args.finalists, "budget_usd": args.budget,
             "stack": not args.no_stack, "screen_tasks": args.screen_tasks.split(",") if args.screen_tasks else None}
+    if args.resume:
+        s = ev.resume(**opts)
+        print(json.dumps(s, ensure_ascii=False) if s else "no interrupted generation")
+        return 0
+    if args.cycle:
+        for _ in range(args.cycle):
+            print(json.dumps(ev.cycle(items=args.roadmap if args.roadmap is not None else 2, study=args.study,
+                                      wave=args.wave, **opts), ensure_ascii=False))
+        return 0
     if args.roadmap:
         for _ in range(args.generations):
             s = ev.roadmap_generation(args.roadmap, wave=args.wave, **opts)
@@ -289,6 +298,11 @@ def cmd_roadmap(args) -> int:
             return 0 if ok else 1
         target.write_text(md)
         print(f"wrote {target}")
+    elif args.action == "study":
+        from .roadmap import next_to_study
+
+        for h in next_to_study(repo, n=args.n):
+            print(f"{h.get('relevance', 0):>3} {h['repo']:<45} {h['category']:<14} {h.get('description', '')[:80]}")
     elif args.action == "next":
         for it in rm.next_items(args.n, wave=args.wave, mode=args.mode):
             s = it.get("source") or {}
@@ -302,11 +316,20 @@ def cmd_roadmap(args) -> int:
 
 
 def cmd_absorb(args) -> int:
+    from .roadmap import next_to_study
+
     ev = _evolution(args)
+    if not args.source:
+        nxt = next_to_study(ev.repo, n=1)
+        if not nxt:
+            print("every relevant harness in the registry has been studied")
+            return 0
+        args.source = nxt[0]["repo"]
     out = ev.absorb(args.source, focus=args.focus or "", top=args.top, run=args.run)
     print(f"{out['source']} ({out['license']}): {out['summary'][:300]}")
     for f in out["features"]:
         print(f"  {f.get('fit', 0):.2f}  {f['name']} → {f.get('target', '?')}: {f.get('value', '')[:120]}")
+    print(f"roadmap: +{len(out['roadmap_added'])} {', '.join(out['roadmap_added'])}")
     if out.get("generation"):
         print(json.dumps(out["generation"], ensure_ascii=False))
     return 0
@@ -421,10 +444,15 @@ def main(argv=None) -> int:
     ev.add_argument("--no-stack", action="store_true", help="merge only the single best candidate")
     ev.add_argument("--roadmap", type=int, metavar="N", help="implement the next N evolve items of roadmap.yaml")
     ev.add_argument("--wave", type=int, help="with --roadmap: only this wave")
+    ev.add_argument("--cycle", type=int, metavar="K",
+                    help="K turns of: study the next unstudied harness from the registry (findings join the "
+                         "roadmap), then implement the next --roadmap items (default 2) in plan order")
+    ev.add_argument("--study", type=int, default=1, help="with --cycle: harnesses studied per turn")
+    ev.add_argument("--resume", action="store_true", help="finish the generation a crash or restart interrupted")
     ev.set_defaults(fn=cmd_evolve)
 
     rmp = sub.add_parser("roadmap", help="roadmap.yaml: status, next items, render docs/ROADMAP.md")
-    rmp.add_argument("action", choices=["status", "next", "render"], nargs="?", default="status")
+    rmp.add_argument("action", choices=["status", "next", "study", "render"], nargs="?", default="status")
     rmp.add_argument("--repo")
     rmp.add_argument("-n", type=int, default=5)
     rmp.add_argument("--wave", type=int)
@@ -434,10 +462,12 @@ def main(argv=None) -> int:
 
     ab = sub.add_parser("absorb", help="analyse another harness and port its best features")
     evo_common(ab)
-    ab.add_argument("source", help="git URL, owner/repo, or local path")
+    ab.add_argument("source", nargs="?", help="git URL, owner/repo, or local path (default: the most relevant "
+                                               "unstudied harness from the registry)")
     ab.add_argument("--focus")
-    ab.add_argument("--top", type=int, default=2)
-    ab.add_argument("--run", action="store_true", help="implement and measure the top features as candidates")
+    ab.add_argument("--top", type=int, default=3)
+    ab.add_argument("--run", action="store_true",
+                    help="implement the new items right away instead of waiting for their turn in the roadmap")
     ab.set_defaults(fn=cmd_absorb)
 
     el = sub.add_parser("evolution", help="show the experiment ledger")

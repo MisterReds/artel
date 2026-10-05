@@ -6,7 +6,7 @@ import pytest
 
 from artel.evolve import bench
 from artel.evolve.diagnose import doctor, render_markdown, trajectory_profile
-from artel.evolve.engine import Evolution, Hypothesis, Policy, git
+from artel.evolve.engine import Evolution, Hypothesis, Policy, git, slug
 from artel.project import DEFAULT_CONFIG, deep_merge
 
 
@@ -196,3 +196,59 @@ def test_population_finalists_cutoff_and_budget(repo, tmp_path):
     s = ev2.generation(hypotheses=hyps2, parallel=1, budget_usd=0.15)
     stages = s["stages"]
     assert stages["skipped"] >= 4  # budget stopped new implementations after the first one or two
+
+
+def test_everything_reaches_the_remote_and_a_fresh_home_restores(repo, tmp_path):
+    remote = tmp_path / "remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    git(repo, "remote", "add", "origin", str(remote))
+    git(repo, "push", "-q", "origin", "main")
+    ev = make(repo, tmp_path, [_suite(0.5, 1.0), _suite(0.0, 1.0), _suite(1.0, 1.0)])
+    ev.generation(hypotheses=[Hypothesis("worse idea", "r", "p"), Hypothesis("better idea", "r", "p")])
+    heads = git(remote, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+    assert {"main", "evolve/g1-1-worse-idea", "evolve/g1-2-better-idea", "evolve/gen-1", "evolve/journal"} <= set(heads.split())
+    assert git(remote, "rev-parse", "main") == git(repo, "rev-parse", "main")
+    files = git(remote, "ls-tree", "-r", "--name-only", "evolve/journal").split()
+    assert "ledger.jsonl" in files and "state.json" in files and any(f.startswith("baseline/") for f in files)
+    # the main working tree was never touched by the journal commits
+    assert not git(repo, "status", "--porcelain")
+    # a reclaimed container: new clone, empty evolution home -> the ledger comes back from the remote
+    clone = tmp_path / "clone"
+    subprocess.run(["git", "clone", "-q", str(remote), str(clone)], check=True)
+    ev2 = make(clone, tmp_path / "fresh", [])
+    kinds = [e["kind"] for e in ev2.ledger()]
+    assert kinds.count("candidate") == 2 and "generation" in kinds and ev2.state["generation"] == 1
+
+
+class _Crash(BaseException):
+    """Simulates the process dying (not an ordinary candidate error)."""
+
+
+def test_interrupted_generation_resumes_without_redoing_finished_candidates(repo, tmp_path):
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    calls = []
+
+    def impl(h, wt):
+        calls.append(h.title)
+        (wt / f"{slug(h.title)}.txt").write_text("partial" if h.title == "two" else "done")
+        if h.title == "two" and calls.count("two") == 1:
+            raise _Crash()
+        return {"cost_usd": 0.0}
+
+    def bench_fn(code, label, tasks=None):
+        ok = (Path(code) / "two.txt").exists()
+        rows = [{"id": "a", "pass": ok, "partial": float(ok), "cost_usd": 0.1}]
+        return {"results": rows, "summary": bench.summarize(rows)}
+
+    hyps = [Hypothesis("one", "r", "p"), Hypothesis("two", "r", "p")]
+    ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    with pytest.raises(_Crash):
+        ev.generation(hypotheses=hyps)
+    assert ev.state["running"]["plan"]["branches"] == {"1": "evolve/g1-1-one", "2": "evolve/g1-2-two"}
+    # a new process (container restart) picks the generation up
+    ev2 = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    s = ev2.resume()
+    assert calls == ["one", "two", "two"]  # "one" was committed before the crash and is not redone
+    assert s["generation"] == 1 and s["accepted"] and "running" not in ev2.state
+    assert ev2.state["generation"] == 1 and any(e["kind"] == "resume" for e in ev2.ledger())
+    assert ev2.resume() is None
