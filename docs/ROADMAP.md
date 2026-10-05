@@ -1,85 +1,59 @@
 # Дорожная карта Artel
 
-Что уже взято из каких харнессов, в каком объёме, и что дальше. Статусы: ✅ сделано и покрыто тестами ·
-◐ сделано частично (упрощённая версия) · ⏭ в плане.
+Сгенерировано из `roadmap.yaml` командой `artel roadmap render`. Правки — только в yaml. Что уже взято и откуда — [ADOPTED.md](ADOPTED.md); опоры — [ARCHITECTURE.md](ARCHITECTURE.md).
 
-## Сколько харнессов изучено
+Режимы: **pillar** — опора, контракт закреплён `tests/test_invariants.py`; **design** — структурное изменение, делается вручную; **evolve** — реализует сам Artel (`artel evolve --roadmap`).
 
-| Глубина | Сколько | Что именно |
-|---|---|---|
-| Реестр | 1391 проект (1366 живых) | 10 awesome-списков + 42 ручных записи, включая 9 закрытых продуктов |
-| Автоматический разбор README | 877 | 26 признаков, даты коммитов, заявленные бенчмарки |
-| Ручное чтение README | ~45 | см. таблицу ниже |
-| Разбор исходного кода | 16 | Hermes Agent, Prime Agent, DeepSeek Harness, OpenClaw, Agent Skills spec, anthropics/skills, openai/skills, so1, Jev-Style v3, **OpenCode, Codex, Qwen Code, Pi, OpenHands, OpenScience, Claude Code** (плагины + разбор архитектуры) — см. [ANALYSIS_MAJOR.md](ANALYSIS_MAJOR.md) |
+## Опоры
 
-## Взято и работает
-
-| Механизм | Источник | В Artel | Статус |
+| Опора | Что | Источник | Статус |
 |---|---|---|---|
-| Скиллы: авто-создание после задачи, правка, read-before-write, ownership | Hermes Agent | `skills.py`, библиотекарь в `manager.py` | ✅ |
-| Журнал правок скиллов + откат, lifecycle active→stale→archived, guard по доверию | Hermes Agent | `skills.py` | ✅ |
-| Импорт из хабов скиллов | anthropics/skills, openai/skills, Agent Skills spec | `artel skills import` | ✅ |
-| Канбан на SQLite: DAG, CAS-захват, попытки | Hermes kanban | `board.py` | ✅ |
-| Цикл до результата: continuation, лимит холостых ходов, backoff | Prime Agent | `agent.py`, `manager.py` | ✅ |
-| Завершение решает проверка, а не агент (гейты) | Prime Agent autonomous | гейты + ревьюер | ✅ |
-| Continual Harness: правки промптов/правил со снапшотами и откатом | Prime Agent `/refine` | `refine.py` | ✅ |
-| Микроядро: сервисы, хуки, waterfall, плагины из конфига | DeepSeek Harness (Cordis) | `kernel.py` | ◐ упрощённо: нет обратимых эффектов и выгрузки плагинов на лету, менеджер и доска — ядро, а не плагины |
-| Append-only журнал, «всё, что видит модель, записано» | DeepSeek Harness | `events.jsonl` | ✅ |
-| Бот с душой: SOUL / IDENTITY / RULES / MEMORY + свой workspace | OpenClaw | `project.py` | ✅ |
-| Аудит цели, недостающее → новые задачи | Hermes (root wake-up), LongHorizon-Harness | аудитор | ✅ |
-| Портфель проектов, «требует внимания» | Gas Town, Munder Difflin, Agent Deck, Maestro | дашборд | ✅ |
-| Аналитика агентов по моделям/ролям, $ на задачу, бюджетные алерты | agent-teams-ai, Agent Deck | `analytics.py` | ✅ |
-| Путь задачи по этапам | AgentTeams (TeamHarness) | дашборд | ✅ |
-| Внешний агент как рантайм (CLI + MCP-мост) | Scion, Munder Difflin, Omnigent | `runtimes/claude_code.py` | ✅ |
-| Эволюция харнесса, проверяемая бенчмарком | auto-harness, Gear, HarnessX, reef | `evolve/` | ✅ |
-| Скрытые проверки, которых агенты не видят | Terminal-Bench / Harbor | `evals/tasks` | ✅ |
-| Ветки-кандидаты, отбор, теги поколений | Ouroboros (reviewed core evolution) | `evolve/engine.py` | ✅ |
-| Абсорбция чужого харнесса | — (своё) | `artel absorb` | ✅ |
-| System One решения в узких местах | TypeSafe Jev → so1 / Jev-Style v3 | `decide.py` | ✅ локально на Jev-Style 2B v3; ⏭ ускорить (сейчас 5 с/вызов на CPU) |
-| Петля суждений: исправления → правила | kagemusha | refine → RULES.md | ◐ |
+| P1-modularity | Everything is a plugin — manifests, reversible effects, hot reload, swappable runtimes | DeepSeek Harness | готово |
+| P2-skills | Self-improving skill library — create/patch after hard tasks, read-before-write, ledger, lifecycle, guard | Hermes Agent | готово |
+| P3-goal-loop | Work until done — continuation, no-progress backoff, evidence, reviewer and auditor decide | Prime Agent | готово |
+| P4-souls | Bots with souls — SOUL/IDENTITY/RULES/MEMORY and a private workspace | OpenClaw | готово |
+| P5-transparency | Append-only event log; every model and tool call recorded; live dashboard | DeepSeek Harness | готово |
+| P6-kanban | Kanban DAG with compare-and-swap claims | Hermes Agent | готово |
+| P7-measured-evolution | Evolution through branches, tests, hidden-check benchmark, population screening and stacking | auto-harness / Gear / Ouroboros | готово |
 
-## Следующее, по приоритету
+## Волна 1 — 0/8 готово
 
-### Волна 1 — надёжность цикла (дёшево, прямо влияет на прохождение и стоимость)
+| Пункт | Что | Откуда | Режим | Статус |
+|---|---|---|---|---|
+| W1-loop-detector | Loop detector — identical tool calls in a row and repeated text stop the run with a corrective note | Qwen Code (`QwenLM/qwen-code`) | evolve | план |
+| W1-evidence-window | Evidence window keeps head and tail, cuts the middle | Qwen Code (`QwenLM/qwen-code`) | evolve | план |
+| W1-output-spill | Oversized tool output spills to a file with a preview and the path | OpenCode (`anomalyco/opencode`) | evolve | план |
+| W1-read-cache | Stale-edit guard — refuse edits to files changed since the agent last read them | Qwen Code (`QwenLM/qwen-code`) | evolve | план |
+| W1-fuzzy-edit | Fuzzy edit application (whitespace-normalized, then block-anchor match) | OpenCode (`anomalyco/opencode`) | evolve | план |
+| W1-post-write-diagnostics | Diagnostics right after a write (py_compile / configured linters) | OpenCode (`anomalyco/opencode`) | evolve | план |
+| W1-compaction | Context compaction for the native runtime — clear old tool outputs, then summarize | Claude Code / OpenCode (`anomalyco/opencode`) | evolve | план |
+| W1-snapshots | Shadow-git snapshot per run; rejected attempt can be reverted | OpenCode (`anomalyco/opencode`) | evolve | план |
 
-| # | Механизм | Источник | Зачем |
-|---|---|---|---|
-| 1 | Детектор зацикливания: одинаковые вызовы инструмента подряд, повторы текста | Qwen Code | агент не жжёт ходы в петле |
-| 2 | Окно доказательств: вырезать середину, сохранять конец вывода | Qwen Code | ревьюер видит итог тестов |
-| 3 | Длинный вывод инструмента → файл + превью + путь | OpenCode | без потери данных и без раздувания контекста |
-| 4 | Кэш прочитанного: правка отклоняется, если файл изменён после чтения | Qwen Code, Claude Code | без затирания чужих правок |
-| 5 | Нечёткое применение правок | OpenCode (Cline, Gemini CLI) | меньше сорванных правок |
-| 6 | Диагностика (lint / компиляция) сразу после записи файла | OpenCode (LSP) | ошибки видны в том же ходе |
-| 7 | Сжатие контекста: стирание старого вывода → суммаризация | Claude Code, OpenCode, Qwen Code | длинные задачи в нативном рантайме |
-| 8 | Теневой git-снимок на каждый запуск, откат отклонённой попытки | OpenCode | чистый старт повтора |
+## Волна 2 — 0/5 готово
 
-### Волна 2 — изоляция и безопасность
+| Пункт | Что | Откуда | Режим | Статус |
+|---|---|---|---|---|
+| W2-worktree-isolation | Worker isolation — git worktree (or container) per task, merge on acceptance | Archon / Gas Town / Qwen Code (`QwenLM/qwen-code`) | design | план |
+| W2-execpolicy | Command policy rules allow/prompt/forbidden with match/not_match examples validated at load | Codex (`openai/codex`) | evolve | план |
+| W2-guardian | Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review | Codex (`openai/codex`) | evolve | план |
+| W2-sandbox | bubblewrap sandbox for worker bash | Codex (`openai/codex`) | design | план |
+| W2-fs-grants | Explicit read/write grants per path | OpenScience (`synthetic-sciences/openscience`) | evolve | план |
 
-| # | Механизм | Источник | Зачем |
-|---|---|---|---|
-| 9 | Изоляция воркера: git worktree / контейнер на задачу | Archon, Gas Town, Qwen Code | параллельные исполнители не мешают друг другу |
-| 10 | Правила для команд с примерами-тестами (allow / prompt / forbidden) | Codex execpolicy | предсказуемые права |
-| 11 | Асинхронный ревьюер риска траектории | Codex Guardian | ловит опасный дрейф агента |
-| 12 | Песочница bubblewrap для bash воркера | Codex | ограничение файловой системы и сети |
-| 13 | Явные гранты на чтение и запись по путям | OpenScience | минимальные права |
+## Волна 3 — 0/12 готово
 
-### Волна 3 — архитектура и масштаб
+| Пункт | Что | Откуда | Режим | Статус |
+|---|---|---|---|---|
+| W3-acp-runtime | ACP runtime plugin — any ACP agent (Claude Code, Codex, Gemini, OpenHands) as a worker | OpenHands (`OpenHands/OpenHands`) | design | план |
+| W3-dsh-runtime | DeepSeek Harness as a runtime plugin, so dsh plugins work inside Artel workers | DeepSeek Harness (`deepseek-ai/deepseek-harness`) | design | план |
+| W3-durable | Durable turns and idempotent run receipts — resume mid-turn after a crash | Pi / OpenScience (`badlogic/pi-mono`) | design | план |
+| W3-plugin-packages | Plugin packages (install from git/pip), lifecycle events before_agent_start / session_shutdown | Pi (`badlogic/pi-mono`) | design | план |
+| W3-state-machine | Task as a state machine with executable transition gates | StateM (`henryqin1997/statem`) | evolve | план |
+| W3-fresh-context-steps | Fresh context per step, verified state outside the context | LongHorizon-Harness (`AMAP-ML/LongHorizon-Harness`) | evolve | план |
+| W3-plan-review | Plan review before execution; built-in Explore / Plan / Verification subagents | Fusion / Claude Code (`lintsinghua/claude-code-book`) | evolve | план |
+| W3-two-phase-memory | Two-phase memory — per-run extraction with secret redaction, then consolidation | Codex (`openai/codex`) | evolve | план |
+| W3-tree-budget | Budget for the whole agent tree with threshold reminders | Codex (`openai/codex`) | evolve | план |
+| W3-mailbox | Agent mailbox and teams | Claude Code / Gas Town (`lintsinghua/claude-code-book`) | evolve | план |
+| W3-automations | Automations — schedule and event triggers | OpenHands / Qwen Code (`QwenLM/qwen-code`) | evolve | план |
+| W3-fast-system-one | Fast local System One decisions (Jev-Style kept loaded in memory) | Jev-Style v3 (`chaoliangUNSW/Jev-Style-2B-Decision-v3-GGUF`) | design | частично |
 
-| # | Механизм | Источник | Зачем |
-|---|---|---|---|
-| 14 | ACP-адаптер: любой агент (Claude Code, Codex, Gemini, OpenHands) как рантайм | OpenHands Agent Canvas | все рантаймы одной реализацией |
-| 15 | Durable: сохранение до показа, идемпотентные квитанции запусков | Pi durable, OpenScience | продолжение после падения посреди хода |
-| 16 | Полная модульность: менеджер, доска, планировщик — заменяемые сервисы; расширения с жизненным циклом, hot-reload, пакеты | DeepSeek Harness, Pi | замена любого узла конфигом |
-| 17 | Задача как машина состояний с гейтами переходов | StateM, Archon | меньше срывов на длинных задачах |
-| 18 | Свежий контекст на каждый шаг + проверенное состояние вне контекста | LongHorizon-Harness | долгие задачи без деградации |
-| 19 | Ревью плана до исполнения; встроенные субагенты Explore / Plan / Verification | Fusion, Claude Code | ошибки ловятся до траты денег |
-| 20 | Fork-паттерн: параллельные субагенты с общим кэшем промпта | Claude Code | дешевле параллельная работа |
-| 21 | Двухфазная память: извлечение из прогона + консолидация, вычистка секретов | Codex | память без мусора и утечек |
-| 22 | Бюджет на всё дерево агентов с напоминаниями на порогах | Codex | контроль затрат субагентов |
-| 23 | Переписка агентов (mailbox) и команды | Claude Code coordinator, Gas Town | координация без менеджера |
-| 24 | Автоматизации: запуск по расписанию и событиям | OpenHands, Qwen Code | постоянная работа без человека |
-| 25 | Merge-очередь, панель судей, подписанные квитанции, чат-поверхности | Gas Town, revfactory, Bernstein, Hermes | см. прошлую версию плана |
-| 26 | Доменные пакеты скиллов и коннекторы (наука) | OpenScience | новые классы задач |
-
-Волна 1 идёт через `artel evolve` с ручными гипотезами: каждый пункт — ветка, тесты, бенчмарк, решение о слиянии.
-Волны 2–3 — через `artel absorb <репозиторий> --focus "<механизм>" --run`.
+Итого: 0/25 пунктов готово.

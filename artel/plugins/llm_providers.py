@@ -167,6 +167,8 @@ class OpenAICompatProvider:
                            model=data.get("model", model))
 
 
+PLUGIN = {"name": "artel.plugins.llm_providers", "version": "1", "provides": ["service:llm_factory"]}
+
 PROVIDERS = {"anthropic": AnthropicProvider, "openai_compat": OpenAICompatProvider}
 
 

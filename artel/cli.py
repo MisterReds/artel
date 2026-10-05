@@ -263,8 +263,41 @@ def cmd_evolve(args) -> int:
     ev = _evolution(args)
     opts = {"parallel": args.parallel_candidates, "finalists": args.finalists, "budget_usd": args.budget,
             "stack": not args.no_stack, "screen_tasks": args.screen_tasks.split(",") if args.screen_tasks else None}
+    if args.roadmap:
+        for _ in range(args.generations):
+            s = ev.roadmap_generation(args.roadmap, wave=args.wave, **opts)
+            print(json.dumps(s, ensure_ascii=False))
+            if not s.get("roadmap"):
+                break
+        return 0
     for s in ev.run(args.generations, args.candidates, **opts):
         print(json.dumps(s, ensure_ascii=False))
+    return 0
+
+
+def cmd_roadmap(args) -> int:
+    from .roadmap import Roadmap
+
+    repo = _repo(args)
+    rm = Roadmap.of_repo(repo)
+    if args.action == "render":
+        md = rm.render_markdown()
+        target = repo / "docs" / "ROADMAP.md"
+        if args.check:
+            ok = target.exists() and target.read_text() == md
+            print("docs/ROADMAP.md is up to date" if ok else "docs/ROADMAP.md is stale: run `artel roadmap render`")
+            return 0 if ok else 1
+        target.write_text(md)
+        print(f"wrote {target}")
+    elif args.action == "next":
+        for it in rm.next_items(args.n, wave=args.wave, mode=args.mode):
+            s = it.get("source") or {}
+            print(f"W{it.get('wave')} {it['id']:<28} {s.get('harness', '')} ({s.get('repo', '')}) — {it['title']}")
+    else:
+        print(json.dumps(rm.summary(), ensure_ascii=False))
+        for it in rm.items:
+            print(f"W{it.get('wave')} {it.get('status', ''):<11} {it.get('mode', ''):<7} {it['id']:<28} "
+                  f"{(it.get('source') or {}).get('harness', '')}" + (f"  [{it['result']}]" if it.get("result") else ""))
     return 0
 
 
@@ -386,7 +419,18 @@ def main(argv=None) -> int:
     ev.add_argument("--finalists", type=int, help="how many screened candidates get the full benchmark")
     ev.add_argument("--budget", type=float, help="USD cap for one generation")
     ev.add_argument("--no-stack", action="store_true", help="merge only the single best candidate")
+    ev.add_argument("--roadmap", type=int, metavar="N", help="implement the next N evolve items of roadmap.yaml")
+    ev.add_argument("--wave", type=int, help="with --roadmap: only this wave")
     ev.set_defaults(fn=cmd_evolve)
+
+    rmp = sub.add_parser("roadmap", help="roadmap.yaml: status, next items, render docs/ROADMAP.md")
+    rmp.add_argument("action", choices=["status", "next", "render"], nargs="?", default="status")
+    rmp.add_argument("--repo")
+    rmp.add_argument("-n", type=int, default=5)
+    rmp.add_argument("--wave", type=int)
+    rmp.add_argument("--mode", default="evolve", choices=["evolve", "design"])
+    rmp.add_argument("--check", action="store_true", help="render: fail if docs/ROADMAP.md is stale")
+    rmp.set_defaults(fn=cmd_roadmap)
 
     ab = sub.add_parser("absorb", help="analyse another harness and port its best features")
     evo_common(ab)

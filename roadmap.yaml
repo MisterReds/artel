@@ -1,0 +1,247 @@
+# Artel roadmap — the single source of truth. docs/ROADMAP.md is generated from this file (`artel roadmap render`).
+#
+# status: done | partial | planned | in_progress
+# mode:   pillar  — a foundation; contract guarded by tests/test_invariants.py
+#         design  — structural; implemented deliberately by hand, not by evolution
+#         evolve  — implemented by `artel evolve --roadmap` (branch, tests, benchmark, merge)
+# source.repo + source.paths are handed to the implementing team as read-only references.
+
+pillars:
+  - id: P1-modularity
+    title: Everything is a plugin — manifests, reversible effects, hot reload, swappable runtimes
+    source: {harness: DeepSeek Harness, repo: deepseek-ai/deepseek-harness, paths: [docs/architecture.md]}
+    status: done
+    where: [artel/kernel.py, artel/plugins/]
+  - id: P2-skills
+    title: Self-improving skill library — create/patch after hard tasks, read-before-write, ledger, lifecycle, guard
+    source: {harness: Hermes Agent, repo: NousResearch/hermes-agent, paths: [agent/background_review.py, tools/skill_manager_tool.py, tools/skill_ledger.py, agent/curator.py]}
+    status: done
+    where: [artel/skills.py, artel/plugins/skill_tools.py]
+  - id: P3-goal-loop
+    title: Work until done — continuation, no-progress backoff, evidence, reviewer and auditor decide
+    source: {harness: Prime Agent, repo: PrimeIntellect-ai/prime-agent, paths: [crates/pa-core/src/goals.rs, crates/pa-core/src/autonomous/mod.rs]}
+    status: done
+    where: [artel/agent.py, artel/manager.py]
+  - id: P4-souls
+    title: Bots with souls — SOUL/IDENTITY/RULES/MEMORY and a private workspace
+    source: {harness: OpenClaw, repo: openclaw/openclaw, paths: [docs/reference/templates]}
+    status: done
+    where: [artel/project.py]
+  - id: P5-transparency
+    title: Append-only event log; every model and tool call recorded; live dashboard
+    source: {harness: DeepSeek Harness, repo: deepseek-ai/deepseek-harness, paths: [docs/subsystems/session.md]}
+    status: done
+    where: [artel/kernel.py, artel/web/]
+  - id: P6-kanban
+    title: Kanban DAG with compare-and-swap claims
+    source: {harness: Hermes Agent, repo: NousResearch/hermes-agent, paths: [hermes_cli/kanban_db.py]}
+    status: done
+    where: [artel/board.py]
+  - id: P7-measured-evolution
+    title: Evolution through branches, tests, hidden-check benchmark, population screening and stacking
+    source: {harness: auto-harness / Gear / Ouroboros, repo: neosigmaai/auto-harness, paths: [PROGRAM.md]}
+    status: done
+    where: [artel/evolve/]
+
+items:
+  # ---- wave 1: loop reliability (cheap, directly moves pass rate and cost) ----
+  - id: W1-loop-detector
+    wave: 1
+    mode: evolve
+    status: planned
+    title: Loop detector — identical tool calls in a row and repeated text stop the run with a corrective note
+    source: {harness: Qwen Code, repo: QwenLM/qwen-code, paths: [packages/core/src/services/loopDetectionService.ts]}
+    target: [artel/agent.py, artel/runtimes/claude_code.py]
+    plan: >-
+      Track (tool name, canonical JSON args) per run; on the 5th identical consecutive call inject a system note and,
+      if it repeats, end the run as stalled with reason "loop". Detect repeated 50-char chunks in assistant text
+      (>=10 repeats). Log agent/loop events. Unit tests for both detectors.
+    acceptance: [unit tests for tool-call and text loops, no benchmark regression]
+  - id: W1-evidence-window
+    wave: 1
+    mode: evolve
+    status: planned
+    title: Evidence window keeps head and tail, cuts the middle
+    source: {harness: Qwen Code, repo: QwenLM/qwen-code, paths: [packages/core/src/goals/goal-evidence.ts]}
+    target: [artel/manager.py, artel/plugins/builtin_tools.py]
+    plan: >-
+      Replace tail truncation of evidence, gate output and run summaries with a head+tail window (tail gets the
+      larger share, marker in the middle), so summary lines like "412 passed" survive.
+    acceptance: [unit test that a long pytest output keeps its final summary line]
+  - id: W1-output-spill
+    wave: 1
+    mode: evolve
+    status: planned
+    title: Oversized tool output spills to a file with a preview and the path
+    source: {harness: OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/tool/truncate.ts]}
+    target: [artel/plugins/builtin_tools.py]
+    plan: Over 2000 lines or 50 KB, write the full output under the run workspace and return head/tail preview plus the path.
+    acceptance: [unit test for spill and preview]
+  - id: W1-read-cache
+    wave: 1
+    mode: evolve
+    status: planned
+    title: Stale-edit guard — refuse edits to files changed since the agent last read them
+    source: {harness: Qwen Code, repo: QwenLM/qwen-code, paths: [packages/core/src/services/fileReadCache.ts]}
+    target: [artel/plugins/builtin_tools.py, artel/tooling.py]
+    plan: Record (mtime, size) on read_file/write_file in ToolContext; edit_file refuses if the file changed since, asking to re-read.
+    acceptance: [unit test for the stale edit refusal]
+  - id: W1-fuzzy-edit
+    wave: 1
+    mode: evolve
+    status: planned
+    title: Fuzzy edit application (whitespace-normalized, then block-anchor match)
+    source: {harness: OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/tool/edit.ts]}
+    target: [artel/plugins/builtin_tools.py]
+    plan: When exact match fails, try line-trimmed match, then first/last-line anchors with Levenshtein similarity; refuse ambiguous matches.
+    acceptance: [unit tests for each fallback and ambiguity refusal]
+  - id: W1-post-write-diagnostics
+    wave: 1
+    mode: evolve
+    status: planned
+    title: Diagnostics right after a write (py_compile / configured linters)
+    source: {harness: OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/tool/write.ts, packages/opencode/src/lsp/]}
+    target: [artel/plugins/builtin_tools.py]
+    plan: After write_file/edit_file on .py run py_compile (and ruff if present); append errors to the tool result.
+    acceptance: [unit test that a syntax error is reported in the same tool result]
+  - id: W1-compaction
+    wave: 1
+    mode: evolve
+    status: planned
+    title: Context compaction for the native runtime — clear old tool outputs, then summarize
+    source: {harness: Claude Code / OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/session/compaction.ts]}
+    target: [artel/agent.py]
+    plan: Over a token threshold, replace tool_result contents older than two turns with placeholders; above a second threshold, summarize the head into one message.
+    acceptance: [unit test with a long synthetic conversation, no benchmark regression]
+  - id: W1-snapshots
+    wave: 1
+    mode: evolve
+    status: planned
+    title: Shadow-git snapshot per run; rejected attempt can be reverted
+    source: {harness: OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/snapshot/index.ts, packages/opencode/src/session/revert.ts]}
+    target: [artel/manager.py]
+    plan: Snapshot the deliverables directory before each run in a separate git dir; on rejection with "start over" guidance, restore it.
+    acceptance: [unit test snapshot + restore]
+
+  # ---- wave 2: isolation and safety ----
+  - id: W2-worktree-isolation
+    wave: 2
+    mode: design
+    status: planned
+    title: Worker isolation — git worktree (or container) per task, merge on acceptance
+    source: {harness: Archon / Gas Town / Qwen Code, repo: QwenLM/qwen-code, paths: [packages/core/src/services/gitWorktreeService.ts]}
+    target: [artel/manager.py, artel/project.py]
+  - id: W2-execpolicy
+    wave: 2
+    mode: evolve
+    status: planned
+    title: Command policy rules allow/prompt/forbidden with match/not_match examples validated at load
+    source: {harness: Codex, repo: openai/codex, paths: [codex-rs/execpolicy/README.md]}
+    target: [artel/plugins/builtin_tools.py]
+  - id: W2-guardian
+    wave: 2
+    mode: evolve
+    status: planned
+    title: Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review
+    source: {harness: Codex, repo: openai/codex, paths: [codex-rs/prompts/templates/guardian/classifier_instructions.md]}
+    target: [artel/manager.py]
+  - id: W2-sandbox
+    wave: 2
+    mode: design
+    status: planned
+    title: bubblewrap sandbox for worker bash
+    source: {harness: Codex, repo: openai/codex, paths: [codex-rs/linux-sandbox/README.md]}
+    target: [artel/plugins/builtin_tools.py]
+  - id: W2-fs-grants
+    wave: 2
+    mode: evolve
+    status: planned
+    title: Explicit read/write grants per path
+    source: {harness: OpenScience, repo: synthetic-sciences/openscience, paths: [ARCHITECTURE.md]}
+    target: [artel/tooling.py]
+
+  # ---- wave 3: architecture and scale ----
+  - id: W3-acp-runtime
+    wave: 3
+    mode: design
+    status: planned
+    title: ACP runtime plugin — any ACP agent (Claude Code, Codex, Gemini, OpenHands) as a worker
+    source: {harness: OpenHands, repo: OpenHands/OpenHands, paths: [docs/ACP_AGENTS.md]}
+    target: [artel/plugins/runtimes.py]
+  - id: W3-dsh-runtime
+    wave: 3
+    mode: design
+    status: planned
+    title: DeepSeek Harness as a runtime plugin, so dsh plugins work inside Artel workers
+    source: {harness: DeepSeek Harness, repo: deepseek-ai/deepseek-harness, paths: [docs/user/guide/python-sdk.md]}
+    target: [artel/plugins/runtimes.py]
+  - id: W3-durable
+    wave: 3
+    mode: design
+    status: planned
+    title: Durable turns and idempotent run receipts — resume mid-turn after a crash
+    source: {harness: Pi / OpenScience, repo: badlogic/pi-mono, paths: [packages/durable/README.md]}
+    target: [artel/agent.py, artel/board.py]
+  - id: W3-plugin-packages
+    wave: 3
+    mode: design
+    status: planned
+    title: Plugin packages (install from git/pip), lifecycle events before_agent_start / session_shutdown
+    source: {harness: Pi, repo: badlogic/pi-mono, paths: [packages/coding-agent/docs/extensions.md, packages/coding-agent/docs/packages.md]}
+    target: [artel/kernel.py]
+  - id: W3-state-machine
+    wave: 3
+    mode: evolve
+    status: planned
+    title: Task as a state machine with executable transition gates
+    source: {harness: StateM, repo: henryqin1997/statem, paths: [README.md]}
+    target: [artel/manager.py]
+  - id: W3-fresh-context-steps
+    wave: 3
+    mode: evolve
+    status: planned
+    title: Fresh context per step, verified state outside the context
+    source: {harness: LongHorizon-Harness, repo: AMAP-ML/LongHorizon-Harness, paths: [README.md]}
+    target: [artel/manager.py]
+  - id: W3-plan-review
+    wave: 3
+    mode: evolve
+    status: planned
+    title: Plan review before execution; built-in Explore / Plan / Verification subagents
+    source: {harness: Fusion / Claude Code, repo: lintsinghua/claude-code-book, paths: [en/Part-3-Advanced-Patterns/09-Sub-Agents-and-the-Fork-Pattern.md]}
+    target: [artel/manager.py]
+  - id: W3-two-phase-memory
+    wave: 3
+    mode: evolve
+    status: planned
+    title: Two-phase memory — per-run extraction with secret redaction, then consolidation
+    source: {harness: Codex, repo: openai/codex, paths: [codex-rs/memories/README.md]}
+    target: [artel/manager.py]
+  - id: W3-tree-budget
+    wave: 3
+    mode: evolve
+    status: planned
+    title: Budget for the whole agent tree with threshold reminders
+    source: {harness: Codex, repo: openai/codex, paths: [codex-rs/core/src/rollout_budget.rs]}
+    target: [artel/agent.py]
+  - id: W3-mailbox
+    wave: 3
+    mode: evolve
+    status: planned
+    title: Agent mailbox and teams
+    source: {harness: Claude Code / Gas Town, repo: lintsinghua/claude-code-book, paths: [en/Part-3-Advanced-Patterns/10-The-Coordinator-Pattern-Multi-Agent-Orchestration.md]}
+    target: [artel/plugins/board_tools.py]
+  - id: W3-automations
+    wave: 3
+    mode: evolve
+    status: planned
+    title: Automations — schedule and event triggers
+    source: {harness: OpenHands / Qwen Code, repo: QwenLM/qwen-code, paths: [packages/core/src/services/cronScheduler.ts]}
+    target: [artel/web/server.py]
+  - id: W3-fast-system-one
+    wave: 3
+    mode: design
+    status: partial
+    title: Fast local System One decisions (Jev-Style kept loaded in memory)
+    source: {harness: Jev-Style v3, repo: chaoliangUNSW/Jev-Style-2B-Decision-v3-GGUF, paths: [jev_style_decision_gguf.py]}
+    target: [artel/decide.py]

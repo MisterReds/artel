@@ -97,27 +97,94 @@ class ToolSpec:
         return {"name": self.name, "description": self.description, "input_schema": self.input_schema}
 
 
+class PluginError(Exception):
+    pass
+
+
 @dataclass
+class PluginRecord:
+    name: str
+    module: Any
+    manifest: dict
+    effects: list = field(default_factory=list)   # undo callbacks, applied in reverse on unload
+    loaded_at: float = field(default_factory=time.time)
+
+
 class Kernel:
-    config: dict = field(default_factory=dict)
-    services: dict = field(default_factory=dict)
-    hooks: dict = field(default_factory=lambda: defaultdict(list))
-    tools: dict = field(default_factory=dict)
-    plugins: list = field(default_factory=list)
+    """Plugin microkernel (DeepSeek Harness / Cordis model, kept small).
+
+    Every registration — service, tool, hook, runtime — is an *effect* owned by the plugin that made it.
+    Unloading a plugin reverses its effects; services and tools are stacks, so unloading an override
+    restores the implementation underneath. A failure inside ``setup`` rolls back what it registered.
+    Lookups on the hot path stay plain dict reads: stacks only update the flat views on load/unload.
+
+    A plugin is a module with ``setup(kernel)`` and an optional manifest::
+
+        PLUGIN = {"name": "...", "version": "1", "provides": ["service:x", "tool:y"], "requires": ["service:skills"]}
+
+    ``setup`` may return a callable; it runs as the last undo step on unload (close sockets, stop threads).
+    """
+
+    def __init__(self, config: Optional[dict] = None):
+        self.config = config or {}
+        self.services: dict = {}          # flat view: name -> active object
+        self.tools: dict = {}             # flat view: name -> active ToolSpec
+        self.hooks: dict = defaultdict(list)
+        self.records: dict[str, PluginRecord] = {}
+        self._service_stacks: dict = defaultdict(list)
+        self._tool_stacks: dict = defaultdict(list)
+        self._loading: list[str] = []     # plugin currently running setup (nested loads allowed)
+        self._lock = threading.RLock()
+
+    @property
+    def plugins(self) -> list[str]:
+        return list(self.records)
+
+    # --- effects ----------------------------------------------------------
+    def _effect(self, undo: Callable[[], None]) -> None:
+        if self._loading:
+            self.records[self._loading[-1]].effects.append(undo)
 
     # --- services -------------------------------------------------------
     def provide(self, name: str, obj: Any) -> None:
-        self.services[name] = obj
+        with self._lock:
+            entry = (self._loading[-1] if self._loading else None, obj)
+            self._service_stacks[name].append(entry)
+            self.services[name] = obj
+
+            def undo() -> None:
+                with self._lock:
+                    stack = self._service_stacks[name]
+                    if entry in stack:
+                        stack.remove(entry)
+                    if stack:
+                        self.services[name] = stack[-1][1]
+                    else:
+                        self.services.pop(name, None)
+
+            self._effect(undo)
 
     def get(self, name: str, default: Any = None) -> Any:
         return self.services.get(name, default)
 
+    def provider_of(self, name: str) -> Optional[str]:
+        stack = self._service_stacks.get(name)
+        return stack[-1][0] if stack else None
+
     # --- hooks ----------------------------------------------------------
     def on(self, event: str, fn: Callable, priority: int = 0) -> Callable[[], None]:
         entry = (priority, fn)
-        self.hooks[event].append(entry)
-        self.hooks[event].sort(key=lambda e: -e[0])
-        return lambda: self.hooks[event].remove(entry)
+        with self._lock:
+            self.hooks[event].append(entry)
+            self.hooks[event].sort(key=lambda e: -e[0])
+
+        def off() -> None:
+            with self._lock:
+                if entry in self.hooks[event]:
+                    self.hooks[event].remove(entry)
+
+        self._effect(off)
+        return off
 
     def emit(self, event: str, **payload: Any) -> None:
         """Fire-and-forget observers; a failing observer never breaks the caller."""
@@ -131,7 +198,10 @@ class Kernel:
 
     def waterfall(self, event: str, ctx: dict, final: Callable[[dict], Any]) -> Any:
         """Run listeners as a chain; each gets ``(ctx, next_)`` and may delegate or return."""
-        chain = [fn for _, fn in self.hooks.get(event, ())]
+        listeners = self.hooks.get(event)
+        if not listeners:                 # fast path: no interception registered
+            return final(ctx)
+        chain = [fn for _, fn in listeners]
 
         def call(i: int, c: dict) -> Any:
             if i == len(chain):
@@ -142,7 +212,21 @@ class Kernel:
 
     # --- tools ----------------------------------------------------------
     def register_tool(self, spec: ToolSpec) -> None:
-        self.tools[spec.name] = spec
+        with self._lock:
+            self._tool_stacks[spec.name].append(spec)
+            self.tools[spec.name] = spec
+
+            def undo() -> None:
+                with self._lock:
+                    stack = self._tool_stacks[spec.name]
+                    if spec in stack:
+                        stack.remove(spec)
+                    if stack:
+                        self.tools[spec.name] = stack[-1]
+                    else:
+                        self.tools.pop(spec.name, None)
+
+            self._effect(undo)
 
     def tools_for(self, role: str, names: Optional[list] = None) -> list[ToolSpec]:
         specs = [t for t in self.tools.values() if role in t.roles]
@@ -150,15 +234,75 @@ class Kernel:
             specs = [t for t in specs if t.name in names]
         return specs
 
+    # --- runtimes (agent loop implementations are plugins too) -------------
+    def register_runtime(self, name: str, fn: Callable[..., Any]) -> None:
+        self.provide(f"runtime:{name}", fn)
+
     # --- plugins --------------------------------------------------------
-    def load_plugin(self, dotted: str) -> None:
-        module = importlib.import_module(dotted)
-        module.setup(self)
-        self.plugins.append(dotted)
+    def load_plugin(self, dotted: str, module: Any = None) -> PluginRecord:
+        with self._lock:
+            if dotted in self.records:
+                return self.records[dotted]
+            module = module or importlib.import_module(dotted)
+            manifest = dict(getattr(module, "PLUGIN", {}) or {})
+            manifest.setdefault("name", dotted)
+            for req in manifest.get("requires", []):
+                kind, _, what = req.partition(":")
+                ok = (what in self.services) if kind == "service" else (what in self.tools) if kind == "tool" \
+                    else (what in self.records) if kind == "plugin" else True
+                if not ok:
+                    raise PluginError(f"plugin {dotted} requires {req}, which is not available")
+            record = PluginRecord(dotted, module, manifest)
+            self.records[dotted] = record
+            self._loading.append(dotted)
+            try:
+                teardown = module.setup(self)
+                if callable(teardown):
+                    record.effects.append(teardown)
+            except Exception:
+                self._loading.pop()
+                self._undo(record)
+                del self.records[dotted]
+                raise
+            self._loading.pop()
+            return record
+
+    def _undo(self, record: PluginRecord) -> None:
+        for undo in reversed(record.effects):
+            try:
+                undo()
+            except Exception as exc:  # noqa: BLE001 - keep unwinding the rest
+                log = self.get("log")
+                if log is not None:
+                    log.append("plugin/error", plugin=record.name, error=repr(exc))
+        record.effects.clear()
+
+    def unload_plugin(self, dotted: str) -> None:
+        with self._lock:
+            record = self.records.pop(dotted, None)
+            if record is None:
+                raise PluginError(f"plugin {dotted} is not loaded")
+            self._undo(record)
+
+    def reload_plugin(self, dotted: str) -> PluginRecord:
+        """Hot reload: unload, re-import the module, load again."""
+        with self._lock:
+            record = self.records.get(dotted)
+            if record is not None:
+                self.unload_plugin(dotted)
+                module = importlib.reload(record.module)
+            else:
+                module = importlib.import_module(dotted)
+            return self.load_plugin(dotted, module)
+
+    def describe(self) -> list[dict]:
+        return [{"name": r.name, "version": r.manifest.get("version"), "provides": r.manifest.get("provides", []),
+                 "requires": r.manifest.get("requires", []), "effects": len(r.effects)} for r in self.records.values()]
 
 
 DEFAULT_PLUGINS = [
     "artel.plugins.llm_providers",
+    "artel.plugins.runtimes",
     "artel.plugins.builtin_tools",
     "artel.plugins.skill_tools",
     "artel.plugins.board_tools",
@@ -168,6 +312,8 @@ DEFAULT_PLUGINS = [
 
 def build_kernel(config: dict) -> Kernel:
     kernel = Kernel(config=config)
+    disabled = set(config.get("disable_plugins", []))
     for dotted in DEFAULT_PLUGINS + list(config.get("plugins", [])):
-        kernel.load_plugin(dotted)
+        if dotted not in disabled:
+            kernel.load_plugin(dotted)
     return kernel

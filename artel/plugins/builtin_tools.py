@@ -9,6 +9,9 @@ from pathlib import Path
 from ..kernel import ToolSpec
 from ..tooling import ToolContext, ToolError
 
+PLUGIN = {"name": "artel.plugins.builtin_tools", "version": "1",
+          "provides": ["tool:bash", "tool:read_file", "tool:write_file", "tool:edit_file", "tool:list_files",
+                       "tool:memory_write"]}
 MAX_OUT = 20_000
 EXEC_ROLES = ("worker", "reviewer", "auditor", "evolver", "absorber")
 

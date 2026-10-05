@@ -9,11 +9,10 @@ def runtime_for(config: dict, role: str) -> str:
 
 
 def run_agent(kernel, project, *, role: str, **kw):
-    """Same contract as :func:`artel.agent.run_loop`, dispatched by the configured runtime."""
-    if runtime_for(kernel.config, role) == "claude_code":
-        from .claude_code import run_claude_code
-
-        return run_claude_code(kernel, project, role=role, **kw)
-    from ..agent import run_loop
-
-    return run_loop(kernel, project, role=role, **kw)
+    """Same contract as :func:`artel.agent.run_loop`, dispatched to the runtime plugin configured for the role."""
+    name = runtime_for(kernel.config, role)
+    fn = kernel.get(f"runtime:{name}")
+    if fn is None:
+        raise RuntimeError(f"no runtime plugin registered as {name!r}; loaded: "
+                           f"{sorted(k[8:] for k in kernel.services if k.startswith('runtime:'))}")
+    return fn(kernel, project, role=role, **kw)

@@ -5,6 +5,8 @@ from __future__ import annotations
 from ..kernel import ToolSpec
 from ..tooling import ToolContext, ToolError
 
+PLUGIN = {"name": "artel.plugins.evolve_tools", "version": "1", "provides": ["tool:propose_hypotheses"]}
+
 HYP = {"type": "object", "properties": {
     "title": {"type": "string"}, "rationale": {"type": "string", "description": "the evidence and the weakness"},
     "plan": {"type": "string", "description": "concrete code changes and tests"},

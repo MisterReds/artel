@@ -157,6 +157,11 @@ class Evolution:
         cache = self.home / "baseline" / f"{sha}.json"
         if cache.exists():
             return json.loads(cache.read_text())
+        reuse = self._equivalent_baseline(sha)
+        if reuse:
+            cache.parent.mkdir(parents=True, exist_ok=True)
+            cache.write_text(reuse.read_text())
+            return json.loads(cache.read_text())
         wt = self._worktree(f"baseline-{sha[:10]}", sha, new_branch=False)
         try:
             suite = self.bench_fn(wt, f"base-{sha[:8]}")
@@ -166,6 +171,16 @@ class Evolution:
         cache.write_text(json.dumps(suite, ensure_ascii=False))
         self.record(kind="baseline", commit=sha, summary=suite["summary"])
         return suite
+
+    NON_CODE = ("roadmap.yaml", "docs/")
+
+    def _equivalent_baseline(self, sha: str) -> Optional[Path]:
+        """A cached baseline of a commit that differs from ``sha`` only in non-code files (roadmap, docs)."""
+        for f in sorted((self.home / "baseline").glob("*.json"), key=lambda p: -p.stat().st_mtime):
+            d = subprocess.run(["git", "diff", "--name-only", f.stem, sha], cwd=self.repo, capture_output=True, text=True)
+            if d.returncode == 0 and all(c.startswith(self.NON_CODE) for c in d.stdout.splitlines() if c):
+                return f
+        return None
 
     def run_tests(self, code: Path) -> dict:
         h = diag_mod.code_health(code)
@@ -254,7 +269,7 @@ class Evolution:
                 f"Likely files: {', '.join(h.files) or 'decide after reading the code'}{refs}\n\n"
                 "Constraints: keep the change focused; keep `python -m pytest -q` passing in the worktree and add "
                 "tests for new behavior; keep the CLI contract `artel run GOAL --name --seed --workdir --ref` and "
-                "the `scripted` provider working; do not edit evals/tasks. Do not add notes, summaries, scratch files or a "
+                "the `scripted` provider working; do not edit evals/tasks or roadmap.yaml (the orchestrator updates it). Do not add notes, summaries, scratch files or a "
                 "shared/ directory to the repository: only source, tests and docs that belong to Artel. Every task "
                 "must include the check "
                 "`python -m pytest -q -x -p no:cacheprovider`.")
@@ -512,6 +527,60 @@ class Evolution:
 
     def run(self, generations: int = 1, candidates: int = 2, **opts) -> list[dict]:
         return [self.generation(candidates, **opts) for _ in range(generations)]
+
+    # --- roadmap --------------------------------------------------------
+    def roadmap_generation(self, n: int, wave: Optional[int] = None, **opts) -> dict:
+        """Implement the next ``n`` evolve items of roadmap.yaml as one population; mark merged items done."""
+        from ..roadmap import Roadmap
+
+        rm = Roadmap.of_repo(self.repo)
+        items = rm.next_items(n, wave=wave)
+        if not items:
+            return {"roadmap": [], "reason": "no open evolve items"}
+        hyps = [rm.to_hypothesis(it, self.home / "sources") for it in items]
+        self.record(kind="roadmap_pick", items=[it["id"] for it in items],
+                    refs={h.source: h.refs for h in hyps})
+        s = self.generation(len(hyps), hypotheses=hyps, kind="candidate", **opts)
+        gen = s["generation"]
+        cands = {e["branch"]: e for e in self.ledger() if e["kind"] == "candidate" and e.get("generation") == gen}
+        outcome = {}
+        for e in cands.values():
+            src = (e.get("hypothesis") or {}).get("source", "")
+            if not src.startswith("roadmap:"):
+                continue
+            item_id = src.split(":", 1)[1]
+            if e.get("merged"):
+                outcome[item_id] = ("done", f"evolve/gen-{gen} ({e['branch']})")
+            else:
+                outcome[item_id] = (rm.get(item_id).get("status"),
+                                    f"gen {gen} rejected at {e.get('stage', '?')}: {e.get('reason', '')[:160]}")
+        self.update_roadmap(outcome, gen)
+        s["roadmap"] = {k: v[0] for k, v in outcome.items()}
+        s["published"] = self.publish()
+        return s
+
+    def update_roadmap(self, outcome: dict, gen: int) -> Optional[str]:
+        """Write statuses into roadmap.yaml + docs/ROADMAP.md on the main branch and commit."""
+        from ..roadmap import Roadmap
+
+        if not outcome:
+            return None
+        with self._git_lock:
+            rm = Roadmap.of_repo(self.repo)
+            for item_id, (status, note) in outcome.items():
+                rm.set_status(item_id, status, note)
+            (self.repo / "docs").mkdir(exist_ok=True)
+            (self.repo / "docs" / "ROADMAP.md").write_text(rm.render_markdown())
+            git(self.repo, "add", "roadmap.yaml", "docs/ROADMAP.md")
+            if not git(self.repo, "diff", "--cached", "--name-only", check=False):
+                return None
+            done = [k for k, v in outcome.items() if v[0] == "done"]
+            git(self.repo, "commit", "-q", "-m",
+                f"roadmap: gen {gen} — done: {', '.join(done) or 'none'}; attempted: {', '.join(outcome)}")
+            sha = git(self.repo, "rev-parse", "HEAD")
+            if git(self.repo, "branch", "--list", f"evolve/gen-{gen}"):
+                git(self.repo, "branch", "-f", f"evolve/gen-{gen}", sha)
+            return sha
 
     # --- absorb ---------------------------------------------------------
     def absorb(self, source: str, focus: str = "", top: int = 2, run: bool = False) -> dict:

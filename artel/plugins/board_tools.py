@@ -14,6 +14,7 @@ from pathlib import Path
 from ..kernel import ToolSpec
 from ..tooling import ToolContext, ToolError
 
+PLUGIN = {"name": "artel.plugins.board_tools", "version": "1", "provides": ["tool:task_submit", "tool:review_verdict"]}
 NON_CODE = {".md", ".markdown", ".txt", ".rst", ".csv", ".tsv", ".json", ".yaml", ".yml", ".log", ".html", ".svg"}
 
 

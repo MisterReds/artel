@@ -8,6 +8,8 @@ from ..kernel import ToolSpec
 from ..skills import SkillError
 from ..tooling import ToolContext, ToolError
 
+PLUGIN = {"name": "artel.plugins.skill_tools", "version": "1",
+          "provides": ["tool:skills_list", "tool:skill_view", "tool:skill_manage"]}
 READ_ROLES = ("worker", "reviewer", "auditor", "librarian", "refiner", "manager", "planner", "evolver", "absorber")
 
 
