@@ -204,9 +204,35 @@ def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
     return routing(config)
 
 
+def save_timezone(config: dict, name, path: Optional[Path] = None) -> dict:
+    """Persist ui.timezone; an empty name clears it (system zone). Invalid IANA names raise ValueError, nothing is saved."""
+    from .project import artel_home
+    from .tz import info, valid_zone
+
+    name = name.strip() if isinstance(name, str) else name
+    if name and not valid_zone(name):
+        raise ValueError(f"unknown time zone: {name!r}")
+    if name is not None and not isinstance(name, str):
+        raise ValueError("timezone must be a string")
+    path = path or artel_home() / "artel.yaml"
+    current = (yaml.safe_load(path.read_text()) if path.exists() else {}) or {}
+    ui = dict(current.get("ui") or {})
+    if name:
+        ui["timezone"] = name
+    else:
+        ui.pop("timezone", None)
+    current["ui"] = ui
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(current, allow_unicode=True, sort_keys=False))
+    config["ui"] = {**(config.get("ui") or {}), **ui}
+    if not name:
+        config["ui"].pop("timezone", None)
+    return info(config)
+
+
 def overview(config: dict) -> dict:
     return {"codex": codex_status(config), "claude_code": claude_code_status(config), "keys": api_keys(config),
-            "local": local_status(config), "routing": routing(config)}
+            "local": local_status(config), "routing": routing(config), "timezone": __import__("artel.tz", fromlist=["info"]).info(config)}
 
 
-__all__ = ["CodexLogin", "overview", "save_routing", "logout_codex", "json"]
+__all__ = ["CodexLogin", "overview", "save_routing", "save_timezone", "logout_codex", "json"]

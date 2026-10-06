@@ -32,6 +32,7 @@ from .runtimes import run_agent
 from .snapshot import Snapshot
 from .project import Persona, Project, persona_from_dict
 from .tooling import ToolContext, window_text
+from .tz import fmt_ts, zone_name
 
 TICK_S = 0.5
 BACKOFF_BASE_S = 10
@@ -396,7 +397,7 @@ class Manager:
             until = retry_at(reason) or time.time() + 900
             self.board.update(task["id"], status="ready", backoff_until=until, actor="manager")
             self.board.comment(task["id"], "manager", f"Лимит провайдера ({reason}); повтор после "
-                                                       f"{time.strftime('%H:%M UTC', time.gmtime(until))}.")
+                                                       f"{fmt_ts(until, '%H:%M', self.cfg)} ({zone_name(self.cfg)}).")
             self.note("provider_limit", task_id=task["id"], until=until, reason=reason)
             return
         self._retry_later(task, reason)

@@ -230,6 +230,10 @@ def make_handler(runner: Runner):
 
                     self._json({**overview(runner.config), "codex_login": runner.codex_login.state,
                                 "installs": runner.installer.state})
+                elif parts == ["api", "timezone"]:
+                    from ..tz import info
+
+                    self._json(info(runner.config))
                 elif parts == ["api", "providers", "codex", "login"]:
                     self._json(runner.codex_login.state)
                 elif parts == ["api", "update"]:
@@ -333,6 +337,13 @@ def make_handler(runner: Runner):
                     from ..providers import save_routing
 
                     return self._json(save_routing(runner.config, data))
+                if parts == ["api", "providers", "timezone"]:
+                    from ..providers import save_timezone
+
+                    try:
+                        return self._json(save_timezone(runner.config, data.get("timezone", "")))
+                    except ValueError as e:
+                        return self._json({"error": str(e)}, 400)
                 if parts == ["api", "update", "apply"]:
                     return self._json(runner.update_apply())
                 if parts == ["api", "update", "rollback"]:
