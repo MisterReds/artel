@@ -52,4 +52,4 @@ def call(name, a):
 r = call("task_submit", {"summary": "hello.py prints hi", "evidence": "$ python hello.py\nhi"})
 emit({"type": "item.completed", "item": {"id": "i4", "type": "mcp_tool_call", "server": "artel", "tool": "task_submit", "arguments": {}, "status": "completed"}})
 emit({"type": "turn.completed", "usage": {"input_tokens": 1000, "cached_input_tokens": 400, "output_tokens": 200}})
-time.sleep(5)  # Artel stops the run as soon as the terminal tool is accepted
+time.sleep(30)  # Artel stops the run right after the turn is closed

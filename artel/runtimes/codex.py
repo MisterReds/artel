@@ -131,6 +131,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
             killer = threading.Timer(float(cc["timeout_s"]), proc.kill)
             killer.start()
             failure = ""
+            grace: Optional[threading.Timer] = None
             blocked = ""
             try:
                 for line in proc.stdout:
@@ -176,10 +177,17 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                             out.status, out.error = "turn_limit", f"{max_turns} turns"
                             proc.terminate()
                     if ctx.terminal:
-                        # the run is finished as soon as Artel accepted a terminal tool; do not let Codex continue
-                        proc.terminate()
+                        # Artel accepted a terminal tool: the run is finished. Let Codex close the turn so its usage
+                        # is reported (turn.completed), but never longer than a short grace period.
+                        if typ == "turn.completed":
+                            proc.terminate()
+                        elif grace is None:
+                            grace = threading.Timer(float(cc.get("finish_grace_s", 5)), proc.terminate)
+                            grace.start()
             finally:
                 killer.cancel()
+                if grace is not None:
+                    grace.cancel()
                 proc.wait()
             stderr = proc.stderr.read() if proc.stderr else ""
             if ctx.terminal:
