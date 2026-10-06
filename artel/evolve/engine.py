@@ -50,6 +50,13 @@ class InfraError(RuntimeError):
         self.retry_at = retry_at
 
 
+class AllLimited(InfraError):
+    """Every runtime configured in ``evolve.runtimes`` is limited: the generation pauses until the earliest reset."""
+
+
+DEFAULT_LIMIT_S = 900.0  # a provider limit without a stated reset time is retried after 15 minutes
+
+
 def infra_problem(text: str) -> Optional[InfraError]:
     m = INFRA_PATTERNS.search(text or "") or _AUTH.search(text or "")
     if not m:
@@ -158,7 +165,7 @@ class Evolution:
     def __init__(self, repo: Path, home: Path, config: dict, bench_config: dict, tasks: Optional[list] = None,
                  policy: Optional[Policy] = None, parallel: int = 2,
                  implement_fn: Optional[Callable] = None, bench_fn: Optional[Callable] = None,
-                 agent_fn: Optional[Callable] = None):
+                 agent_fn: Optional[Callable] = None, runtimes: Optional[list] = None):
         self.repo = Path(repo).resolve()
         self.home = Path(home)
         self.home.mkdir(parents=True, exist_ok=True)
@@ -170,9 +177,14 @@ class Evolution:
         self.implement_fn = implement_fn or self._implement
         self.bench_fn = bench_fn or self._bench
         self.agent_fn = agent_fn or self._agent
+        # Subscriptions evolution may run on, in order of preference (e.g. [claude_code, codex]). Empty: the
+        # configured runtime only, and a provider limit pauses the generation.
+        self.runtimes = list(runtimes if runtimes is not None else (config.get("evolve") or {}).get("runtimes") or [])
         import threading
 
         self._git_lock = threading.RLock()  # worktree add/remove and commits touch shared repo state
+        self._rt_lock = threading.RLock()   # runtime limits are shared by parallel candidates
+        self._base_lock = threading.Lock()  # one baseline measurement per (commit, runtime) at a time
         state = self.home / "state.json"
         if not self.ledger_path.exists():
             self.restore_journal()
@@ -206,7 +218,7 @@ class Evolution:
     # --- durability: everything worth keeping goes to the git remote as it happens ---------------
     JOURNAL_BRANCH = "evolve/journal"
     JOURNAL_KINDS = ("baseline", "candidate", "absorb_candidate", "stack", "generation", "absorb", "absorb_error",
-                     "roadmap_pick", "paused", "voided")
+                     "roadmap_pick", "paused", "voided", "limited")
 
     def restore_journal(self) -> bool:
         """A fresh machine (or a reclaimed container) continues from the journal on the remote."""
@@ -298,34 +310,135 @@ class Evolution:
 
     # --- measurement ----------------------------------------------------
 
-    def baseline(self, sha: str) -> dict:
-        cache = self.home / "baseline" / f"{sha}.json"
-        if cache.exists():
-            return json.loads(cache.read_text())
-        reuse = self._equivalent_baseline(sha)
-        if reuse:
+    @staticmethod
+    def _baseline_name(sha: str, runtime: Optional[str]) -> str:
+        """Baselines are keyed by (commit, runtime): ``<sha>.json`` without runtimes, ``<sha>@<runtime>.json``."""
+        return f"{sha}@{runtime}" if runtime else sha
+
+    def baseline(self, sha: str, runtime: Optional[str] = None) -> dict:
+        """The champion's benchmark on ``runtime`` (cached per commit and runtime). A candidate is only ever compared
+        with the baseline measured on the runtime it was benchmarked on."""
+        with self._base_lock:
+            cache = self.home / "baseline" / f"{self._baseline_name(sha, runtime)}.json"
+            if cache.exists():
+                return json.loads(cache.read_text())
+            reuse = self._equivalent_baseline(sha, runtime)
+            if reuse:
+                cache.parent.mkdir(parents=True, exist_ok=True)
+                cache.write_text(reuse.read_text())
+                return json.loads(cache.read_text())
+            tag = f"-{runtime}" if runtime else ""
+            wt = self._worktree(f"baseline-{sha[:10]}{tag}", sha, new_branch=False)
+            try:
+                suite = self._bench_call(wt, f"base-{sha[:8]}{tag}", runtime=runtime)
+            finally:
+                self._remove_worktree(wt)
             cache.parent.mkdir(parents=True, exist_ok=True)
-            cache.write_text(reuse.read_text())
-            return json.loads(cache.read_text())
-        wt = self._worktree(f"baseline-{sha[:10]}", sha, new_branch=False)
-        try:
-            suite = self._bench_call(wt, f"base-{sha[:8]}")
-        finally:
-            self._remove_worktree(wt)
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps(suite, ensure_ascii=False))
-        self.record(kind="baseline", commit=sha, summary=suite["summary"])
+            cache.write_text(json.dumps(suite, ensure_ascii=False))
+        self.record(kind="baseline", commit=sha, runtime=runtime, summary=suite["summary"])
         return suite
 
     NON_CODE = ("roadmap.yaml", "studied.yaml", "docs/")
 
-    def _equivalent_baseline(self, sha: str) -> Optional[Path]:
-        """A cached baseline of a commit that differs from ``sha`` only in non-code files (roadmap, docs)."""
+    def _equivalent_baseline(self, sha: str, runtime: Optional[str] = None) -> Optional[Path]:
+        """A cached baseline, on the same runtime, of a commit that differs from ``sha`` only in non-code files."""
         for f in sorted((self.home / "baseline").glob("*.json"), key=lambda p: -p.stat().st_mtime):
-            d = subprocess.run(["git", "diff", "--name-only", f.stem, sha], cwd=self.repo, capture_output=True, text=True)
+            commit, _, rt = f.stem.partition("@")
+            if (rt or None) != runtime:
+                continue
+            d = subprocess.run(["git", "diff", "--name-only", commit, sha], cwd=self.repo, capture_output=True, text=True)
             if d.returncode == 0 and all(c.startswith(self.NON_CODE) for c in d.stdout.splitlines() if c):
                 return f
         return None
+
+    # --- runtimes: two subscriptions, so one provider's limit does not stop evolution ------------
+    def _cfg_for(self, config: dict, runtime: Optional[str]) -> dict:
+        """``config`` with every role on ``runtime``. Roles pinned to a runtime outside ``evolve.runtimes`` (e.g.
+        native on an API key) keep their pin."""
+        if not runtime:
+            return config
+        by_role = {role: (runtime if rt in self.runtimes or rt == "auto" else rt)
+                   for role, rt in (config.get("runtime_by_role") or {}).items()}
+        return {**config, "runtime": runtime, "runtime_by_role": by_role}
+
+    def limits(self) -> dict:
+        """Runtime -> unix time its limit resets (persisted in state.json); expired limits are dropped."""
+        with self._rt_lock:
+            limits = self.state.setdefault("limits", {})
+            now = time.time()
+            for rt in [r for r, until in limits.items() if until <= now]:
+                del limits[rt]
+            return limits
+
+    def _pick(self, step: str) -> Optional[str]:
+        """The preferred runtime that is not limited now (None without ``evolve.runtimes``); AllLimited if none."""
+        if not self.runtimes:
+            return None
+        with self._rt_lock:
+            limits = self.limits()
+            free = [r for r in self.runtimes if r not in limits]
+            if not free:
+                until = min(limits[r] for r in self.runtimes)
+                raise AllLimited("every runtime is limited: " + ", ".join(
+                    f"{r} until {time.strftime('%H:%M UTC', time.gmtime(limits[r]))}" for r in self.runtimes), until)
+            current = self.state.setdefault("runtime", {})
+            if current.get(step) != free[0]:
+                current[step] = free[0]
+                self._save()
+            return free[0]
+
+    def _limit(self, runtime: str, err: InfraError, step: str) -> None:
+        with self._rt_lock:
+            until = err.retry_at or time.time() + DEFAULT_LIMIT_S
+            limits = self.state.setdefault("limits", {})
+            limits[runtime] = max(limits.get(runtime, 0), until)
+            self._save()
+        self.record(kind="limited", runtime=runtime, step=step, until=until, reason=str(err)[:300],
+                    generation=(self.state.get("running") or {}).get("generation"))
+
+    def _switching(self, step: str, fn: Callable):
+        """Run ``fn(runtime)`` on the preferred available runtime. A provider limit marks that runtime limited until
+        its reset and reruns the whole step on the next one; only when all are limited does AllLimited propagate
+        (the generation pauses). Without ``evolve.runtimes`` a limit propagates at once, as before."""
+        while True:
+            rt = self._pick(step)
+            try:
+                return fn(rt)
+            except AllLimited:
+                raise
+            except InfraError as e:
+                err = e
+            except Exception as exc:  # noqa: BLE001 - only provider failures switch; anything else propagates
+                err = infra_problem(repr(exc))
+                if not err:
+                    raise
+                if rt is None:
+                    raise err from exc
+            if rt is None:
+                raise err
+            self._limit(rt, err, step)
+
+    @staticmethod
+    def _call_rt(fn: Callable, *args, runtime: Optional[str] = None, **kw):
+        """Call a bench/implement function, passing ``runtime`` only when one is set and the function accepts it."""
+        import inspect
+
+        if runtime is not None:
+            try:
+                params = inspect.signature(fn).parameters
+            except (TypeError, ValueError):
+                params = {}
+            if "runtime" in params or any(p.kind is p.VAR_KEYWORD for p in params.values()):
+                kw["runtime"] = runtime
+        return fn(*args, **kw)
+
+    def _versus(self, champ: str, code: Path, label: str, tasks: Optional[list] = None):
+        """Benchmark ``code`` and take the champion's baseline on the same runtime: (base, suite, runtime)."""
+        def measure(rt):
+            base = self.baseline(champ, rt)
+            return self._subset(base, tasks), self._bench_call(code, label, tasks, runtime=rt), rt
+
+        return self._switching("bench", measure)
 
     def run_tests(self, code: Path) -> dict:
         h = diag_mod.code_health(code)
@@ -419,11 +532,11 @@ class Evolution:
                 "must include the check "
                 "`python -m pytest -q -x -p no:cacheprovider`.")
 
-    def _implement(self, h: Hypothesis, wt: Path) -> dict:
+    def _implement(self, h: Hypothesis, wt: Path, runtime: Optional[str] = None) -> dict:
         from ..manager import run_goal
 
-        project, status = run_goal(self.implementation_goal(h, wt), self.config, name=f"evolve-{wt.name}",
-                                   workdir=wt, refs=tuple(h.refs))
+        project, status = run_goal(self.implementation_goal(h, wt), self._cfg_for(self.config, runtime),
+                                   name=f"evolve-{wt.name}", workdir=wt, refs=tuple(h.refs))
         self._raise_if_infra(project, status)
         meta = project.meta
         return {"project": str(project.root), "status": status, "cost_usd": meta["usage"].get("cost_usd", 0.0)}
@@ -437,8 +550,9 @@ class Evolution:
         if err:
             raise err
 
-    def _continue_implementation(self, h: Hypothesis, wt: Path) -> Optional[dict]:
-        """Resume the interrupted implementation project that worked in ``wt`` (None if there is none)."""
+    def _continue_implementation(self, h: Hypothesis, wt: Path, runtime: Optional[str] = None) -> Optional[dict]:
+        """Resume the interrupted implementation project that worked in ``wt`` (None if there is none), on
+        ``runtime`` when given (the other subscription after a limit)."""
         if self.implement_fn != self._implement:
             return None
         from ..manager import resume as resume_project
@@ -450,11 +564,28 @@ class Evolution:
             except ValueError:
                 continue
             if meta.get("workdir") == str(wt) and meta.get("status") != "done":
-                project, status = resume_project(meta_path.parent.name, self.config)
+                project, status = resume_project(meta_path.parent.name, self._cfg_for(self.config, runtime))
                 self._raise_if_infra(project, status)
                 return {"project": str(project.root), "status": status, "resumed": True,
                         "cost_usd": project.meta["usage"].get("cost_usd", 0.0)}
         return None
+
+    def _implement_on(self, h: Hypothesis, wt: Path, resume: bool, fresh: bool = True) -> Optional[dict]:
+        """Implement ``h`` in ``wt`` on the preferred runtime. ``resume``: first continue an unfinished project
+        there; ``fresh``: otherwise start one. After a limit the same work continues on the next runtime in the
+        same worktree."""
+        tries = [0]
+
+        def step(rt):
+            tries[0] += 1
+            out = self._continue_implementation(h, wt, rt) if (resume or tries[0] > 1) else None
+            if out is None and fresh:
+                out = self._call_rt(self.implement_fn, h, wt, runtime=rt)
+            if isinstance(out, dict) and rt:
+                out.setdefault("runtime", rt)
+            return out
+
+        return self._switching("implement", step)
 
     def resume_plan_from_ledger(self) -> bool:
         """Rebuild the plan of an interrupted generation started before plans were saved (one-time migration)."""
@@ -498,17 +629,22 @@ class Evolution:
 
     # --- generation -----------------------------------------------------
     # --- population generation ------------------------------------------
-    def _bench_call(self, code: Path, label: str, tasks: Optional[list] = None) -> dict:
+    def _bench_call(self, code: Path, label: str, tasks: Optional[list] = None, runtime: Optional[str] = None) -> dict:
         try:
-            suite = self.bench_fn(code, label, tasks=tasks) if tasks else self.bench_fn(code, label)
+            suite = (self._call_rt(self.bench_fn, code, label, tasks=tasks, runtime=runtime) if tasks
+                     else self._call_rt(self.bench_fn, code, label, runtime=runtime))
         except TypeError:  # bench functions without task selection
-            suite = self.bench_fn(code, label)
-        return check_suite(suite)
+            suite = self._call_rt(self.bench_fn, code, label, runtime=runtime)
+        check_suite(suite)
+        if runtime:
+            suite["runtime"] = runtime
+        return suite
 
-    def _bench(self, code: Path, label: str, tasks: Optional[list] = None) -> dict:  
+    def _bench(self, code: Path, label: str, tasks: Optional[list] = None, runtime: Optional[str] = None) -> dict:
         out = self.home / "bench" / f"{label}-{int(time.time())}"
         only = tasks or self.tasks
-        return bench_mod.run_suite(code, self.bench_config, out, tasks=bench_mod.load_tasks(only=only) if only else None,
+        return bench_mod.run_suite(code, self._cfg_for(self.bench_config, runtime), out,
+                                   tasks=bench_mod.load_tasks(only=only) if only else None,
                                    parallel=self.parallel, label=label)
 
     @staticmethod
@@ -553,15 +689,14 @@ class Evolution:
             return entry
         entry["worktree"] = str(wt)
         try:
-            pending = self._continue_implementation(h, wt) if ahead else None
+            pending = self._implement_on(h, wt, resume=True, fresh=False) if ahead else None
             if ahead and pending:  # committed, but its team had not finished (e.g. it waited for a person)
                 impl = pending
                 ahead = False
             elif ahead:  # the commit happens only after the implementation finished
                 impl = {"resumed": "implementation already committed"}
             else:
-                impl = self._continue_implementation(h, wt) if exists else None
-                impl = impl or self.implement_fn(h, wt)
+                impl = self._implement_on(h, wt, resume=exists)
             unfinished = isinstance(impl, dict) and impl.get("status") not in (None, "done")
             commit = self._commit(wt, h) if not ahead else {"changed": False}
             if ahead:
@@ -631,7 +766,7 @@ class Evolution:
             self.state["running"] = {"generation": gen, "since": time.time(), "phase": "baseline",
                                      "plan": {"champ": champ, "kind": kind, "branches": {}, **(plan_extra or {})}}
         self._save()
-        base = self.baseline(champ)
+        base = self._switching("bench", lambda rt: self.baseline(champ, rt))
         if hypotheses is None:
             report = diag_mod.doctor(None, [Path(r["project"]) for r in base["results"] if r.get("project")],
                                      bench=base, run_tests=False)
@@ -691,15 +826,14 @@ class Evolution:
         # 2. screen on a cheap subset, rank, keep finalists
         if screen_tasks and alive:
             self._phase(f"screening {len(alive)} candidates on {', '.join(screen_tasks)}")
-            base_sub = self._subset(base, screen_tasks)
             with ThreadPoolExecutor(max(1, parallel)) as ex:
-                screens = list(ex.map(lambda e: self._bench_call(Path(e["worktree"]), f"g{gen}-screen-"
-                                                                 f"{e['branch'].split('-')[1]}", screen_tasks), alive))
-            for e, sc in zip(alive, screens):
+                screens = list(ex.map(lambda e: self._versus(champ, Path(e["worktree"]), f"g{gen}-screen-"
+                                                             f"{e['branch'].split('-')[1]}", screen_tasks), alive))
+            for e, (base_sub, sc, rt) in zip(alive, screens):
                 cmp = bench_mod.compare(base_sub, self._subset(sc, screen_tasks))
                 d = self.policy.decide(cmp, {"ok": True})
                 e.update(screen=cmp["candidate"], screen_delta=cmp["delta"], screen_score=d.score,
-                         screen_regressed=cmp["regressed"])
+                         screen_regressed=cmp["regressed"], screen_runtime=rt)
             survivors = [e for e in alive if not e["screen_regressed"]]
             for e in alive:
                 if e["screen_regressed"]:
@@ -718,11 +852,12 @@ class Evolution:
             if budget_left() <= 0:
                 e.update(accepted=False, reason="generation budget exhausted before full benchmark", stage="budget")
                 continue
-            cand = self._bench_call(Path(e["worktree"]), f"g{gen}-{e['branch'].split('-')[1]}")
-            cmp = bench_mod.compare(base, cand)
+            b, cand, rt = self._versus(champ, Path(e["worktree"]), f"g{gen}-{e['branch'].split('-')[1]}")
+            cmp = bench_mod.compare(b, cand)
             d = self.policy.decide(cmp, {"ok": True})
             e.update(accepted=d.accepted, reason=d.reason, score=d.score, delta=cmp["delta"], per_task=cmp["per_task"],
-                     improved=cmp["improved"], regressed=cmp["regressed"], summary=cmp["candidate"], stage="benchmarked")
+                     improved=cmp["improved"], regressed=cmp["regressed"], summary=cmp["candidate"], stage="benchmarked",
+                     runtime=rt)
 
         winners = sorted([e for e in results if e.get("accepted")], key=lambda e: -e.get("score", 0))
         merged_what = []
@@ -780,27 +915,31 @@ class Evolution:
             new = [e for e in pending if e["branch"] in included]
             try:
                 self._phase(f"benchmarking the integration of {len(included)} items (round {round_no})")
-                suite = self._bench_call(wt, f"g{gen}-adopt-r{round_no}")
-                cmp = bench_mod.compare(base, suite)
-                regressed = self._confirm(wt, cmp, f"g{gen}-adopt-r{round_no}")
+
+                def measure(rt, wt=wt, label=f"g{gen}-adopt-r{round_no}"):
+                    b = self.baseline(champ, rt)
+                    c = bench_mod.compare(b, self._bench_call(wt, label, runtime=rt))
+                    return b, c, self._confirm(wt, c, label, rt), rt
+
+                base, cmp, regressed, rt = self._switching("bench", measure)
                 d = self.policy.adopt(cmp, {"ok": True}, regressed)
             finally:
                 self._remove_worktree(wt)
             stack_entry = {"kind": "stack", "generation": gen, "branch": f"evolve/g{gen}-adopt", "parent": champ,
                            "included": included, "excluded": excluded, "round": round_no, "accepted": d.accepted,
                            "reason": d.reason, "delta": cmp["delta"], "per_task": cmp["per_task"],
-                           "summary": cmp["candidate"], "regressed": regressed,
+                           "summary": cmp["candidate"], "regressed": regressed, "runtime": rt,
                            "hypothesis": {"title": f"adoption round {round_no} of generation {gen}", "source": "stack"}}
             self.record(**stack_entry)
             if d.accepted:
                 for e in new:
-                    e.update(accepted=True, reason=d.reason, stage="adopted", delta=cmp["delta"])
+                    e.update(accepted=True, reason=d.reason, stage="adopted", delta=cmp["delta"], runtime=rt)
                 adopted += new
                 pending = []
                 break
             self._current_base = base
             self._phase(f"finding which item causes: {d.reason}")
-            culprits = self._culprits(gen, new, regressed, cmp, round_no)
+            culprits = self._culprits(gen, new, regressed, cmp, round_no, champ)
             if not culprits and len(new) > 1:
                 # every item is fine alone but the combination is not: adopt the cheapest one now; the others are
                 # re-measured on top of it in the next generation (incremental, never all-or-nothing)
@@ -890,21 +1029,30 @@ class Evolution:
         self._push(branch, force=True)
         return wt, included, excluded
 
-    def _confirm(self, code: Path, cmp: dict, label: str) -> list:
-        """Re-run regressed tasks once; only regressions that repeat count."""
+    def _confirm(self, code: Path, cmp: dict, label: str, runtime: Optional[str] = None) -> list:
+        """Re-run regressed tasks once (on the runtime ``cmp`` was measured on); only regressions that repeat count."""
         if not cmp["regressed"]:
             return []
-        again = self._bench_call(code, f"{label}-confirm", list(cmp["regressed"]))
+        again = self._bench_call(code, f"{label}-confirm", list(cmp["regressed"]), runtime=runtime)
         still = {r["id"] for r in again["results"] if not r.get("pass")}
         return [t for t in cmp["regressed"] if t in still]
 
-    def _culprits(self, gen: int, new: list, regressed: list, cmp: dict, round_no: int) -> list:
-        """Which items cause the regression: each runs the regressed tasks alone (or the full suite for cost)."""
+    def _culprits(self, gen: int, new: list, regressed: list, cmp: dict, round_no: int,
+                  champ: Optional[str] = None) -> list:
+        """Which items cause the regression: each runs the regressed tasks alone (or the full suite for cost),
+        compared with the champion's baseline on the same runtime."""
         culprits = []
         for e in new:
             tasks = regressed or None
-            suite = self._bench_call(Path(e["worktree"]), f"g{gen}-blame-{e['branch'].split('-')[1]}-r{round_no}",
-                                     tasks)
+            label = f"g{gen}-blame-{e['branch'].split('-')[1]}-r{round_no}"
+
+            def measure(rt, e=e, tasks=tasks, label=label):
+                b = self.baseline(champ, rt) if champ else self._base_for(cmp)
+                suite = self._bench_call(Path(e["worktree"]), label, tasks, runtime=rt)
+                broke = [] if regressed else self._confirm(Path(e["worktree"]), bench_mod.compare(b, suite), label, rt)
+                return b, suite, broke
+
+            b, suite, broke = self._switching("bench", measure)
             failing = [r for r in suite["results"] if not r.get("pass") and r["id"] in (regressed or [])]
             if regressed and failing:
                 e["blame"] = f"breaks tasks: {', '.join(r['id'] for r in failing)}"
@@ -913,11 +1061,10 @@ class Evolution:
                     + str(r.get("error", ""))[-800:] for r in failing)
                 culprits.append(e)
             elif not regressed:
-                base_cost = cmp["base"]["cost_usd"] or 1
+                base_cost = b["summary"]["cost_usd"] or 1
                 ratio = suite["summary"]["cost_usd"] / base_cost - 1
-                e["solo"] = {"cost_ratio": round(ratio, 3), "pass_rate": suite["summary"]["pass_rate"]}
-                broke = self._confirm(Path(e["worktree"]), bench_mod.compare(self._base_for(cmp), suite),
-                                      f"g{gen}-blame-{e['branch'].split('-')[1]}-r{round_no}")
+                e["solo"] = {"cost_ratio": round(ratio, 3), "pass_rate": suite["summary"]["pass_rate"],
+                             "runtime": suite.get("runtime")}
                 if broke:
                     e["blame"] = f"breaks tasks: {', '.join(broke)}"
                     culprits.append(e)
@@ -937,7 +1084,7 @@ class Evolution:
                   f"start over; find and fix the cause.\n{feedback}")
         wt = Path(e["worktree"])
         try:
-            impl = self.implement_fn(h, wt)
+            impl = self._implement_on(h, wt, resume=False)
             commit = self._commit(wt, h)
             tests = self.run_tests(wt)
         except InfraError:
@@ -983,11 +1130,11 @@ class Evolution:
             if len(entry["included"]) < 2 or budget_left() <= 0:
                 entry.update(accepted=False, reason="fewer than two compatible improvements, or no budget left")
                 return entry
-            suite = self._bench_call(wt, f"g{gen}-stack")
-            cmp = bench_mod.compare(base, suite)
+            b, suite, rt = self._versus(champ, wt, f"g{gen}-stack")
+            cmp = bench_mod.compare(b, suite)
             d = self.policy.decide(cmp, {"ok": True})
             entry.update(accepted=d.accepted, reason=d.reason, score=d.score, delta=cmp["delta"],
-                         per_task=cmp["per_task"], summary=cmp["candidate"])
+                         per_task=cmp["per_task"], summary=cmp["candidate"], runtime=rt)
         finally:
             self._remove_worktree(wt)
         return entry

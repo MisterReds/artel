@@ -222,6 +222,8 @@ def _evolution(args):
     from .project import artel_home
 
     cfg = _cfg(args)
+    if getattr(args, "runtimes", None):  # e.g. claude_code,codex: on a limit the work moves to the next subscription
+        cfg = {**cfg, "evolve": {**(cfg.get("evolve") or {}), "runtimes": args.runtimes.split(",")}}
     repo = _repo(args)
     tasks = args.tasks.split(",") if getattr(args, "tasks", None) else None
     return Evolution(repo, artel_home() / "evolution" / repo.name, cfg, cfg, tasks=tasks, policy=Policy(),
@@ -280,7 +282,7 @@ def cmd_evolve(args) -> int:
                 print(f"paused: {e}. Continue with `artel evolve --resume`.")
                 return 75
             wait = max(60.0, (e.retry_at or _time.time() + 900) - _time.time() + 60)
-            print(f"paused: {e}. Resuming in {int(wait)} s.", flush=True)
+            print(f"paused: {e}. Resuming in {int(wait)} s (the earliest reset).", flush=True)
             _time.sleep(wait)
             args.resume = True
 
@@ -439,17 +441,35 @@ def cmd_absorb(args) -> int:
 
 
 def cmd_evolution(args) -> int:
+    import time as _time
+
     ev = _evolution(args)
+
+    def on(e: dict) -> str:
+        rt = e.get("runtime") or e.get("screen_runtime")
+        return f"[{rt}]" if rt else ""
+
     for e in ev.ledger():
         if e["kind"] in ("candidate", "absorb_candidate"):
             mark = "MERGED" if e.get("merged") else ("ok" if e.get("accepted") else "rejected")
-            print(f"g{e['generation']} {mark:<8} {e['branch']:<52} {e.get('reason', '')[:110]}")
+            print(f"g{e['generation']} {mark:<8} {e['branch']:<52} {on(e):<14} {e.get('reason', '')[:110]}")
+        elif e["kind"] == "stack":
+            mark = "MERGED" if e.get("merged") else ("ok" if e.get("accepted") else "rejected")
+            print(f"g{e['generation']} {mark:<8} {e['branch']:<52} {on(e):<14} {e.get('reason', '')[:110]}")
         elif e["kind"] == "baseline":
             s = e["summary"]
-            print(f"baseline {e['commit'][:10]}  pass {s['pass_rate']:.0%}  partial {s['partial_mean']:.2f}  "
+            print(f"baseline {e['commit'][:10]} {on(e):<14} pass {s['pass_rate']:.0%}  partial {s['partial_mean']:.2f}  "
                   f"${s['cost_usd']}  {s['duration_mean_s']}s")
+        elif e["kind"] == "limited":
+            print(f"limit    {e['runtime']} ({e.get('step', '')}) until "
+                  f"{_time.strftime('%Y-%m-%d %H:%M UTC', _time.gmtime(e['until']))}: {e.get('reason', '')[:100]}")
         elif e["kind"] == "absorb":
             print(f"absorb   {e['source']} ({e['license']}): {', '.join(e['features'][:6])}")
+    if ev.runtimes:
+        limits = ev.limits()
+        print("runtimes: " + ", ".join(
+            r + (f" (limited until {_time.strftime('%H:%M UTC', _time.gmtime(limits[r]))})" if r in limits else "")
+            for r in ev.runtimes))
     return 0
 
 
@@ -556,6 +576,8 @@ def main(argv=None) -> int:
     ev.add_argument("--reason", help="with --reopen: why the measurement was invalid")
     ev.add_argument("--no-wait", action="store_true",
                     help="exit when the model provider hits a limit instead of waiting for the reset and resuming")
+    ev.add_argument("--runtimes", help="subscriptions in order of preference, e.g. claude_code,codex: a limit on one "
+                                       "moves the work to the next (overrides evolve.runtimes in the config)")
     ev.set_defaults(fn=cmd_evolve)
 
     pv = sub.add_parser("providers", help="subscriptions, API keys and runtimes; Codex device-code login")
