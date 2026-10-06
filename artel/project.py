@@ -48,6 +48,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "max_parallel": 3,               # concurrent worker runs
         "max_turns_per_run": 40,         # model requests per worker run
         "max_attempts": 4,               # runs per task before the circuit breaker replans it
+        "max_replans": 3,                # replans of one task before it goes to a person (no endless circling)
         "max_total_tokens": 0,           # 0 = unlimited
         "max_hours": 0,                  # 0 = unlimited
         "max_audit_rounds": 0,           # 0 = unlimited goal audits

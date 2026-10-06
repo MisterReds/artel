@@ -124,9 +124,17 @@ def _normalize(block: dict) -> Optional[dict]:
 def run_claude_code(kernel, project, *, role: str, system: str, first_user: str, ctx: ToolContext, max_turns: int,
                     purpose: str, persona=None, stop_event: Optional[threading.Event] = None,
                     tool_names: Optional[list] = None) -> Outcome:
+    from ..tools import resolve
+
     cc = {**DEFAULTS, **(kernel.config.get("claude_code") or {})}
     actor = persona.name if persona else role
     task_id = (ctx.task or {}).get("id")
+    if not resolve(cc["binary"]):
+        out = Outcome(status="error", error="Claude Code CLI не установлен: «Провайдеры» → «Установить» "
+                                            "или `artel providers install claude`")
+        out.cost_usd = 0.0
+        project.log.append("llm/error", actor=actor, task_id=task_id, error=out.error, runtime="claude_code")
+        return out
     out = Outcome(status="stalled")
     out.cost_usd = 0.0
     detector = LoopDetector()

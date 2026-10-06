@@ -307,3 +307,43 @@ def test_compact_messages_summarizes_head():
     fb = compact_messages(msgs, lambda t: 1 / 0)  # deterministic fallback
     assert "step 0" in fb[0]["content"][1]["text"] and _paired(fb)
     assert compact_messages(_long_convo(2), None) is None
+
+
+def test_loop_never_circles_forever_on_a_persistent_failure(cfg):
+    """Work until done — but a failure that retries and replanning cannot fix ends with a person, not a loop."""
+    from artel.agent import Outcome
+
+    def always_fails(kernel, project, *, role, ctx, **kw):
+        return Outcome(status="error", error="tool crashed the same way again")
+
+    k = new_kernel(deep_merge(cfg, {"runtime_by_role": {"worker": "broken"}}))
+    k.load_plugin("broken_rt", _mod("broken_rt", lambda kk: kk.register_runtime("broken", always_fails)))
+    t0 = time.time()
+    project, status = run_goal("never ends", deep_merge(cfg, {"runtime_by_role": {"worker": "broken"}}), kernel=k)
+    assert status == "waiting_human" and time.time() - t0 < 60
+    runs = [e for e in project.log.read() if e["kind"] == "run/started"]
+    b = cfg["budgets"]
+    assert len(runs) <= b["max_attempts"] * (b["max_replans"] + 1)
+    assert any(e["kind"] == "manager/escalated" for e in project.log.read())
+
+
+def test_setup_errors_go_to_a_person_at_once_and_limits_wait(cfg):
+    from artel.agent import Outcome
+
+    def no_cli(kernel, project, *, role, ctx, **kw):
+        return Outcome(status="error", error="Codex CLI не установлен: «Провайдеры» → «Установить»")
+
+    k = new_kernel(deep_merge(cfg, {"runtime_by_role": {"worker": "nocli"}}))
+    k.load_plugin("nocli_rt", _mod("nocli_rt", lambda kk: kk.register_runtime("nocli", no_cli)))
+    project, status = run_goal("setup", deep_merge(cfg, {"runtime_by_role": {"worker": "nocli"}}), kernel=k)
+    assert status == "waiting_human"
+    assert len([e for e in project.log.read() if e["kind"] == "run/started"]) == 1  # no pointless retries
+
+    from artel.manager import Manager
+
+    m = Manager(new_kernel(cfg), project)
+    task = next(t for t in project.board.list() if t["kind"] != "goal")
+    project.board.update(task["id"], status="running", needs_human=0, attempts=1)
+    m._failed(project.board.get(task["id"]), "error: You've hit your usage limit · resets 4:20pm (UTC)")
+    t = project.board.get(task["id"])
+    assert t["status"] == "ready" and t["attempts"] == 1 and t["backoff_until"] > time.time() + 60

@@ -37,8 +37,8 @@ from . import diagnose as diag_mod
 GIT_ID = ["-c", "user.name=artel-evolve", "-c", "user.email=artel-evolve@localhost"]
 
 
-INFRA_PATTERNS = re.compile(r"session limit|usage limit|rate limit|hit your [a-z ]*limit|overloaded_error|"
-                            r"credit balance|invalid api key|authentication_error|\b429\b|\b529\b", re.I)
+from ..failures import LIMIT as INFRA_PATTERNS  # noqa: E402 - provider limits/outages
+from ..failures import retry_at as _retry_at  # noqa: E402
 
 
 class InfraError(RuntimeError):
@@ -51,24 +51,15 @@ class InfraError(RuntimeError):
 
 
 def infra_problem(text: str) -> Optional[InfraError]:
-    m = INFRA_PATTERNS.search(text or "")
+    m = INFRA_PATTERNS.search(text or "") or _AUTH.search(text or "")
     if not m:
         return None
-    line = next((ln for ln in (text or "").splitlines() if INFRA_PATTERNS.search(ln)), m.group(0)).strip()[:300]
-    retry_at = None
-    r = re.search(r"resets (?:at )?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*\(?UTC", text or "", re.I)
-    if r:
-        import datetime as dt
+    line = next((ln for ln in (text or "").splitlines() if INFRA_PATTERNS.search(ln) or _AUTH.search(ln)),
+                m.group(0)).strip()[:300]
+    return InfraError(line, _retry_at(text))
 
-        h, mi = int(r.group(1)) % 12 if r.group(3) else int(r.group(1)), int(r.group(2) or 0)
-        if (r.group(3) or "").lower() == "pm":
-            h += 12
-        now = dt.datetime.now(dt.timezone.utc)
-        t = now.replace(hour=h, minute=mi, second=0, microsecond=0)
-        if t <= now:
-            t += dt.timedelta(days=1)
-        retry_at = t.timestamp()
-    return InfraError(line, retry_at)
+
+_AUTH = re.compile(r"invalid api key|authentication_error", re.I)  # provider auth breaks every run alike
 
 
 def check_suite(suite: dict) -> dict:

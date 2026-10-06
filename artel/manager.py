@@ -380,7 +380,26 @@ class Manager:
         elif out.status in ("stopped", "budget"):
             self.board.update(task_id, status="ready", actor="manager")
         else:
-            self._retry_later(task, f"{out.status}: {out.error}".strip(": "))
+            self._failed(task, f"{out.status}: {out.error}".strip(": "))
+
+    def _failed(self, task: dict, reason: str) -> None:
+        """A run ended without a result. Retry only what a retry can fix."""
+        from .failures import classify, retry_at
+
+        kind = classify(reason)
+        if kind == "setup":  # missing CLI, no login, bad key: every retry fails the same way
+            self.board.update(task["id"], status="blocked", needs_human=1, actor="manager")
+            self.board.comment(task["id"], "manager", f"Нужна настройка, повтор не поможет: {reason}")
+            self.note("escalated", task_id=task["id"], rationale=f"setup: {reason}")
+            return
+        if kind == "limit":  # the provider's limit: wait for the reset, do not spend attempts
+            until = retry_at(reason) or time.time() + 900
+            self.board.update(task["id"], status="ready", backoff_until=until, actor="manager")
+            self.board.comment(task["id"], "manager", f"Лимит провайдера ({reason}); повтор после "
+                                                       f"{time.strftime('%H:%M UTC', time.gmtime(until))}.")
+            self.note("provider_limit", task_id=task["id"], until=until, reason=reason)
+            return
+        self._retry_later(task, reason)
 
     def on_review(self, task_id: str, result: tuple[list, Outcome]) -> None:
         gates, out = result
@@ -427,8 +446,19 @@ class Manager:
             else:
                 self.board.update(task_id, status="ready", attempts=attempts, actor="reviewer")
 
+    def _replans(self, task_id: str) -> int:
+        return sum(1 for e in self.project.log.read() if e["kind"] == "manager/decision" and e.get("task_id") == task_id)
+
     def on_replan(self, task_id: str, out: Outcome) -> None:
         task = self.board.get(task_id)
+        limit = int(self.b.get("max_replans", 3))
+        if out.status not in ("stopped", "budget") and self._replans(task_id) >= limit:
+            # the same task keeps failing after re-planning: stop circling, hand it to a person with the history
+            self.board.update(task_id, status="blocked", needs_human=1, actor="manager")
+            self.board.comment(task_id, "manager", f"Перепланирование {limit} раз не помогло — нужна помощь человека. "
+                                                    f"Последняя причина: {window_text(task.get('result') or '', 300)}")
+            self.note("escalated", task_id=task_id, rationale=f"{limit} replans without progress")
+            return
         if out.name != "replan_decision":
             if out.status in ("stopped", "budget"):
                 return
