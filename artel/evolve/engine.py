@@ -553,7 +553,11 @@ class Evolution:
             return entry
         entry["worktree"] = str(wt)
         try:
-            if ahead:  # the commit happens only after the implementation finished
+            pending = self._continue_implementation(h, wt) if ahead else None
+            if ahead and pending:  # committed, but its team had not finished (e.g. it waited for a person)
+                impl = pending
+                ahead = False
+            elif ahead:  # the commit happens only after the implementation finished
                 impl = {"resumed": "implementation already committed"}
             else:
                 impl = self._continue_implementation(h, wt) if exists else None
