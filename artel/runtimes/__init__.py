@@ -1,5 +1,9 @@
 """Agent runtimes. ``native`` is Artel's own loop over the Messages API; ``claude_code`` drives the Claude Code CLI
-and ``codex`` the Codex CLI headless, exposing Artel's tools to them over MCP.
+and ``codex`` the Codex CLI headless, exposing Artel's tools to them over MCP; ``acp`` drives any agent that speaks
+the Agent Client Protocol (Gemini CLI, Claude Code and Codex through their ACP adapters, goose, OpenHands…).
+
+A runtime name may carry a variant after a colon: ``acp:gemini`` runs the ``acp`` runtime with the ``gemini`` preset,
+so different roles can use different ACP agents. The variant is passed to the runtime as ``variant=``.
 
 ``runtime: auto`` (the default) picks what is connected, in this order: Claude Code (Claude subscription), Codex
 (ChatGPT subscription), an API key for the native loop. With nothing connected, runs end with a clear setup error
@@ -63,6 +67,11 @@ def run_agent(kernel, project, *, role: str, **kw):
                            error=NO_EXECUTOR)
         return out
     fn = kernel.get(f"runtime:{name}")
+    if fn is None and ":" in name:
+        base, variant = name.split(":", 1)
+        fn = kernel.get(f"runtime:{base}")
+        if fn is not None:
+            return fn(kernel, project, role=role, variant=variant, **kw)
     if fn is None:
         raise RuntimeError(f"no runtime plugin registered as {name!r}; loaded: "
                            f"{sorted(k[8:] for k in kernel.services if k.startswith('runtime:'))}")
