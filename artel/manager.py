@@ -60,6 +60,7 @@ class Manager:
         self.b = self.cfg["budgets"]
         self.stop = stop_event or threading.Event()
         self.pool = ThreadPoolExecutor(max_workers=int(self.b["max_parallel"]) + 4, thread_name_prefix="artel")
+        self._wake = threading.Event()  # set when a job finishes, so the loop does not sleep through it
         self.jobs: dict[str, Future] = {}
         self.background: list[Future] = []
         self.digests: dict[str, Outcome] = {}
@@ -75,7 +76,9 @@ class Manager:
         self.project.log.append(f"manager/{kind}", **payload)
 
     def _submit(self, key: str, fn, *args) -> None:
-        self.jobs[key] = self.pool.submit(fn, *args)
+        fut = self.pool.submit(fn, *args)
+        fut.add_done_callback(lambda _f: self._wake.set())  # the loop reacts at once, not on the next tick
+        self.jobs[key] = fut
         self.note("job_started", job=key)
 
     def _bg(self, fn, *args) -> None:
@@ -226,7 +229,7 @@ class Manager:
         for cmd in task["checks"]:
             try:
                 p = subprocess.run(cmd, shell=True, cwd=self.project.shared, capture_output=True, text=True,
-                                   timeout=int(self.cfg.get("tool_timeout_s", 300)), env=env)
+                                   timeout=int(self.cfg.get("gate_timeout_s", 900)), env=env)
                 res = {"command": cmd, "exit": p.returncode, "output": window_text(p.stdout + p.stderr, 3000)}
             except subprocess.TimeoutExpired:
                 res = {"command": cmd, "exit": -1, "output": "timed out"}
@@ -627,7 +630,8 @@ class Manager:
             if self.waiting_on_humans():
                 final = "waiting_human"
                 break
-            time.sleep(TICK_S)
+            self._wake.wait(TICK_S)
+            self._wake.clear()
         if final != "done":
             self.stop.set()
         for fut in list(self.jobs.values()):
