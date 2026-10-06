@@ -139,6 +139,7 @@ def project_view(project: Project, runner: Runner) -> dict:
     timelines = analytics.task_timelines(analytics._events(project))
     for t in snap["tasks"]:
         t["timeline"] = timelines.get(t["id"], [])
+        t["guardian"] = (project.meta.get("guardian") or {}).get(t["id"])
     stats = analytics.project_stats(project, live=project.slug in runner.active)
     return {"slug": project.slug, "meta": project.meta, "board": snap, "workers": workers, "stats": stats,
             "notes": project.prompt_notes(), "live": project.slug in runner.active, "seq": project.log.seq}

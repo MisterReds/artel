@@ -245,15 +245,17 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
   const rs=$('#resume');if(rs)rs.onclick=()=>post(`/api/projects/${state.slug}/resume`).then(()=>setTimeout(refresh,800));
   const of=$('#openfeed');if(of)of.onclick=()=>$('#feed').classList.add('show');
   listFiles('shared')}
+function riskBadge(t){const g=t.guardian;if(!g||(g.risk!=='high'&&g.risk!=='medium'))return '';  // guardian: only medium/high are shown
+  return `<span class="${g.risk==='high'?'human':''}" title="${esc(g.reason||'')}">риск: ${g.risk==='high'?'высокий':'средний'}${g.reason?` — ${esc(g.reason)}`:''}</span>`}
 function card(t){const last=(t.runs||[]).slice(-1)[0];const since=(t.timeline||[]).slice(-1)[0];return `<div class="card ${t.status}" data-t="${t.id}"><div class="t">${esc(t.title)}</div>
-  <div class="m"><span>@${esc(t.assignee||'—')}</span>${t.attempts?`<span>попыток ${t.attempts}</span>`:''}${last&&t.status==='running'?`<span>ход ${last.turns}</span>`:''}${since?`<span>${ago(since.ts)}</span>`:''}${t.needs_human?'<span class="human">нужен человек</span>':''}</div></div>`}
+  <div class="m"><span>@${esc(t.assignee||'—')}</span>${t.attempts?`<span>попыток ${t.attempts}</span>`:''}${last&&t.status==='running'?`<span>ход ${last.turns}</span>`:''}${since?`<span>${ago(since.ts)}</span>`:''}${t.needs_human?'<span class="human">нужен человек</span>':''}${riskBadge(t)}</div></div>`}
 async function listFiles(path){const r=await api(`/api/projects/${encodeURIComponent(state.slug)}/files?path=${encodeURIComponent(path)}`);const box=$('#filesbox');if(!box||!r.items)return;
   box.innerHTML=r.items.length?r.items.map(i=>`<a data-f="${esc(i.path)}" data-d="${i.dir}">${i.dir?'📁 ':''}${esc(i.path.replace(/^shared\//,''))}${i.dir?'':` <span class="stat">${i.size} B</span>`}</a>`).join(''):'<span class="stat">пока пусто</span>';
   box.querySelectorAll('a').forEach(a=>a.onclick=()=>a.dataset.d==='true'?listFiles(a.dataset.f):showFile(a.dataset.f))}
 async function showFile(p){const r=await api(`/api/projects/${encodeURIComponent(state.slug)}/files?path=${encodeURIComponent(p)}`);dlg(`<h3>${esc(r.file)}</h3><pre>${esc(r.text)}</pre>`)}
 const MOVE={todo:'ожидает',ready:'готова к работе',running:'в работе',review:'на ревью',done:'принята',blocked:'заблокирована',cancelled:'отменена'};
 function showTask(id){const t=state.v.board.tasks.find(x=>x.id===id);if(!t)return;
-  dlg(`<h3>${esc(t.title)} <span class="badge">${esc(MOVE[t.status]||t.status)}</span></h3><div class="stat">${t.id} · @${esc(t.assignee||'—')} · попыток ${t.attempts} · зависит от: ${t.depends_on.join(', ')||'—'}</div>
+  dlg(`<h3>${esc(t.title)} <span class="badge">${esc(MOVE[t.status]||t.status)}</span></h3><div class="stat">${t.id} · @${esc(t.assignee||'—')} · попыток ${t.attempts} · зависит от: ${t.depends_on.join(', ')||'—'}</div>${riskBadge(t)?`<div class="stat">${riskBadge(t)}</div>`:''}
   <h2>Путь задачи</h2><div class="tl">${(t.timeline||[]).map(s=>`<div><span class="ts">${new Date(s.ts*1000).toLocaleTimeString()}</span><span>${esc(MOVE[s.to]||s.to)}</span><span class="stat">${esc(s.actor||'')}</span></div>`).join('')}</div>
   <h2>Задача</h2><pre>${esc(t.body)}</pre><h2>Критерии приёмки</h2><pre>${esc(t.criteria.map(c=>'• '+c).join('\n'))}</pre>
   ${t.checks.length?`<h2>Гейты</h2><pre>${esc(t.checks.join('\n'))}</pre>`:''}

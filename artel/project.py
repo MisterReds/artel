@@ -69,7 +69,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "decide": {                          # System One decisions (TypeSafe Jev via OpenRouter, or a local model)
         "backend": "none",               # none | jev | local
         "model": "typesafe/jev-1.13", "api_key_env": "OPENROUTER_API_KEY",
-        "points": {"skill_review": False, "refine": False, "replan_shortcut": False, "difficulty": False},
+        "points": {"skill_review": False, "refine": False, "replan_shortcut": False, "difficulty": False, "guardian": False},
         "thresholds": {"skip_learning_below": 0.25, "shortcut_min": 0.8},
     },
     "runtime": "auto",                   # auto | native | claude_code | codex (auto: whatever is connected)

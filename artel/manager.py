@@ -26,7 +26,7 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Optional
 
-from . import prompts
+from . import guardian, prompts
 from .agent import Outcome
 from .runtimes import run_agent
 from .snapshot import Snapshot
@@ -66,6 +66,7 @@ class Manager:
         self.review_retries: dict[str, int] = {}
         self.failures_since_refine = 0
         self.run_failures = 0  # never reset; gates the final refine
+        self._guard_lock = threading.Lock()
         self.snapshots: dict[str, str] = {}  # task id -> tree hash of shared/ before the pending attempt
         self.snapper = Snapshot(project.root / "snapshot.git", project.shared)
         self.last_refine = 0.0
@@ -184,6 +185,8 @@ class Manager:
         effort = self.difficulty_effort(task)
         if effort:
             ctx.state["effort"] = effort
+        if (self.project.meta.get("guardian") or {}).get(task["id"], {}).get("risk") == "high":
+            ctx.state["guardian_block"] = True
         if task["id"] not in self.snapshots:  # a pending snapshot predates the first run of this attempt
             tree = self.snapper.track()
             if tree:
@@ -200,7 +203,27 @@ class Manager:
         self.board.finish_run(run_id, status, summary or "", turns=out.turns, tool_calls=out.tool_calls,
                               tokens_in=out.usage["input_tokens"], tokens_out=out.usage["output_tokens"],
                               cost_usd=round(out.cost_usd, 6))
+        self.guard_run(task, run_id, ctx)
         return out, ctx
+
+    def guard_run(self, task: dict, run_id: int, ctx: ToolContext) -> None:
+        """Score the finished run (heuristics, no LLM); high risk flags the task for blocking shell review."""
+        try:
+            res = guardian.assess(ctx.state.get("trace", []), [str(ctx.workspace), str(self.project.shared)],
+                                  self.kernel, self.project)
+            self.project.log.append("guardian/assessed", task_id=task["id"], run_id=run_id, risk=res["risk"],
+                                    score=res["score"], reasons=res["reasons"])
+            with self._guard_lock:
+                g = dict(self.project.meta.get("guardian") or {})
+                if res["risk"] == "high":
+                    g[task["id"]] = {"risk": "high", "score": res["score"], "reason": "; ".join(res["reasons"]),
+                                     "run_id": run_id}
+                    self.project.set_meta(guardian=g)
+                elif task["id"] in g:  # keep the latest assessment visible, the blocking flag stays
+                    g[task["id"]] = {**g[task["id"]], "last_risk": res["risk"]}
+                    self.project.set_meta(guardian=g)
+        except Exception as exc:  # noqa: BLE001 - the reviewer must never crash a run
+            self.note("guardian_error", task_id=task["id"], error=repr(exc))
 
     def difficulty_effort(self, task: dict) -> Optional[str]:
         """System One difficulty estimate -> effort for this run (first attempt only)."""

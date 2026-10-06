@@ -376,6 +376,8 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
                 text, is_error = execute_tool(kernel, ctx, b["name"], b["input"])
                 project.log.append("tool/result", actor=actor, task_id=task_id, tool=b["name"], call_id=b["id"],
                                    is_error=is_error, output=text[:4000])
+                ctx.state.setdefault("trace", []).append({"tool": b["name"], "input": b["input"], "output": text[:4000],
+                                                          "is_error": is_error})  # guardian reads this after the run
                 out.digest.append(f"TOOL {b['name']}({_short(b['input'])}) -> {'ERROR ' if is_error else ''}"
                                   f"{_short(text, 300)}")
                 results.append({"type": "tool_result", "tool_use_id": b["id"], "content": text, "is_error": is_error})

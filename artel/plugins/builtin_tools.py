@@ -58,6 +58,16 @@ def _bound(ctx: ToolContext, text: str, tool: str) -> str:
 
 
 def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
+    if ctx.state.get("guardian_block"):  # a high-risk earlier run of this task: vet every command first
+        from ..guardian import review_command
+
+        verdict = review_command(command, [str(ctx.workspace), str(ctx.project.shared)], ctx.kernel, ctx.project)
+        if not verdict["allow"]:
+            ctx.project.log.append("guardian/blocked", actor=ctx.actor, task_id=(ctx.task or {}).get("id"),
+                                   run_id=ctx.run_id, command=command[:500], reason=verdict["reason"],
+                                   score=verdict["score"])
+            raise ToolError(f"blocked by guardian: {verdict['reason']}. This task was flagged high-risk, so every "
+                            f"shell command is reviewed; use a safer, narrower command or task_block if you need it.")
     timeout = int(timeout or ctx.kernel.config.get("tool_timeout_s", 300))
     env = {**os.environ, "ARTEL_SHARED": str(ctx.project.shared), "ARTEL_WORKSPACE": str(ctx.workspace)}
     try:
