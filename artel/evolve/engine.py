@@ -755,7 +755,8 @@ class Evolution:
         plan = (self.state.get("running") or {}).get("plan") if resume else None
         if plan:
             gen, champ = self.state["running"]["generation"], plan["champ"]
-            hypotheses = [Hypothesis.from_dict(h) for h in plan["hypotheses"]]
+            # a generation paused before its hypotheses were saved (e.g. at the baseline) proposes them now
+            hypotheses = [Hypothesis.from_dict(h) for h in plan["hypotheses"]] if "hypotheses" in plan else None
             kind = plan.get("kind", kind)
             self.state["running"].update(phase="baseline", resumed_at=time.time())
             self.record(kind="resume", generation=gen, branches=plan.get("branches", {}))
@@ -765,6 +766,8 @@ class Evolution:
             champ = self.champion()
             self.state["running"] = {"generation": gen, "since": time.time(), "phase": "baseline",
                                      "plan": {"champ": champ, "kind": kind, "branches": {}, **(plan_extra or {})}}
+            if hypotheses is not None:  # saved before any measurement, so a pause at the baseline keeps them
+                self.state["running"]["plan"]["hypotheses"] = [h.__dict__ for h in hypotheses]
         self._save()
         base = self._switching("bench", lambda rt: self.baseline(champ, rt))
         if hypotheses is None:
