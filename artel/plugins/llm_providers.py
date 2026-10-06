@@ -29,6 +29,19 @@ class LLMResponse:
     model: str = ""
 
 
+def cacheable(system: str, tools: list) -> tuple[Any, list]:
+    """Mark the stable request prefix (tools, then system) with cache_control breadcrumbs.
+
+    Anthropic caches the prefix in the order tools -> system -> messages, so a breakpoint on the last tool and
+    one on the system block let every turn of a run (and runs of the same role) reuse it.
+    """
+    blocks = [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}] if system else system
+    marked = [dict(t) for t in tools]
+    if marked:
+        marked[-1]["cache_control"] = {"type": "ephemeral"}
+    return blocks, marked
+
+
 class AnthropicProvider:
     name = "anthropic"
 
@@ -42,6 +55,7 @@ class AnthropicProvider:
     def chat(self, *, system: str, messages: list, tools: list, model: str, effort: str, max_tokens: int,
              purpose: str = "") -> LLMResponse:
         a = self._anthropic
+        system, tools = cacheable(system, tools)
         params: dict[str, Any] = dict(
             model=model,
             max_tokens=max_tokens,
