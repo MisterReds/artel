@@ -71,6 +71,6 @@
 | W3-tree-budget | Budget for the whole agent tree with threshold reminders | Codex (`openai/codex`) | evolve | план |
 | W3-mailbox | Agent mailbox and teams | Claude Code / Gas Town (`lintsinghua/claude-code-book`) | evolve | план |
 | W3-automations | Automations — schedule and event triggers | OpenHands / Qwen Code (`QwenLM/qwen-code`) | evolve | план |
-| W3-fast-system-one | Fast local System One decisions (Jev-Style kept loaded in memory) | Jev-Style v3 (`chaoliangUNSW/Jev-Style-2B-Decision-v3-GGUF`) | design | частично |
+| W3-system-one | Our own System One from the partner team, connected through the System One contract (docs/SYSTEM_ONE.md) | partner team (`pending`) | design | план |
 
 Итого: 15/37 пунктов готово.

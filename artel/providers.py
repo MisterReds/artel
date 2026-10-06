@@ -16,7 +16,6 @@ import re
 import subprocess
 import threading
 import time
-import urllib.request
 from pathlib import Path
 from typing import Optional
 
@@ -143,28 +142,18 @@ def api_keys(config: dict) -> list[dict]:
         names.setdefault(oc["api_key_env"], f"OpenAI-совместимый ({oc.get('base_url', '')})")
     dec = config.get("decide") or {}
     if dec.get("api_key_env"):
-        names.setdefault(dec["api_key_env"], "System One (decide)")
+        names.setdefault(dec["api_key_env"], "System One")
     return [{"env": k, "label": v, "set": bool(os.environ.get(k))} for k, v in names.items()]
 
 
-def local_status(config: dict) -> dict:
-    """The local System One: a llama.cpp server (`artel local serve`) or a local decisions endpoint."""
-    from .local import DEFAULT_PORT
-
+def system_one_status(config: dict) -> dict:
+    """Whether a System One is connected (plugin service or HTTP endpoint) and which decision points are on."""
     dec = config.get("decide") or {}
-    url = dec.get("url") if str(dec.get("url", "")).startswith(("http://127.0.0.1", "http://localhost")) \
-        else f"http://127.0.0.1:{DEFAULT_PORT}"
-    base = re.match(r"https?://[^/]+", url).group(0)
-    ok = False
-    for probe in ("/v1/models", "/health"):
-        try:
-            with urllib.request.urlopen(base + probe, timeout=1.5) as r:
-                ok = r.status == 200
-        except Exception:  # noqa: BLE001 - not running is a normal state
-            continue
-        if ok:
-            break
-    return {"backend": dec.get("backend", "none"), "url": url, "reachable": ok}
+    plugins = [p for p in config.get("plugins", []) if "system_one" in p or "system1" in p]
+    http = dec.get("backend") == "http" and bool(dec.get("url"))
+    name = plugins[0] if plugins else (dec.get("url") if http else "")
+    return {"connected": bool(plugins or http), "name": name,
+            "points": [k for k, v in (dec.get("points") or {}).items() if v]}
 
 
 def routing(config: dict) -> dict:
@@ -206,7 +195,7 @@ def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
 
 def overview(config: dict) -> dict:
     return {"codex": codex_status(config), "claude_code": claude_code_status(config), "keys": api_keys(config),
-            "local": local_status(config), "routing": routing(config)}
+            "system_one": system_one_status(config), "routing": routing(config)}
 
 
 __all__ = ["CodexLogin", "overview", "save_routing", "logout_codex", "json"]
