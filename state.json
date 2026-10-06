@@ -1,6 +1,6 @@
 {
  "main": "master",
- "generation": 4,
+ "generation": 5,
  "repo": "/home/user/artel",
  "push_failures": [
   {
@@ -9,5 +9,20 @@
    ],
    "error": "'https://github.com/MisterReds/artel.git'\nhint: Updates were rejected because a pushed branch tip is behind its remote\nhint: counterpart. If you want to integrate the remote changes, use 'git pull'\nhint: before pushing again.\nhint: See the 'Note about fast-forwards' in 'git push --help' for details."
   }
- ]
+ ],
+ "running": {
+  "generation": 5,
+  "since": 1791292315.561649,
+  "phase": "baseline",
+  "plan": {
+   "champ": "a0df11bf85d827de38b05155717286691b24e57e",
+   "kind": "candidate",
+   "branches": {},
+   "roadmap": [
+    "W2-guardian",
+    "W2-fs-grants"
+   ],
+   "mode": "adopt"
+  }
+ }
 }
