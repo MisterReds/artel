@@ -37,6 +37,7 @@ class Runner:
         self.kernel = new_kernel(config)
         self.active: dict[str, threading.Event] = {}
         self.lock = threading.Lock()
+        self.plugins_lock = threading.Lock()  # one plugin install / enable / remove at a time
         from ..updater import Updater
 
         self.updater = Updater(config=config)
@@ -183,6 +184,39 @@ def _loopback(addr: str) -> bool:
         return ipaddress.ip_address(addr.strip()).is_loopback
     except ValueError:
         return addr.strip() == "localhost"
+
+
+def plugin_action(runner: Runner, parts: list, data: dict) -> tuple[dict, int]:
+    """POST /api/plugins/install {source} and /api/plugins/<id>/{enable,disable,remove,update}.
+
+    Changes apply to the server's live kernel at once (projects started afterwards see them)."""
+    from .. import packages as P
+
+    try:
+        with runner.plugins_lock:
+            if parts == ["install"]:
+                source = (data.get("source") or "").strip()
+                if not source:
+                    return {"error": "укажите источник: git URL, пакет pip или путь"}, 400
+                return P.install(source), 200
+            if len(parts) != 2:
+                return {"error": "not found"}, 404
+            name, action = parts
+            if name.startswith("artel.plugins."):
+                if action not in ("enable", "disable"):
+                    return {"error": "встроенный плагин можно только включить или выключить"}, 400
+                return P.set_builtin(name, action == "enable", kernel=runner.kernel), 200
+            if action == "enable":
+                return P.enable(name, kernel=runner.kernel), 200
+            if action == "disable":
+                return P.disable(name, kernel=runner.kernel), 200
+            if action == "remove":
+                return P.remove(name, kernel=runner.kernel), 200
+            if action == "update":
+                return P.update(name, kernel=runner.kernel), 200
+            return {"error": "not found"}, 404
+    except P.PackageError as exc:
+        return {"error": str(exc)}, 400
 
 
 def make_handler(runner: Runner, auth=None):
@@ -350,6 +384,12 @@ def make_handler(runner: Runner, auth=None):
                     self._json(runner.update_status(fetch=q.get("check", ["0"])[0] == "1"))
                 elif parts == ["api", "evolution"]:
                     self._json(evolution_view())
+                elif parts == ["api", "plugins"]:
+                    from ..kernel import LIFECYCLE_EVENTS
+                    from ..packages import PERMISSIONS, overview
+
+                    self._json({"plugins": overview(runner.config, runner.kernel), "permissions": PERMISSIONS,
+                                "events": LIFECYCLE_EVENTS})
                 elif parts == ["api", "skills"]:
                     self._json(runner.kernel.get("skills").list())
                 elif len(parts) == 3 and parts[:2] == ["api", "skills"]:
@@ -474,6 +514,8 @@ def make_handler(runner: Runner, auth=None):
                         return self._json(save_timezone(runner.config, data.get("timezone", "")))
                     except ValueError as e:
                         return self._json({"error": str(e)}, 400)
+                if parts[:2] == ["api", "plugins"] and len(parts) in (3, 4):
+                    return self._json(*plugin_action(runner, parts[2:], data))
                 if parts == ["api", "update", "apply"]:
                     return self._json(runner.update_apply())
                 if parts == ["api", "update", "rollback"]:
@@ -539,7 +581,10 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
             print("Вход по ранее выпущенному токену. Новый токен (старые сессии закроются): "
                   "artel web token --new", flush=True)
         print("Без HTTPS токен и сессия идут по сети открытым текстом - см. docs/REMOTE.md", flush=True)
-    httpd.serve_forever()
+    try:
+        httpd.serve_forever()
+    finally:
+        runner.kernel.shutdown(reason="server_stop")
 
 
 __all__ = ["serve", "resume", "run_goal"]

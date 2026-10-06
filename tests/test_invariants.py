@@ -89,6 +89,38 @@ def test_modularity_runtime_is_swappable_by_plugin(cfg):
     assert k.get("runtime:native").__name__ == "_native"
 
 
+def test_modularity_failing_plugin_is_disabled_never_crashes(cfg, tmp_path):
+    """A third-party plugin that fails to import or set up is rolled back and switched off with its error shown;
+    a crashing lifecycle observer never breaks the run. Artel keeps working."""
+    from artel import packages
+
+    pkg = tmp_path / "broken"
+    pkg.mkdir()
+    (pkg / "artel-plugin.toml").write_text('name = "broken-plug"\n[plugins]\nmain = "broken_plug"\n')
+    (pkg / "broken_plug.py").write_text('PLUGIN = {"name": "broken"}\n'
+                                        'def setup(kernel):\n    kernel.provide("half", 1)\n    raise RuntimeError("boom")\n')
+    packages.install(str(pkg))
+    packages._set("broken-plug", enabled=True)
+    k = new_kernel(deep_merge(cfg, {"plugins": ["no_such_module_for_artel"]}))
+    assert "no_such_module_for_artel" in k.failed and "broken_plug" in k.failed
+    assert k.get("half") is None and "broken_plug" not in k.records
+    entry = packages.get("broken-plug")
+    assert entry["enabled"] is False and "boom" in entry["error"]
+
+    def crash(**_):
+        raise RuntimeError("observer crashed")
+
+    k.load_plugin("crashy", _mod("crashy", lambda kk: [kk.on(e, crash) for e in
+                                                        ("project_start", "before_agent_start", "agent_end",
+                                                         "task_done", "project_end")]))
+    project, status = run_goal("survive broken plugins", cfg, kernel=k)
+    ev = project.log.read()
+    assert status == "done"
+    assert {e["plugin"] for e in ev if e["kind"] == "plugin/failed"} >= {"no_such_module_for_artel", "broken_plug"}
+    assert any(e["kind"] == "plugin/error" and "observer crashed" in e["error"] for e in ev)
+    assert packages.enable("broken-plug", config=cfg)["error"]   # enabling again reports, never raises
+
+
 def test_modularity_hot_path_overhead_is_negligible():
     k = Kernel({})
     k.provide("x", 1)

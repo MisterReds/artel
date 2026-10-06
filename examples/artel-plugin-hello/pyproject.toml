@@ -1,0 +1,17 @@
+[project]
+name = "artel-plugin-hello"
+version = "0.1.0"
+description = "Example Artel plugin package: a line in every system prompt, task_done in the project log"
+requires-python = ">=3.10"
+dependencies = []
+
+# Artel finds plugins through this entry point group: name = module with setup(kernel) and PLUGIN = {...}
+[project.entry-points."artel.plugins"]
+hello = "artel_plugin_hello"
+
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["artel_plugin_hello"]

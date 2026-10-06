@@ -66,4 +66,20 @@ def run_agent(kernel, project, *, role: str, **kw):
     if fn is None:
         raise RuntimeError(f"no runtime plugin registered as {name!r}; loaded: "
                            f"{sorted(k[8:] for k in kernel.services if k.startswith('runtime:'))}")
-    return fn(kernel, project, role=role, **kw)
+    hooks = kernel.hooks
+    if not (hooks.get("before_agent_start") or hooks.get("agent_end")):  # fast path: no lifecycle observers
+        return fn(kernel, project, role=role, **kw)
+    ctx = kw.get("ctx")
+    info = {"project": project, "role": role, "purpose": kw.get("purpose"), "task": getattr(ctx, "task", None),
+            "persona": kw.get("persona")}
+    if hooks.get("before_agent_start"):
+        # plugins may extend the run: append to agent["system"], change first_user, narrow/extend tool_names
+        agent = {"system": kw.get("system", ""), "first_user": kw.get("first_user", ""),
+                 "tool_names": list(kw["tool_names"]) if kw.get("tool_names") is not None else None}
+        kernel.emit("before_agent_start", agent=agent, **info)
+        kw["system"], kw["first_user"] = agent["system"], agent["first_user"]
+        if agent["tool_names"] is not None or kw.get("tool_names") is not None:
+            kw["tool_names"] = agent["tool_names"]
+    out = fn(kernel, project, role=role, **kw)
+    kernel.emit("agent_end", outcome=out, **info)
+    return out

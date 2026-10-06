@@ -176,6 +176,63 @@ def setup(kernel):
     kernel.on("tool/execute", gate, priority=10)
 ```
 
+## Плагины
+
+Плагин — модуль с `setup(kernel)` и манифестом `PLUGIN = {name, version, provides, requires, permissions}`. Плагины
+собираются в пакеты и ставятся из git, из pip (PyPI) или из папки:
+
+```bash
+artel plugins install https://github.com/owner/artel-plugin-x     # git (можно @тег или @коммит)
+artel plugins install artel-plugin-x==1.2                         # pip / PyPI
+artel plugins install ./examples/artel-plugin-hello               # локальная папка
+artel plugins list                       # встроенные и установленные: состояние, версия, разрешения, ошибка
+artel plugins show artel-plugin-hello    # манифест: provides, requires, какие разрешения просит
+artel plugins enable artel-plugin-hello  # показывает манифест, спрашивает подтверждение (--yes без вопроса)
+artel plugins disable|update|remove artel-plugin-hello            # update all — обновить все пакеты
+```
+
+- Пакет ставится в свою папку `ARTEL_HOME/plugins/<имя>` (`pip install --target`, зависимости там же) и
+  записывается в `ARTEL_HOME/plugins.json`: источник, версия, коммит, точки входа, манифест, флаг включения, ошибка.
+- **Установка не запускает код пакета** — работает только pip и сборщик пакета. Манифест читается статически
+  (`ast`, без импорта). Пакет ставится выключенным; его `setup` выполняется только после включения.
+- Включение пробно загружает плагин; если импорт или `setup` падает, эффекты откатываются, пакет остаётся
+  выключенным, ошибка видна в `list` и в дашборде. Сломанный плагин никогда не роняет Artel.
+- Если новая версия просит новые разрешения, `update` выключает пакет до повторного подтверждения.
+- Плагин работает внутри процесса Artel с его правами: разрешения — это декларация для человека, а не песочница.
+  Ставьте только то, чему доверяете.
+
+Пакет объявляет плагины точкой входа (пример — `examples/artel-plugin-hello`):
+
+```toml
+[project.entry-points."artel.plugins"]
+hello = "artel_plugin_hello"
+```
+
+Папка без сборки может вместо этого содержать `artel-plugin.toml` (`name`, `version`, `[plugins] имя = "модуль"`).
+
+**События жизненного цикла** (`kernel.on(событие, fn)`, обработчик получает именованные аргументы; ошибка
+обработчика пишется в журнал как `plugin/error` и не ломает работу):
+
+| Событие | Когда | Данные |
+|---|---|---|
+| `project_start` | менеджер начал вести проект | `project`, `resumed` |
+| `before_agent_start` | перед запуском любой роли | `project`, `role`, `purpose`, `task`, `persona`, `agent` — изменяемый: `system`, `first_user`, `tool_names` |
+| `agent_end` | роль закончила запуск | `project`, `role`, `purpose`, `task`, `outcome` |
+| `task_done` | ревьюер принял задачу | `project`, `task`, `feedback` |
+| `project_end` | проект остановился (любой итог) | `project`, `status`, `usage` |
+| `session_shutdown` | ядро завершает работу (конец `run`/`resume`, остановка `web`) | `reason` |
+
+```python
+def setup(kernel):
+    def before(*, agent, **_):
+        agent["system"] += "\n\nОтвечай коротко."
+    kernel.on("before_agent_start", before)
+```
+
+В дашборде раздел **«Плагины»**: встроенные и установленные плагины, состояние, манифест и разрешения, включение
+с подтверждением, выключение, обновление, удаление, установка по ссылке. Изменения применяются к работающему
+серверу сразу.
+
 ## Дашборд: много проектов одновременно
 
 `artel web` → http://127.0.0.1:8765. Сервер ведёт любое число проектов параллельно; у каждого своя ссылка `#/p/<slug>`.
@@ -185,6 +242,7 @@ def setup(kernel):
 - **Агенты** — как справляются модели, роли и конкретные боты во всех проектах: принято, с первой попытки, отказы ревью, доля срывов, токены и $ на принятую задачу.
 - **Реестр харнессов** — 1391 проект с фильтрами по типу, признакам и поиском.
 - **Скиллы** — общая библиотека и история правок каждого скилла.
+- **Плагины** — встроенные и установленные плагины: манифест, разрешения, включение, установка из git/pip/папки.
 
 ## Рантайм Claude Code
 
@@ -267,6 +325,7 @@ artel resume <проект>          artel status [<проект>]        artel 
 artel comment <проект> <задача> "<текст>"                      artel web [--remote]
 artel web token --new          # удалённый режим: новый токен доступа
 artel refine history|rollback <проект> [<id>]
+artel plugins list|install <git|pip|путь>|show|enable|disable|update|remove [<имя>]
 ```
 
 ## Тесты
