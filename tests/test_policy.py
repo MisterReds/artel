@@ -98,7 +98,7 @@ def test_claude_code_hook_exit_codes(monkeypatch, capsys):
     assert _hook(monkeypatch, capsys, "ls")[0] == 0
 
 
-def test_claude_code_settings_and_gate(tmp_path):
+def test_claude_code_settings_and_gate(tmp_path, monkeypatch):
     import json
     import types
 
@@ -109,7 +109,8 @@ def test_claude_code_settings_and_gate(tmp_path):
     logged, killed = [], []
     project = types.SimpleNamespace(root=tmp_path, log=types.SimpleNamespace(append=lambda *a, **k: logged.append(a)))
     ctx = types.SimpleNamespace(terminal=None)
-    proc = types.SimpleNamespace(terminate=lambda: killed.append(1))
+    proc = types.SimpleNamespace()
+    monkeypatch.setattr(cc, "terminate_tree", lambda p, force=False: killed.append(p) or True)
     assert not cc._policy_gate(project, ctx, "w", "t", {"command": "ls"}, proc) and not ctx.terminal
     assert cc._policy_gate(project, ctx, "w", "t", {"command": "rm -rf /"}, proc) and not ctx.terminal and not killed
     assert cc._policy_gate(project, ctx, "w", "t", {"command": "cat .env"}, proc)

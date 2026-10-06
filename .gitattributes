@@ -1,0 +1,13 @@
+# Line endings are LF in the repository and in every checkout (Windows included): tests compare generated files
+# with committed ones, and shell scripts must not get CRLF. PowerShell reads LF scripts fine.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.otf binary
+*.gguf binary
+# eval seed data is kept byte for byte (CSV with CRLF rows is part of a task)
+evals/**/seed/** -text

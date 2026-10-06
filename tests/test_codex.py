@@ -1,5 +1,6 @@
 import json
 import os
+import sys
 import time
 from pathlib import Path
 
@@ -12,12 +13,22 @@ from artel.tooling import ToolContext
 FAKE = str(Path(__file__).parent / "fakes" / "codex")
 
 
+def fake_codex(tmp_path) -> str:
+    """The fake CLI is a Python script; Windows cannot run a shebang script, so it gets a .cmd shim (the same shape
+    as an npm-installed codex.cmd)."""
+    if sys.platform != "win32":
+        return FAKE
+    shim = tmp_path / "codex.cmd"
+    shim.write_text(f'@"{sys.executable}" "{FAKE}" %*\r\n', encoding="utf-8", newline="")
+    return str(shim)
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("FAKE_CODEX_LOG", str(tmp_path / "calls.jsonl"))
-    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05, "codex": {"binary": FAKE}})
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05, "codex": {"binary": fake_codex(tmp_path)}})
     project, _ = run_goal("codex", cfg)
     return cfg, project, tmp_path
 

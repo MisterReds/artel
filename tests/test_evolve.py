@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,8 @@ from artel.evolve import bench
 from artel.evolve.diagnose import doctor, render_markdown, trajectory_profile
 from artel.evolve.engine import Evolution, Hypothesis, Policy, git, slug
 from artel.project import DEFAULT_CONFIG, deep_merge
+
+PY = Path(sys.executable).as_posix()  # `python3` is not a command on Windows; this interpreter is everywhere
 
 
 def _suite(pass_rate, cost, partial=None, results=None):
@@ -103,7 +106,7 @@ def test_proposals_and_absorb_via_agents(repo, tmp_path):
 
 def test_bench_hidden_checks_and_doctor(tmp_path, monkeypatch):
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "h"))
-    task = {"id": "t", "dir": str(tmp_path / "task"), "hidden": ["python3 .artel_eval/c.py"]}
+    task = {"id": "t", "dir": str(tmp_path / "task"), "hidden": [f'"{PY}" .artel_eval/c.py']}
     (tmp_path / "task" / "hidden").mkdir(parents=True)
     (tmp_path / "task" / "hidden" / "c.py").write_text("import os; assert os.path.exists('x.txt')", encoding="utf-8")
     wd = tmp_path / "wd"
@@ -337,7 +340,7 @@ def test_gates_leave_no_python_debris(tmp_path, monkeypatch):
     project, _ = run_goal("gates", cfg)
     (project.shared / "m.py").write_text("X = 1\n", encoding="utf-8")
     m = Manager(new_kernel(cfg), project)
-    res = m.run_gates({"id": "t", "checks": ["python3 -c 'import m'"]})
+    res = m.run_gates({"id": "t", "checks": [f"\"{PY}\" -c 'import m'"]})
     assert res[0]["exit"] == 0 and not (project.shared / "__pycache__").exists()
 
 

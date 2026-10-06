@@ -1,7 +1,10 @@
 import hashlib
 import io
 import json
+import os
+import sys
 import tarfile
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -12,14 +15,21 @@ from artel import tools
 @pytest.fixture
 def home(tmp_path, monkeypatch):
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
-    monkeypatch.setenv("PATH", "/usr/bin:/bin")
-    monkeypatch.setattr(tools, "resolve", lambda b, _r=tools.resolve: _r(b) if "/" in b else
-                        (str(tools.bin_dir() / b) if (tools.bin_dir() / b).exists() else None))
+    if sys.platform != "win32":  # Windows keeps PATH: git and the system DLL directories live on it
+        monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    monkeypatch.setattr(tools, "resolve", lambda b, _r=tools.resolve: _r(b) if ("/" in b or os.sep in b) else
+                        (str(tools.bin_dir() / (b + tools.EXE)) if (tools.bin_dir() / (b + tools.EXE)).exists() else None))
     return tmp_path
 
 
-def _codex_tgz() -> bytes:
+def _codex_archive() -> bytes:
+    """A release archive in this platform's format (.zip on Windows, .tar.gz elsewhere)."""
+    asset = tools.codex_asset()
     buf = io.BytesIO()
+    if asset.endswith(".zip"):
+        with zipfile.ZipFile(buf, "w") as z:
+            z.writestr(asset.removesuffix(".zip"), b"MZ fake codex")
+        return buf.getvalue()
     with tarfile.open(fileobj=buf, mode="w:gz") as t:
         data = b"#!/bin/sh\necho codex-cli 9.9\n"
         info = tarfile.TarInfo(tools.codex_asset().removesuffix(".tar.gz"))
@@ -39,10 +49,10 @@ def test_platform_assets():
 
 
 def test_codex_installed_from_release_binary_and_removed(home, monkeypatch):
-    monkeypatch.setattr(tools, "_download", lambda url, dest: Path(dest).write_bytes(_codex_tgz()))
+    monkeypatch.setattr(tools, "_download", lambda url, dest: Path(dest).write_bytes(_codex_archive()))
     res = tools.install("codex", log=lambda m: None)
-    assert res["ok"] and Path(res["path"]) == tools.bin_dir() / "codex" and tools.installed_by_artel("codex")
-    assert str(tools.bin_dir()) == tools.env_with_tools()["PATH"].split(":")[0]
+    assert res["ok"] and Path(res["path"]) == tools.bin_dir() / ("codex" + tools.EXE) and tools.installed_by_artel("codex")
+    assert str(tools.bin_dir()) == tools.env_with_tools()["PATH"].split(os.pathsep)[0]
     assert not tools.installed_by_artel("claude")  # only what was asked for
     assert tools.uninstall("codex")["ok"] and not tools.installed_by_artel("codex")
 

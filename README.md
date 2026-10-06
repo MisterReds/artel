@@ -36,6 +36,9 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 
 Подписка Codex: «Провайдеры» → «Установить Codex CLI» → «Войти через device code».
 
+CI (GitHub Actions, `.github/workflows/ci.yml`) на каждый push и pull request проверяет Linux, macOS и Windows:
+полный набор тестов, установщик этой системы в чистый домашний каталог, сценарный первый запуск и ответ дашборда.
+
 ## Быстрый старт
 
 ```bash
