@@ -308,7 +308,8 @@ function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter
 
 /* ---------- Провайдеры ---------- */
 async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div class="empty">Загрузка…</div></div>';
-  const RT={auto:'Автоматически — что подключено (рекомендуется)',native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)'};
+  const RT={auto:'Автоматически — что подключено (рекомендуется)',native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)',acp:'ACP-агент (выбранный ниже)'};
+  const rtl=x=>RT[x]||(x.startsWith('acp:')?'ACP-агент: '+x.slice(4):x);
   const draw=async()=>{const o=await api('/api/providers');const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
    const st=(ok,on,off)=>`<span class="st ${ok?'on':'off'}">${ok?on:off}</span>`;
    const I=o.installs||{};
@@ -337,6 +338,12 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       <div class="kv"><span>вход</span><span>${cc.logged_in?esc(cc.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка Claude или ключ API</span>${cc.installed?`<span>CLI</span><span>${esc(cc.version)}${cc.by_artel?' · в папке Artel':''}</span><span>модель</span><span>${esc(cc.model)}</span>`:''}</div>
       ${cc.installed&&!cc.logged_in?`<p class="stat">${esc(cc.detail)}</p>`:''}
       ${inst('claude',cc,'Claude Code CLI')}</div>
+    <div class="pvc"><h3>${ri('worker')}ACP-агенты${st(o.acp.installed,'агент найден','агент не найден')}</h3>
+      <div class="kv"><span>что это</span><span>любой агент с Agent Client Protocol (Gemini CLI, Claude Code и Codex через ACP-адаптеры, goose, OpenHands…) работает исполнителем</span>
+      <span>по умолчанию</span><span><code>${esc((o.acp.command||[]).join(' ')||'—')}</code>${o.acp.custom?' · своя команда (acp.command)':''}</span>
+      ${o.acp.presets.map(p=>`<span>${esc(p.name)}</span><span>${p.installed?'<span style="color:var(--ok)">установлен</span>':'не установлен'} · <code>${esc(p.command.join(' '))}</code></span>`).join('')}</div>
+      ${o.acp.error?`<pre>${esc(o.acp.error)}</pre>`:''}
+      <p class="stat">Вход выполняется в CLI самого агента. Роль назначается ниже: «ACP-агент: имя». Свои агенты — <code>acp.presets</code> в artel.yaml.</p></div>
     <div class="pvc"><h3>${ri('librarian')}Ключи API</h3><div class="kv">${o.keys.map(k=>`<span>${esc(k.label)}</span><span>${k.set?'<span style="color:var(--ok)">задан</span>':'не задан'} · <code>${esc(k.env)}</code></span>`).join('')}</div>
       <p class="stat">Задаются в настройках окружения, не в чате и не здесь.</p></div>
     <div class="pvc"><h3>${ri('auditor')}System One${st(o.system_one.connected,'подключена','не подключена')}</h3>
@@ -346,11 +353,12 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    </div>
    <h2>Кто какую роль выполняет</h2>
    <div class="tablewrap pvroles"><table><tr><th>роль</th><th>рантайм</th></tr>
-    <tr><td><b>по умолчанию</b></td><td><select data-def="1">${r.runtimes.map(x=>`<option value="${x}" ${x===r.runtime?'selected':''}>${RT[x]}</option>`).join('')}</select></td></tr>
-    ${r.roles.map(role=>`<tr><td>${ri(role)}${esc(role)}</td><td><select data-role="${role}"><option value="">как по умолчанию</option>${r.runtimes.map(x=>`<option value="${x}" ${r.runtime_by_role[role]===x?'selected':''}>${RT[x]}</option>`).join('')}</select></td></tr>`).join('')}
+    <tr><td><b>по умолчанию</b></td><td><select data-def="1">${r.runtimes.map(x=>`<option value="${x}" ${x===r.runtime?'selected':''}>${rtl(x)}</option>`).join('')}</select></td></tr>
+    ${r.roles.map(role=>`<tr><td>${ri(role)}${esc(role)}</td><td><select data-role="${role}"><option value="">как по умолчанию</option>${r.runtimes.map(x=>`<option value="${x}" ${r.runtime_by_role[role]===x?'selected':''}>${rtl(x)}</option>`).join('')}</select></td></tr>`).join('')}
    </table></div>
    <div class="kv" style="margin-top:10px;max-width:520px"><span>модель Claude Code</span><input id="m-cc" value="${esc(r.models.claude_code||'')}" placeholder="sonnet">
-     <span>модель Codex</span><input id="m-cx" value="${esc(r.models.codex||'')}" placeholder="по умолчанию аккаунта"></div>
+     <span>модель Codex</span><input id="m-cx" value="${esc(r.models.codex||'')}" placeholder="по умолчанию аккаунта">
+     <span>ACP-агент для «acp»</span><select id="acp-agent">${o.acp.presets.map(p=>`<option value="${esc(p.name)}" ${p.name===r.acp_agent?'selected':''}>${esc(p.name)}${p.installed?'':' (не установлен)'}</option>`).join('')}</select></div>
    <div class="kv" style="margin-top:10px;max-width:520px"><span>часовой пояс</span><input id="tz" value="${esc((o.timezone||{}).configured||'')}" placeholder="${esc((o.timezone||{}).effective||'Europe/Moscow')}" list="tzl"><datalist id="tzl">${(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]).map(z=>`<option value="${z}">`).join('')}</datalist></div>
    <p class="stat">IANA-имя, например Asia/Sakhalin; пусто — часовой пояс системы (сейчас ${esc((o.timezone||{}).effective||'')}). Время в панели, CLI и уведомлениях показывается в нём.</p>
    <p><button class="primary" id="rt-save">Сохранить</button> <span class="stat" id="rt-msg"></span></p>
@@ -362,13 +370,14 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST'});draw()});
    on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST'});draw()});
    on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});
-     const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value}};
+     const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value},acp_agent:$('#acp-agent').value};
      const tzr=await fetch('/api/providers/timezone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timezone:$('#tz').value})});
      if(!tzr.ok){const j=await tzr.json().catch(()=>({}));$('#rt-msg').textContent='Часовой пояс не сохранён: '+(j.error||tzr.status);return}
      TZ=(await tzr.json()).configured||'';
      await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
      const used=new Set([body.runtime,...Object.values(byRole)]);const miss=[];
      if(used.has('codex')&&!cx.installed)miss.push('Codex CLI');if(used.has('claude_code')&&!cc.installed)miss.push('Claude Code CLI');
+     for(const u of used){if(!u||!u.startsWith('acp'))continue;const n=u==='acp'?body.acp_agent:u.slice(4);const p=o.acp.presets.find(x=>x.name===n);if(p&&!p.installed)miss.push('ACP-агент '+n)}
      $('#rt-msg').textContent=miss.length?`Сохранено. Не установлен: ${miss.join(', ')} — установите в карточке выше.`:'Сохранено.'});
    return L.phase};
   const phase=await draw();

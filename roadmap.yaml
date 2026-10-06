@@ -263,10 +263,15 @@ items:
   - id: W3-acp-runtime
     wave: 3
     mode: design
-    status: planned
+    status: done
     title: ACP runtime plugin — any ACP agent (Claude Code, Codex, Gemini, OpenHands) as a worker
     source: {harness: OpenHands, repo: OpenHands/OpenHands, paths: [docs/ACP_AGENTS.md]}
     target: [artel/plugins/runtimes.py]
+    result: >-
+      feat/acp-runtime — runtime `acp` (artel/runtimes/acp.py): ACP v1 client over stdio with presets chosen per role
+      (`acp:gemini`, `acp:claude`…); Artel's MCP proxy passed in session/new; session/update mirrored to the event
+      log; permissions and fs/* by role policy; resume in the same session; tests with a stand-in ACP agent;
+      handshake checked against the real Gemini CLI and the Claude ACP adapter.
   - id: W3-dsh-runtime
     wave: 3
     mode: design

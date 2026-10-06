@@ -56,11 +56,11 @@
 | W2-timezone | User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin | Artel (`MisterReds/artel`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-evolve-two-subscriptions | Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it | Artel (`MisterReds/artel`) | design | план |
 
-## Волна 3 — 0/12 готово
+## Волна 3 — 1/12 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
-| W3-acp-runtime | ACP runtime plugin — any ACP agent (Claude Code, Codex, Gemini, OpenHands) as a worker | OpenHands (`OpenHands/OpenHands`) | design | план |
+| W3-acp-runtime | ACP runtime plugin — any ACP agent (Claude Code, Codex, Gemini, OpenHands) as a worker | OpenHands (`OpenHands/OpenHands`) | design | готово — feat/acp-runtime — runtime `acp` (artel/runtimes/acp.py): ACP v1 client over stdio with presets chosen per role (`acp:gemini`, `acp:claude`…); Artel's MCP proxy passed in session/new; session/update mirrored to the event log; permissions and fs/* by role policy; resume in the same session; tests with a stand-in ACP agent; handshake checked against the real Gemini CLI and the Claude ACP adapter. |
 | W3-dsh-runtime | DeepSeek Harness as a runtime plugin, so dsh plugins work inside Artel workers | DeepSeek Harness (`deepseek-ai/deepseek-harness`) | design | план |
 | W3-durable | Durable turns and idempotent run receipts — resume mid-turn after a crash | Pi / OpenScience (`badlogic/pi-mono`) | design | план |
 | W3-plugin-packages | Plugin packages (install from git/pip), lifecycle events before_agent_start / session_shutdown | Pi (`badlogic/pi-mono`) | design | план |
@@ -73,4 +73,4 @@
 | W3-automations | Automations — schedule and event triggers | OpenHands / Qwen Code (`QwenLM/qwen-code`) | evolve | план |
 | W3-system-one | Our own System One from the partner team, connected through the System One contract (docs/SYSTEM_ONE.md) | partner team (`pending`) | design | план |
 
-Итого: 18/37 пунктов готово.
+Итого: 19/37 пунктов готово.

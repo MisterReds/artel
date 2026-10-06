@@ -4,6 +4,8 @@
   the code and link are shown in the dashboard, the CLI stores and refreshes the tokens itself.
 - Claude Code (Claude subscription): status of the installed CLI; login happens in the CLI.
 - API keys: only whether the configured environment variable is set — values are never read out or stored.
+- ACP agents (Gemini CLI, Claude Code / Codex via ACP adapters, goose, OpenHands…): which presets are installed;
+  login happens in each agent's own CLI.
 - Local System One model: whether its server answers.
 - Routing: which runtime and model each role uses (saved to ARTEL_HOME/artel.yaml).
 """
@@ -26,7 +28,7 @@ from .tools import installed_by_artel, resolve
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 ROLES = ["manager", "planner", "worker", "tester", "reviewer", "auditor", "librarian", "refiner", "evolver", "absorber"]
-RUNTIMES = ["auto", "native", "claude_code", "codex"]
+RUNTIMES = ["auto", "native", "claude_code", "codex", "acp"]
 KEY_VARS = {"ANTHROPIC_API_KEY": "Anthropic API", "OPENAI_API_KEY": "OpenAI API", "OPENROUTER_API_KEY": "OpenRouter",
             "DEEPSEEK_API_KEY": "DeepSeek"}
 
@@ -135,6 +137,29 @@ def claude_code_status(config: dict) -> dict:
             "detail": "вход: запустите `claude` в терминале и выполните /login"}
 
 
+def runtimes(config: dict) -> list[str]:
+    """Selectable runtimes: the base ones plus one ``acp:<preset>`` per ACP agent preset."""
+    from .runtimes.acp import presets
+
+    return RUNTIMES + [f"acp:{n}" for n in presets(config)]
+
+
+def acp_status(config: dict) -> dict:
+    """ACP presets with their command lines and whether the command is installed; nothing is started."""
+    from .runtimes.acp import AcpError, acp_settings, presets
+
+    a = config.get("acp") or {}
+    items = [{"name": n, "command": p["command"], "installed": bool(p["command"] and resolve(p["command"][0]))}
+             for n, p in presets(config).items()]
+    try:
+        eff = acp_settings(config)
+        command, err = eff["command"], ""
+    except AcpError as e:
+        command, err = [], str(e)
+    return {"agent": a.get("agent", "gemini"), "command": command, "custom": bool(a.get("command")),
+            "installed": bool(command and resolve(command[0])), "presets": items, "error": err}
+
+
 def api_keys(config: dict) -> list[dict]:
     names = dict(KEY_VARS)
     oc = config.get("openai_compat") or {}
@@ -160,20 +185,26 @@ def routing(config: dict) -> dict:
     from .runtimes import detect_runtime
 
     return {"runtime": config.get("runtime", "auto"), "auto_resolves_to": detect_runtime(config, ttl=0), "runtime_by_role": config.get("runtime_by_role") or {},
-            "roles": ROLES, "runtimes": RUNTIMES,
+            "roles": ROLES, "runtimes": runtimes(config),
             "models": {"claude_code": (config.get("claude_code") or {}).get("model", "sonnet"),
-                       "codex": (config.get("codex") or {}).get("model") or ""}}
+                       "codex": (config.get("codex") or {}).get("model") or ""},
+            "acp_agent": (config.get("acp") or {}).get("agent", "gemini")}
 
 
 def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
     """Persist runtime choices to ARTEL_HOME/artel.yaml and apply them to the live config."""
     from .project import artel_home, deep_merge
 
+    from .runtimes.acp import presets
+
     upd: dict = {}
-    if data.get("runtime") in RUNTIMES:
+    allowed = runtimes(config)
+    if data.get("runtime") in allowed:
         upd["runtime"] = data["runtime"]
     if isinstance(data.get("runtime_by_role"), dict):
-        upd["runtime_by_role"] = {r: v for r, v in data["runtime_by_role"].items() if r in ROLES and v in RUNTIMES}
+        upd["runtime_by_role"] = {r: v for r, v in data["runtime_by_role"].items() if r in ROLES and v in allowed}
+    if data.get("acp_agent") in presets(config):
+        upd["acp"] = {"agent": data["acp_agent"]}
     for rt in ("claude_code", "codex"):
         m = (data.get("models") or {}).get(rt)
         if isinstance(m, str):
@@ -220,7 +251,8 @@ def save_timezone(config: dict, name, path: Optional[Path] = None) -> dict:
 
 
 def overview(config: dict) -> dict:
-    return {"codex": codex_status(config), "claude_code": claude_code_status(config), "keys": api_keys(config),
+    return {"codex": codex_status(config), "claude_code": claude_code_status(config), "acp": acp_status(config),
+            "keys": api_keys(config),
             "system_one": system_one_status(config), "routing": routing(config),
             "timezone": __import__("artel.tz", fromlist=["info"]).info(config)}
 

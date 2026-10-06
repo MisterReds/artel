@@ -46,7 +46,7 @@ PROTOCOL_VERSION = 1
 # Known ACP agents. Each is a command line; users add their own under ``acp.presets``.
 PRESETS: dict = {
     "gemini": ["gemini", "--experimental-acp"],
-    "claude": ["claude-agent-acp"],          # Zed's adapter for the Claude Agent SDK (npm @zed-industries/claude-agent-acp)
+    "claude": ["claude-agent-acp"],          # npm @agentclientprotocol/claude-agent-acp
     "codex": ["codex-acp"],                  # the ACP adapter for the Codex CLI
     "goose": ["goose", "acp"],
     "openhands": ["openhands", "acp"],
@@ -313,7 +313,7 @@ class AcpRun:
                                 turn=self.out.turns, model=self.model, blocks=blocks, runtime="acp")
         if text.strip():
             self.out.digest.append(f"ASSISTANT: {_short(text, 600)}")
-            verdict = self.detector.observe_text(text)
+            verdict = None if self.out.error else self.detector.observe_text(text)
             if verdict:
                 self.log("agent/loop", loop_kind="text", stage=verdict, details={"text": _short(text, 200)})
                 if verdict == "stop":
@@ -376,7 +376,8 @@ class AcpRun:
                 self.out.tool_calls += 1
                 inp = t["input"] if t["input"] is not None else {"title": t["title"]}
                 self.log("tool/call", tool=tool, input=inp, call_id=tid, title=t["title"], tool_kind=t["kind"])
-                verdict = self.detector.observe_tool(tool, t["input"] if t["input"] is not None else t["title"])
+                observed = t["input"] if t["input"] is not None else t["title"]
+                verdict = None if self.out.error else self.detector.observe_tool(tool, observed)
                 if verdict:
                     self.log("agent/loop", loop_kind="tool", stage=verdict, details={"tool": tool,
                                                                                      "input": _short(inp)})

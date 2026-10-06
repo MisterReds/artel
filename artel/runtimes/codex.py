@@ -132,6 +132,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
             killer.start()
             failure = ""
             blocked = ""
+            closer: Optional[threading.Timer] = None
             try:
                 for line in proc.stdout:
                     if stop_event is not None and stop_event.is_set():
@@ -176,10 +177,17 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                             out.status, out.error = "turn_limit", f"{max_turns} turns"
                             proc.terminate()
                     if ctx.terminal:
-                        # the run is finished as soon as Artel accepted a terminal tool; do not let Codex continue
-                        proc.terminate()
+                        # the run is finished once Artel accepted a terminal tool: stop Codex as soon as it has
+                        # reported the turn's usage, and at most 2 s later
+                        if typ == "turn.completed":
+                            proc.terminate()
+                        elif closer is None:
+                            closer = threading.Timer(2.0, proc.terminate)
+                            closer.start()
             finally:
                 killer.cancel()
+                if closer is not None:
+                    closer.cancel()
                 proc.wait()
             stderr = proc.stderr.read() if proc.stderr else ""
             if ctx.terminal:
