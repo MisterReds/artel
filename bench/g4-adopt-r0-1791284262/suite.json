@@ -1,0 +1,216 @@
+{
+ "label": "g4-adopt-r0",
+ "code": "/tmp/claude-0/artel-evo/evolution/artel/worktrees/evolve_g4-adopt-r0",
+ "commit": "b23a77d7ddf00e536a60e810b48f75b33787c240",
+ "ts": 1791284647.1222332,
+ "repeats": 1,
+ "config": {
+  "provider": "anthropic",
+  "runtime": "claude_code",
+  "claude_code": {
+   "model": "sonnet",
+   "permission_mode": "bypassPermissions",
+   "max_resumes": 2,
+   "timeout_s": 1800
+  },
+  "models": {
+   "default": "claude-opus-5-5"
+  }
+ },
+ "results": [
+  {
+   "id": "adr-doc",
+   "kind": "writing",
+   "exit": 0,
+   "wall_s": 108.1,
+   "status": "done",
+   "cost_usd": 0.5377,
+   "tokens": 734871,
+   "requests": 5,
+   "duration_s": 108.0,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_adr.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g4-adopt-r0-1791284262/adr-doc/projects/bench-adr-doc"
+  },
+  {
+   "id": "csv-report",
+   "kind": "data",
+   "exit": 0,
+   "wall_s": 48.4,
+   "status": "done",
+   "cost_usd": 0.2633,
+   "tokens": 440827,
+   "requests": 3,
+   "duration_s": 48.3,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 1,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_report.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g4-adopt-r0-1791284262/csv-report/projects/bench-csv-report"
+  },
+  {
+   "id": "fix-inventory",
+   "kind": "bugfix",
+   "exit": 0,
+   "wall_s": 86.2,
+   "status": "done",
+   "cost_usd": 0.443,
+   "tokens": 769071,
+   "requests": 5,
+   "duration_s": 86.1,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_inventory.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g4-adopt-r0-1791284262/fix-inventory/projects/bench-fix-inventory"
+  },
+  {
+   "id": "log-stats",
+   "kind": "data-hard",
+   "exit": 0,
+   "wall_s": 159.5,
+   "status": "done",
+   "cost_usd": 0.811,
+   "tokens": 1419897,
+   "requests": 8,
+   "duration_s": 159.4,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 3,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_logstats.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g4-adopt-r0-1791284262/log-stats/projects/bench-log-stats"
+  },
+  {
+   "id": "lru-ttl-cache",
+   "kind": "build-hard",
+   "exit": 0,
+   "wall_s": 185.5,
+   "status": "done",
+   "cost_usd": 1.1087,
+   "tokens": 1743585,
+   "requests": 10,
+   "duration_s": 185.4,
+   "attempts": 1,
+   "rejections": 1,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_cache.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g4-adopt-r0-1791284262/lru-ttl-cache/projects/bench-lru-ttl-cache"
+  },
+  {
+   "id": "multi-module-bugs",
+   "kind": "bugfix-hard",
+   "exit": 0,
+   "wall_s": 130.5,
+   "status": "done",
+   "cost_usd": 0.5935,
+   "tokens": 926575,
+   "requests": 5,
+   "duration_s": 130.3,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 0,
+   "tasks": 2,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_billing.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g4-adopt-r0-1791284262/multi-module-bugs/projects/bench-multi-module-bugs"
+  },
+  {
+   "id": "wordfreq-cli",
+   "kind": "build",
+   "exit": 0,
+   "wall_s": 175.5,
+   "status": "done",
+   "cost_usd": 0.9269,
+   "tokens": 1490350,
+   "requests": 10,
+   "duration_s": 175.4,
+   "attempts": 0,
+   "rejections": 0,
+   "stalls": 0,
+   "audit_rounds": 1,
+   "tasks": 4,
+   "pass": true,
+   "partial": 1.0,
+   "checks": [
+    {
+     "command": "python3 .artel_eval/check_wordfreq.py",
+     "exit": 0,
+     "output": "ok\n"
+    }
+   ],
+   "project": "/tmp/claude-0/artel-evo/evolution/artel/bench/g4-adopt-r0-1791284262/wordfreq-cli/projects/bench-wordfreq-cli"
+  }
+ ],
+ "summary": {
+  "tasks": 7,
+  "pass_rate": 1.0,
+  "partial_mean": 1.0,
+  "cost_usd": 4.6841,
+  "tokens": 7525176,
+  "duration_mean_s": 127.6,
+  "attempts": 1,
+  "rejections": 1,
+  "stalls": 0,
+  "audit_rounds": 3
+ }
+}
