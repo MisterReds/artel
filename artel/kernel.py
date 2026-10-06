@@ -135,6 +135,8 @@ class Kernel:
         self._tool_stacks: dict = defaultdict(list)
         self._loading: list[str] = []     # plugin currently running setup (nested loads allowed)
         self._lock = threading.RLock()
+        self.failed: dict[str, str] = {}  # plugin -> error, for plugins that failed to load (never fatal)
+        self._shut_down = False
 
     @property
     def plugins(self) -> list[str]:
@@ -187,14 +189,21 @@ class Kernel:
         return off
 
     def emit(self, event: str, **payload: Any) -> None:
-        """Fire-and-forget observers; a failing observer never breaks the caller."""
-        for _, fn in list(self.hooks.get(event, ())):
+        """Fire-and-forget observers; a failing observer never breaks the caller.
+
+        The error goes to the ``log`` service, or to the project log when the payload carries a ``project``.
+        """
+        listeners = self.hooks.get(event)
+        if not listeners:                 # fast path: nobody listens
+            return
+        for _, fn in list(listeners):
             try:
                 fn(**payload)
             except Exception as exc:  # noqa: BLE001 - observers are untrusted plugins
-                log = self.get("log")
+                log = self.get("log") or getattr(payload.get("project"), "log", None)
                 if log is not None:
-                    log.append("plugin/error", hook=event, error=repr(exc))
+                    log.append("plugin/error", hook=event, error=repr(exc),
+                               handler=f"{getattr(fn, '__module__', '?')}.{getattr(fn, '__qualname__', '?')}")
 
     def waterfall(self, event: str, ctx: dict, final: Callable[[dict], Any]) -> Any:
         """Run listeners as a chain; each gets ``(ctx, next_)`` and may delegate or return."""
@@ -267,6 +276,30 @@ class Kernel:
             self._loading.pop()
             return record
 
+    def load_plugin_safe(self, dotted: str, module: Any = None) -> Optional[PluginRecord]:
+        """Load a third-party plugin; a failure (import error, unmet requires, crash in ``setup``) is recorded
+        in :attr:`failed` and rolled back instead of crashing Artel."""
+        try:
+            record = self.load_plugin(dotted, module)
+        except (Exception, SystemExit) as exc:  # noqa: BLE001 - untrusted code must not take Artel down
+            self.failed[dotted] = f"{type(exc).__name__}: {exc}"
+            return None
+        self.failed.pop(dotted, None)
+        return record
+
+    def shutdown(self, reason: str = "exit") -> None:
+        """End of the session: emit ``session_shutdown`` once, then unload plugins newest first."""
+        with self._lock:
+            if self._shut_down:
+                return
+            self._shut_down = True
+        self.emit("session_shutdown", reason=reason)
+        for name in reversed(list(self.records)):
+            try:
+                self.unload_plugin(name)
+            except Exception:  # noqa: BLE001 - keep unloading the rest
+                continue
+
     def _undo(self, record: PluginRecord) -> None:
         for undo in reversed(record.effects):
             try:
@@ -300,6 +333,17 @@ class Kernel:
                  "requires": r.manifest.get("requires", []), "effects": len(r.effects)} for r in self.records.values()]
 
 
+# Lifecycle events (observers via ``kernel.on(event, fn)``; ``fn(**payload)``, errors never reach the caller).
+# Payload keys are documented in docs/ARCHITECTURE.md; ``agent`` in before_agent_start is mutable.
+LIFECYCLE_EVENTS = {
+    "project_start": "project, resumed",
+    "before_agent_start": "project, role, purpose, task, persona, agent{system, first_user, tool_names} (mutable)",
+    "agent_end": "project, role, purpose, task, outcome",
+    "task_done": "project, task, feedback",
+    "project_end": "project, status, usage",
+    "session_shutdown": "reason",
+}
+
 DEFAULT_PLUGINS = [
     "artel.plugins.llm_providers",
     "artel.plugins.runtimes",
@@ -310,10 +354,32 @@ DEFAULT_PLUGINS = [
 ]
 
 
+# Built-ins Artel cannot work without: never disabled from the plugin manager.
+CORE_PLUGINS = {"artel.plugins.llm_providers", "artel.plugins.runtimes", "artel.plugins.builtin_tools",
+                "artel.plugins.board_tools"}
+
+
 def build_kernel(config: dict) -> Kernel:
+    """Built-ins, then ``plugins:`` from the config, then enabled plugin packages (ARTEL_HOME/plugins.json).
+
+    A built-in that fails is a bug in Artel and raises; a configured or installed plugin that fails is
+    recorded in ``kernel.failed`` (packages are also switched off with the error) and Artel keeps going.
+    """
     kernel = Kernel(config=config)
+    use_packages = config.get("plugin_packages", True)
     disabled = set(config.get("disable_plugins", []))
-    for dotted in DEFAULT_PLUGINS + list(config.get("plugins", [])):
+    if use_packages:
+        from .packages import disabled_builtins
+
+        disabled |= disabled_builtins() - CORE_PLUGINS
+    for dotted in DEFAULT_PLUGINS:
         if dotted not in disabled:
             kernel.load_plugin(dotted)
+    for dotted in config.get("plugins", []):
+        if dotted not in disabled:
+            kernel.load_plugin_safe(dotted)
+    if use_packages:
+        from .packages import load_enabled
+
+        load_enabled(kernel)
     return kernel

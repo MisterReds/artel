@@ -440,6 +440,7 @@ class Manager:
         if passed:
             self.board.comment(task_id, "reviewer", f"ACCEPTED: {feedback}")
             self.board.update(task_id, status="done", no_progress=0, actor="reviewer")
+            self.kernel.emit("task_done", project=self.project, task=self.board.get(task_id), feedback=feedback)
             digest = self.digests.pop(task_id, None)
             threshold = int(self.cfg["skills"]["review_after_tool_calls"])
             troubled = task["attempts"] > 0 or (digest is not None and any(" -> ERROR " in d for d in digest.digest))
@@ -625,6 +626,9 @@ class Manager:
         if curated:
             self.project.log.append("skills/curated", actions=curated)
         self.recover()
+        for plugin, error in self.kernel.failed.items():  # a plugin that failed to load is shown, never fatal
+            self.project.log.append("plugin/failed", plugin=plugin, error=error)
+        self.kernel.emit("project_start", project=self.project, resumed=bool(self.root_id))
         if not self.root_id:
             try:
                 self.plan()
@@ -637,6 +641,7 @@ class Manager:
                 self.project.set_meta(status=status, blocked_reason=reason[:1000])
                 self.note("escalated", rationale=f"planning: {reason[:500]}")
                 self.project.log.append("project/status", status=status)
+                self.kernel.emit("project_end", project=self.project, status=status, usage=self.project.meta["usage"])
                 return status
         self.project.set_meta(status="running")
         final = "running"
@@ -682,6 +687,7 @@ class Manager:
         self.pool.shutdown(wait=True)
         self.project.set_meta(status=final)
         self.note("finished", status=final, usage=self.project.meta["usage"])
+        self.kernel.emit("project_end", project=self.project, status=final, usage=self.project.meta["usage"])
         return final
 
 
@@ -714,9 +720,15 @@ def new_kernel(config: dict):
 
 def run_goal(goal: str, config: dict, name: Optional[str] = None, stop_event: Optional[threading.Event] = None,
              kernel=None, workdir=None, refs: tuple = (), seed=None) -> tuple[Project, str]:
+    """Create a project and drive it. A kernel built here is shut down at the end (``session_shutdown``)."""
+    own = kernel is None
     kernel = kernel or new_kernel(config)
-    project = Project.create(goal, config, name=name, workdir=workdir, refs=refs, seed=seed)
-    return project, Manager(kernel, project, stop_event).run()
+    try:
+        project = Project.create(goal, config, name=name, workdir=workdir, refs=refs, seed=seed)
+        return project, Manager(kernel, project, stop_event).run()
+    finally:
+        if own:
+            kernel.shutdown(reason="run_end")
 
 
 def continue_after_human(project: Project) -> list:
@@ -734,10 +746,15 @@ def continue_after_human(project: Project) -> list:
 
 
 def resume(slug: str, config: dict, stop_event: Optional[threading.Event] = None, kernel=None) -> tuple[Project, str]:
+    own = kernel is None
     kernel = kernel or new_kernel(config)
-    project = Project.open(slug, config)
-    continue_after_human(project)
-    return project, Manager(kernel, project, stop_event).run()
+    try:
+        project = Project.open(slug, config)
+        continue_after_human(project)
+        return project, Manager(kernel, project, stop_event).run()
+    finally:
+        if own:
+            kernel.shutdown(reason="run_end")
 
 
 __all__ = ["Manager", "human_comment", "new_kernel", "run_goal", "resume", "json"]
