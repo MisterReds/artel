@@ -1,10 +1,15 @@
-"""Optional agent CLIs (Codex, Claude Code) installed on demand, only when the person decides to use them.
+"""Optional agent CLIs (Codex, Claude Code, DeepSeek Harness) installed on demand, only when the person decides to use
+them.
 
 Both ship native single-file builds, so no Node.js or npm is involved:
   Codex       — the release binary from github.com/openai/codex (latest release, per platform)
   Claude Code — the native build from downloads.claude.ai, verified against the release manifest's SHA-256
 They go into ARTEL_HOME/tools/bin — no sudo, nothing system-wide, removable with one call. A CLI that is already on
 PATH is used as is and never reinstalled.
+
+DeepSeek Harness is distributed as a Python SDK whose platform wheel carries the bundled single-file ``dsh`` runtime
+(no Node.js): ``pip install --pre deepseek-harness-sdk`` into Artel's own Python environment (the SDK is imported by
+the ``dsh`` runtime). A marker in ARTEL_HOME/tools records that Artel installed it, so only that install is removable.
 """
 
 from __future__ import annotations
@@ -25,7 +30,10 @@ from typing import Callable, Optional
 
 WIN = sys.platform == "win32"
 EXE = ".exe" if WIN else ""
-TOOLS = {"codex": {"bin": "codex", "label": "Codex CLI"}, "claude": {"bin": "claude", "label": "Claude Code CLI"}}
+TOOLS = {"codex": {"bin": "codex", "label": "Codex CLI"}, "claude": {"bin": "claude", "label": "Claude Code CLI"},
+         "dsh": {"bin": "dsh", "label": "DeepSeek Harness"}}
+DSH_PIP = ["deepseek-harness-sdk"]  # pulls the matching deepseek-harness-runtime-bin wheel for this platform
+DSH_DISTS = ["deepseek-harness-sdk", "deepseek-harness-runtime-bin"]
 CODEX_RELEASE = "https://github.com/openai/codex/releases/latest/download"
 CLAUDE_RELEASES = "https://downloads.claude.ai/claude-code-releases"
 
@@ -55,7 +63,39 @@ def resolve(binary: str) -> Optional[str]:
 
 
 def installed_by_artel(name: str) -> bool:
+    if name == "dsh":
+        return (tools_dir() / "dsh.installed").exists()
     return (bin_dir() / (TOOLS[name]["bin"] + EXE)).exists()
+
+
+def dsh_installed(module: str = "deepseek_harness") -> bool:
+    import importlib
+    import importlib.util
+
+    importlib.invalidate_caches()
+    try:
+        return importlib.util.find_spec(module) is not None
+    except (ImportError, ValueError):
+        return False
+
+
+def _pip(args: list, log: Callable[[str], None]) -> None:
+    import subprocess
+
+    p = subprocess.run([sys.executable, "-m", "pip", *args], capture_output=True, text=True, timeout=1800)
+    out = (p.stdout + p.stderr).strip()
+    for line in out.splitlines()[-5:]:
+        log(line)
+    if p.returncode != 0:
+        raise RuntimeError(f"pip {' '.join(args)} failed: {out[-800:]}")
+
+
+def install_dsh(log: Callable[[str], None]) -> Path:
+    log(f"pip install --pre {' '.join(DSH_PIP)} в окружение Artel ({sys.executable})")
+    _pip(["install", "--pre", "--upgrade", *DSH_PIP], log)
+    tools_dir().mkdir(parents=True, exist_ok=True)
+    (tools_dir() / "dsh.installed").write_text(" ".join(DSH_DISTS))
+    return Path(sys.executable)
 
 
 def _arch(machine: str) -> str:
@@ -138,11 +178,11 @@ def install_claude(log: Callable[[str], None]) -> Path:
 
 def install(name: str, log: Callable[[str], None] = print) -> dict:
     spec = TOOLS[name]
-    found = resolve(spec["bin"])
+    found = (sys.executable if dsh_installed() else None) if name == "dsh" else resolve(spec["bin"])
     if found and not installed_by_artel(name):
         log(f"{spec['label']} уже установлен: {found}")
         return {"ok": True, "path": found, "already": True}
-    path = (install_codex if name == "codex" else install_claude)(log)
+    path = {"codex": install_codex, "claude": install_claude, "dsh": install_dsh}[name](log)
     log(f"{spec['label']} установлен: {path}")
     return {"ok": True, "path": str(path)}
 
@@ -152,6 +192,13 @@ def uninstall(name: str) -> dict:
     spec = TOOLS[name]
     if not installed_by_artel(name):
         return {"ok": False, "error": f"{spec['label']} установлен не Artel — удалите его тем же способом, каким ставили"}
+    if name == "dsh":
+        try:
+            _pip(["uninstall", "-y", *DSH_DISTS], lambda m: None)
+        except RuntimeError as e:
+            return {"ok": False, "error": str(e)}
+        (tools_dir() / "dsh.installed").unlink()
+        return {"ok": True}
     (bin_dir() / (spec["bin"] + EXE)).unlink()
     return {"ok": True}
 

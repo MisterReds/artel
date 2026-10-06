@@ -2,7 +2,7 @@
 and ``codex`` the Codex CLI headless, exposing Artel's tools to them over MCP.
 
 ``runtime: auto`` (the default) picks what is connected, in this order: Claude Code (Claude subscription), Codex
-(ChatGPT subscription), an API key for the native loop. With nothing connected, runs end with a clear setup error
+(ChatGPT subscription), DeepSeek Harness (installed and DEEPSEEK_API_KEY set), an API key for the native loop. With nothing connected, runs end with a clear setup error
 instead of a crash.
 """
 
@@ -11,8 +11,8 @@ from __future__ import annotations
 import os
 import time
 
-NO_EXECUTOR = ("Нет подключённого исполнителя (not installed): откройте «Провайдеры» и подключите Codex или "
-               "Claude Code, или задайте ключ API в переменной окружения (ANTHROPIC_API_KEY / OPENAI_API_KEY)")
+NO_EXECUTOR = ("Нет подключённого исполнителя (not installed): откройте «Провайдеры» и подключите Codex, "
+               "Claude Code или DeepSeek Harness, или задайте ключ API в переменной окружения (ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY для DeepSeek Harness)")
 _auto_cache: dict = {}
 
 
@@ -30,12 +30,21 @@ def detect_runtime(config: dict, ttl: float = 120.0) -> str:
         name = "claude_code"
     elif codex_status(config).get("logged_in"):
         name = "codex"
+    elif dsh_ready(config):
+        name = "dsh"
     elif native_ready(config):
         name = "native"
     else:
         name = "none"
     _auto_cache[key] = (name, time.time())
     return name
+
+
+def dsh_ready(config: dict) -> bool:
+    from .dsh import dsh_settings, key_available, sdk_available
+
+    cfg = dsh_settings(config)
+    return sdk_available(cfg) and bool(os.environ.get("DEEPSEEK_API_KEY")) and key_available(cfg)
 
 
 def native_ready(config: dict) -> bool:

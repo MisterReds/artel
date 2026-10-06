@@ -137,6 +137,8 @@ def project_stats(project: Project, live: bool = False) -> dict:
             model = "claude-code:" + (project.config.get("claude_code") or {}).get("model", "sonnet")
         elif runtime_for(project.config, "worker") == "codex":
             model = "codex:" + ((project.config.get("codex") or {}).get("model") or "default")
+        elif runtime_for(project.config, "worker") == "dsh":
+            model = "dsh:" + ((project.config.get("dsh") or {}).get("model") or "default")
         else:
             model = p.model or project.config["models"].get("worker", default_model)
         workers.append({

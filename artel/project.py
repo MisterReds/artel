@@ -84,7 +84,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "network": True, "writable": [], "temp": True, "require": False, "gates": False,
     },
     "gate_timeout_s": 900,              # shell gates often run a whole test suite; tool calls keep tool_timeout_s
-    "runtime": "auto",                   # auto | native | claude_code | codex (auto: whatever is connected)
+    "runtime": "auto",                   # auto | native | claude_code | codex | dsh (auto: whatever is connected)
     "runtime_by_role": {},               # e.g. {reviewer: native}
     "evolve": {"runtimes": []},          # e.g. [claude_code, codex]: on a limit evolution moves to the next one
     "claude_code": {"model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
