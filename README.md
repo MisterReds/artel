@@ -14,8 +14,9 @@
 запуск обновляет установку на месте.
 
 Codex CLI и Claude Code CLI по умолчанию не ставятся. Когда понадобятся: «Провайдеры» → «Установить» (или
-`artel providers install codex|claude`). Они ставятся в `~/.artel/tools` без прав администратора; если на машине
-нет Node.js, его переносная версия скачивается туда же. «Удалить» убирает их оттуда.
+`artel providers install codex|claude`). Ставятся нативные сборки (Codex — из релизов openai/codex, Claude Code —
+с downloads.claude.ai с проверкой SHA-256 по манифесту) в `~/.artel/tools/bin`: без прав администратора и без
+Node.js. «Удалить» убирает их оттуда.
 
 **Linux / macOS**
 ```bash

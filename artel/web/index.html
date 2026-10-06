@@ -306,7 +306,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    const inst=(name,s,label)=>{const j=I[name]||{};
      if(j.phase==='running')return `<p class="stat">Устанавливаю ${label}…</p><pre>${esc((j.log||[]).join('\n'))}</pre>`;
      if(j.phase==='error')return `<pre>${esc(j.error||'')}</pre><button data-inst="${name}">Повторить установку</button>`;
-     if(!s.installed)return `<p class="stat">Не установлен. Ставится в папку Artel, без прав администратора; Node.js скачается туда же, если его нет.</p><button class="primary" data-inst="${name}">Установить ${label}</button>`;
+     if(!s.installed)return `<p class="stat">Не установлен. Ставится нативная сборка в папку Artel, без прав администратора и без Node.js.</p><button class="primary" data-inst="${name}">Установить ${label}</button>`;
      if(s.by_artel)return `<button data-uninst="${name}">Удалить ${label}</button>`;
      return ''};
    const cx=o.codex,cc=o.claude_code,r=o.routing;
