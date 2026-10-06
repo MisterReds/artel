@@ -150,7 +150,8 @@ items:
   - id: W2-execpolicy
     wave: 2
     mode: evolve
-    status: planned
+    status: done
+    result: "evolve/gen-4 (merged by hand after a conflict with the System One change)"
     title: Command policy rules allow/prompt/forbidden with match/not_match examples validated at load
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/execpolicy/README.md]}
     target: [artel/plugins/builtin_tools.py]
@@ -165,6 +166,7 @@ items:
     wave: 2
     mode: evolve
     status: planned
+    result: "gen 4: conflicted in artel/plugins/builtin_tools.py with the adopted items; retried on the new main"
     title: Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/prompts/templates/guardian/classifier_instructions.md]}
     target: [artel/manager.py]
@@ -185,6 +187,7 @@ items:
     wave: 2
     mode: evolve
     status: planned
+    result: "gen 4: conflicted in artel/plugins/builtin_tools.py with the adopted items; retried on the new main"
     title: Explicit read/write grants per path
     source: {harness: OpenScience, repo: synthetic-sciences/openscience, paths: [ARCHITECTURE.md]}
     target: [artel/tooling.py]
@@ -197,7 +200,8 @@ items:
   - id: W2-cost-down
     wave: 2
     mode: evolve
-    status: planned
+    status: done
+    result: "evolve/gen-4 (merged by hand after a conflict with the System One change)"
     title: Bring cost back down — wave 1 raised the benchmark cost from $4.57 to $5.99 (+31%)
     source: {harness: Claude Code / Codex, repo: anthropics/claude-code, paths: [README.md]}
     target: [artel/agent.py, artel/prompts.py, artel/manager.py, artel/runtimes/claude_code.py]
@@ -234,7 +238,8 @@ items:
   - id: W2-timezone
     wave: 2
     mode: evolve
-    status: planned
+    status: done
+    result: "evolve/gen-4 (merged by hand after a conflict with the System One change)"
     title: User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin
     source: {harness: Artel, repo: MisterReds/artel, paths: [artel/web/index.html]}
     target: [artel/web/index.html, artel/cli.py]
