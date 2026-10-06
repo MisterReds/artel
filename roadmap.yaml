@@ -251,7 +251,8 @@ items:
   - id: W2-evolve-two-subscriptions
     wave: 2
     mode: design
-    status: planned
+    status: done
+    result: "evolve.runtimes [claude_code, codex]: a limit moves implementation and benchmark to the next runtime, pause only when all are limited; baselines per (commit, runtime) (tests/test_evolve_runtimes.py)"
     title: Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it
     source: {harness: Artel, repo: MisterReds/artel, paths: [artel/evolve/engine.py]}
     target: [artel/evolve/engine.py]
