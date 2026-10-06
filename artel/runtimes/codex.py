@@ -100,7 +100,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
     note = (f"\n\n## Runtime\nYou run inside OpenAI Codex. Use your own shell and apply_patch for files. Artel "
             f"coordination tools come from the MCP server `artel`: {', '.join(s.name for s in bridge.specs)}. The "
             f"ONLY way to finish is calling {' or '.join(terminal_names)} on that server. Your working directory "
-            f"is your workspace; the team's shared deliverables directory is {project.shared}."
+            f"is your workspace; the team's shared deliverables directory is {ctx.shared_dir}.{ctx.shared_note}"
             + (f" Read-only reference sources: {', '.join(map(str, project.refs))}." if project.refs else ""))
     model_label = f"codex:{cc.get('model') or 'default'}"
     thread_id: Optional[str] = None
@@ -121,7 +121,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
             if reason:
                 out.status, out.error = "budget", reason
                 break
-            args = build_args(cc, workspace=Path(ctx.workspace), shared=project.shared, role=role,
+            args = build_args(cc, workspace=Path(ctx.workspace), shared=ctx.shared_dir, role=role,
                               bridge_url=bridge.url, bridge_token=bridge.token, effort=ctx.state.get("effort"),
                               thread_id=thread_id, last_message=last_msg)
             proc = subprocess.Popen(args, cwd=ctx.workspace, stdin=subprocess.PIPE, stdout=subprocess.PIPE,

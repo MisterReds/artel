@@ -45,6 +45,20 @@ class ToolContext:
     terminal: Optional[tuple] = None                  # (tool_name, input) once a terminal tool accepted
     state: dict = field(default_factory=dict)
     read_stamps: dict = field(default_factory=dict)   # resolved path -> (mtime_ns, size) at last read/write
+    deliverables: Optional[Path] = None               # the task's own worktree of shared/ (isolation), else None
+
+    @property
+    def shared_dir(self) -> Path:
+        """Where ``shared/...`` points for this agent: the task worktree under isolation, else the project's."""
+        return Path(self.deliverables) if self.deliverables else self.project.shared
+
+    @property
+    def shared_note(self) -> str:
+        """A sentence for runtime prompts explaining an isolated deliverables directory ('' without isolation)."""
+        if not self.deliverables:
+            return ""
+        return (" It is this task's own git worktree of the deliverables: it is merged into the common deliverables "
+                "only when a reviewer accepts the task; do not write to other copies.")
 
     def record_stamp(self, p: Path) -> None:
         """Remember the file's (mtime_ns, size); idea from Qwen Code fileReadCache.ts (Apache-2.0)."""
@@ -77,7 +91,7 @@ class ToolContext:
         if p.is_absolute():
             target = p.resolve()
         elif p.parts and p.parts[0] == "shared":
-            target = (self.project.shared / Path(*p.parts[1:])).resolve()
+            target = (self.shared_dir / Path(*p.parts[1:])).resolve()
         else:
             target = (self.workspace / p).resolve()
         def inside(base: Path) -> bool:
@@ -88,6 +102,11 @@ class ToolContext:
             if not write and any(inside(r) for r in getattr(self.project, "refs", [])):
                 return target  # read-only reference sources
             raise ToolError(f"path {path!r} is outside the project; use a workspace-relative path or shared/...")
+        if write and self.deliverables and not inside(self.shared_dir) and (
+                inside(self.project.shared) or inside(self.project.root / "worktrees")):
+            # isolation: the common deliverables change only through an accepted merge
+            raise ToolError(f"path {path!r} is the merged deliverables; write to shared/<path> (your task's "
+                            "worktree) instead")
         if write:
             protected = {"events.jsonl", "board.db", "project.json"}
             if target.parent == root and target.name in protected:
@@ -96,7 +115,7 @@ class ToolContext:
 
     def display(self, p: Path) -> str:
         p = p.resolve()
-        shared = self.project.shared.resolve()
+        shared = self.shared_dir.resolve()
         if p == shared or shared in p.parents:
             return "shared/" + str(p.relative_to(shared)) if p != shared else "shared/"
         try:

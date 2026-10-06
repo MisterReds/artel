@@ -33,6 +33,7 @@ from .snapshot import Snapshot
 from .project import Persona, Project, persona_from_dict
 from .tooling import ToolContext, window_text
 from .tz import fmt_ts, zone_name
+from .worktree import Isolation, IsolationError, isolation_enabled
 
 # Size bounds for context handed to the reviewer / auditor (head+tail windows keep the verifying lines)
 REVIEW_SUMMARY_CHARS = 3000
@@ -79,6 +80,12 @@ class Manager:
         self.snapshots: dict[str, str] = {}  # task id -> tree hash of shared/ before the pending attempt
         self.snapper = Snapshot(project.root / "snapshot.git", project.shared)
         self.last_refine = 0.0
+        self.iso: Optional[Isolation] = None  # per-task worktrees (W2-worktree-isolation), opt-in
+        if isolation_enabled(self.cfg):
+            if Isolation.available():
+                self.iso = Isolation(project)
+            else:
+                self.note("isolation_unavailable", reason="git is not installed; tasks share the deliverables")
 
     # --- helpers --------------------------------------------------------
     def note(self, kind: str, **payload: Any) -> None:
@@ -196,7 +203,15 @@ class Manager:
         effort = self.difficulty_effort(task)
         if effort:
             ctx.state["effort"] = effort
-        if task["id"] not in self.snapshots:  # a pending snapshot predates the first run of this attempt
+        if self.iso is not None:  # the worker writes into its own worktree; shared/ changes only on acceptance
+            try:
+                ctx.deliverables = self.iso.ensure(task["id"])
+            except IsolationError as exc:
+                out = Outcome(status="error", error=f"isolation: {exc}")
+                self.board.finish_run(run_id, "error", out.error)
+                return out, ctx
+            self.note("worktree", task_id=task["id"], path=str(ctx.deliverables))
+        elif task["id"] not in self.snapshots:  # a pending snapshot predates the first run of this attempt
             tree = self.snapper.track()
             if tree:
                 self.snapshots[task["id"]] = tree
@@ -229,15 +244,22 @@ class Manager:
             return None
         return ["low", "medium", "high"][min(2, max(0, round(float(ans["difficulty"]["score"]))))]
 
-    def run_gates(self, task: dict) -> list[dict]:
+    def run_gates(self, task: dict, cwd=None) -> list[dict]:
+        """Run the task's shell checks in ``cwd`` (the task worktree under isolation, else shared/)."""
+        from . import sandbox
+
         results = []
+        cwd = cwd or self.project.shared
         # gates observe, they must not change the deliverable (bytecode / pytest caches made reviewers reject
         # work that had been cleaned up before the gate ran)
-        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1",
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "ARTEL_SHARED": str(cwd),
                "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()}
+        sb = sandbox.settings(self.cfg)
         for cmd in task["checks"]:
+            # gates run unsandboxed unless `sandbox.gates` asks for it (then writable: the gate cwd + temp)
+            run = sandbox.plan(self.cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off")
             try:
-                p = subprocess.run(cmd, shell=True, cwd=self.project.shared, capture_output=True, text=True,
+                p = subprocess.run(run.argv, cwd=cwd, capture_output=True, text=True,
                                    timeout=int(self.cfg.get("gate_timeout_s", 900)), env=env)
                 res = {"command": cmd, "exit": p.returncode, "output": window_text(p.stdout + p.stderr, 3000)}
             except subprocess.TimeoutExpired:
@@ -247,13 +269,26 @@ class Manager:
         return results
 
     def job_review(self, task: dict) -> tuple[list, Outcome]:
-        gates = self.run_gates(task)
+        wt, changed = None, ""
+        if self.iso is not None:
+            # review the work as it would land: the current shared deliverables merged into the task's worktree
+            try:
+                conflicts = self.iso.integrate(task["id"])
+            except IsolationError as exc:
+                return [], Outcome(status="conflict", error=str(exc), payload={"conflicts": []})
+            if conflicts:
+                return [], Outcome(status="conflict", error="merge conflict", payload={"conflicts": conflicts})
+            wt = self.iso.path(task["id"])
+            files = self.iso.changed_files(task["id"])
+            changed = f"<changed_files vs shared>\n{_fmt_list(files[:200])}\n</changed_files>\n\n"
+        gates = self.run_gates(task, cwd=wt)
         gate_text = window_text("\n".join(f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], GATE_OUTPUT_CHARS)}"
                                          for g in gates) or "(no automated gates)", REVIEW_GATES_CHARS)
         user = (f"{self.task_card(task)}\n\n<submission by=\"{task['assignee']}\">\n<summary>\n{window_text(task['result'] or '', REVIEW_SUMMARY_CHARS)}\n"
                 f"</summary>\n<evidence>\n{window_text(task['evidence'] or '', REVIEW_EVIDENCE_CHARS)}\n</evidence>\n</submission>\n\n"
-                f"<gate_results>\n{gate_text}\n</gate_results>\n\nReview it now.")
-        ctx = ToolContext(self.kernel, self.project, role="reviewer", workspace=self.project.shared, task=task)
+                f"{changed}<gate_results>\n{gate_text}\n</gate_results>\n\nReview it now.")
+        ctx = ToolContext(self.kernel, self.project, role="reviewer", workspace=wt or self.project.shared, task=task,
+                          deliverables=wt)
         out = run_agent(self.kernel, self.project, role="reviewer", system=prompts.REVIEWER, first_user=user, ctx=ctx,
                        max_turns=25, purpose="review", stop_event=self.stop)
         return gates, out
