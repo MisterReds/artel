@@ -6,6 +6,31 @@
 - [`docs/HARNESS_REGISTRY.md`](docs/HARNESS_REGISTRY.md) — полный реестр (1391 проект из 10 awesome-списков + ручные дополнения, проверены на существование, 877 README разобраны автоматически, ~40 вручную) и таблица «что взято / что следующее».
 - [`docs/ANALYSIS.md`](docs/ANALYSIS.md) — разбор исходного кода Hermes Agent, Prime Agent, DeepSeek Harness, OpenClaw и хабов скиллов.
 
+## Установка
+
+Установщик сам ставит недостающее (git, Python 3.10+, Node.js, GitHub CLI), при необходимости входит в GitHub по
+device code (репозиторий приватный), клонирует Artel в `~/.artel/app` (клон — значит, работает автообновление),
+создаёт окружение, кладёт команду `artel` в PATH, ставит Codex CLI и открывает дашборд. Повторный запуск обновляет
+установку на месте.
+
+**Linux / macOS**
+```bash
+# если GitHub CLI уже вошёл в аккаунт:
+bash <(gh api repos/MisterReds/artel/contents/install.sh -H "Accept: application/vnd.github.raw")
+# иначе: скачайте install.sh со страницы репозитория (Raw → сохранить) и выполните
+bash install.sh
+```
+Опции: `--with-claude` (поставить Claude Code CLI), `--service` (дашборд в фоне: systemd --user / launchd),
+`--no-codex`, `--no-start`, `--dir ПУТЬ`.
+
+**Windows** (PowerShell): скачайте `install.ps1` и выполните
+```powershell
+powershell -ExecutionPolicy Bypass -File install.ps1
+```
+Опции: `-WithClaude`, `-Service` (запуск дашборда при входе в Windows), `-NoCodex`, `-NoStart`, `-Dir ПУТЬ`.
+
+После установки: «Провайдеры» → «Войти через device code», чтобы подключить подписку Codex.
+
 ## Быстрый старт
 
 ```bash
