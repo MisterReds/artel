@@ -3,7 +3,7 @@ name = "artel"
 version = "0.1.0"
 description = "Self-improving multi-agent harness: goal -> project -> kanban -> bots with souls -> verified result"
 requires-python = ">=3.10"
-dependencies = ["anthropic>=1.0", "httpx>=0.27", "PyYAML>=6"]
+dependencies = ["anthropic>=1.0", "httpx>=0.27", "PyYAML>=6", "tzdata; sys_platform == \"win32\""]  # tzdata: Windows has no IANA zone database
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
