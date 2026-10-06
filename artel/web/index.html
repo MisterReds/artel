@@ -190,7 +190,7 @@ async function portfolio(){
   $('#view').innerHTML='<div class="wrap" id="pf"><div class="empty">Загрузка…</div></div>';state.pfilter=state.pfilter||'all';state.pq=state.pq||'';
   await draw();timer=setInterval(draw,3000)}
 function readyBanner(){const r=state.ready;if(!r||r.runtime!=='none')return '';
-  return `<div class="alert" onclick="location.hash='#/providers'"><b>Нет подключённого исполнителя.</b> Цели не начнутся, пока не подключён Codex или Claude Code (или ключ API). Открыть «Провайдеры» →</div>`}
+  return `<div class="alert" onclick="location.hash='#/providers'"><b>Нет подключённого исполнителя.</b> Цели не начнутся, пока не подключён Codex, Claude Code или DeepSeek Harness (или ключ API). Открыть «Провайдеры» →</div>`}
 function renderPortfolio(){const ps=state.ps;const att=ps.flatMap(p=>(p.attention||[]).map(a=>({...a,p})));
   const live=ps.filter(p=>p.live).length,done=ps.reduce((s,p)=>s+(p.tasks_done||0),0),tot=ps.reduce((s,p)=>s+(p.tasks_total||0),0);
   const cost=ps.reduce((s,p)=>s+(p.cost_usd||0),0),agents=ps.reduce((s,p)=>s+(p.active_workers||0),0);
@@ -308,17 +308,17 @@ function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter
 
 /* ---------- Провайдеры ---------- */
 async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div class="empty">Загрузка…</div></div>';
-  const RT={auto:'Автоматически — что подключено (рекомендуется)',native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)'};
+  const RT={auto:'Автоматически — что подключено (рекомендуется)',native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)',dsh:'DeepSeek Harness (ключ DeepSeek, плагины dsh)'};
   const draw=async()=>{const o=await api('/api/providers');const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
    const st=(ok,on,off)=>`<span class="st ${ok?'on':'off'}">${ok?on:off}</span>`;
    const I=o.installs||{};
-   const inst=(name,s,label)=>{const j=I[name]||{};
+   const inst=(name,s,label,hint)=>{const j=I[name]||{};
      if(j.phase==='running')return `<p class="stat">Устанавливаю ${label}…</p><pre>${esc((j.log||[]).join('\n'))}</pre>`;
      if(j.phase==='error')return `<pre>${esc(j.error||'')}</pre><button data-inst="${name}">Повторить установку</button>`;
-     if(!s.installed)return `<p class="stat">Не установлен. Ставится нативная сборка в папку Artel, без прав администратора и без Node.js.</p><button class="primary" data-inst="${name}">Установить ${label}</button>`;
+     if(!s.installed)return `<p class="stat">Не установлен. ${hint||'Ставится нативная сборка в папку Artel, без прав администратора и без Node.js.'}</p><button class="primary" data-inst="${name}">Установить ${label}</button>`;
      if(s.by_artel)return `<button data-uninst="${name}">Удалить ${label}</button>`;
      return ''};
-   const cx=o.codex,cc=o.claude_code,r=o.routing;
+   const cx=o.codex,cc=o.claude_code,ds=o.dsh||{},r=o.routing;
    const login=L.phase==='waiting'?`<p>Откройте ссылку, войдите в аккаунт ChatGPT и введите код:</p>
       <a href="${esc(L.url)}" target="_blank" rel="noopener">${esc(L.url)}</a><div class="devcode">${esc(L.code)}</div>
       <p class="stat">Код действует до ${fmtT(L.expires_at)}. Страница обновится сама после входа.</p>
@@ -337,6 +337,10 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       <div class="kv"><span>вход</span><span>${cc.logged_in?esc(cc.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка Claude или ключ API</span>${cc.installed?`<span>CLI</span><span>${esc(cc.version)}${cc.by_artel?' · в папке Artel':''}</span><span>модель</span><span>${esc(cc.model)}</span>`:''}</div>
       ${cc.installed&&!cc.logged_in?`<p class="stat">${esc(cc.detail)}</p>`:''}
       ${inst('claude',cc,'Claude Code CLI')}</div>
+    <div class="pvc"><h3>${ri('worker')}DeepSeek Harness${st(ds.logged_in,'подключён',ds.installed?'нет ключа':'не установлен')}</h3>
+      <div class="kv"><span>доступ</span><span>ключ API DeepSeek · <code>${esc(ds.key_env||'DEEPSEEK_API_KEY')}</code> ${ds.key_set?'<span style="color:var(--ok)">задан</span>':'не задан'}</span>${ds.installed?`<span>SDK</span><span>${esc(ds.version||'')}${ds.by_artel?' · ставил Artel':''}</span><span>модель</span><span>${esc(ds.model||'по умолчанию dsh')}</span><span>профиль</span><span><code>${esc(ds.profile||'sdk')}</code></span><span>плагины dsh</span><span>${(ds.plugins||[]).length?ds.plugins.map(x=>`<code>${esc(x)}</code>`).join(' '):'нет (dsh.plugins в artel.yaml)'}</span>`:''}</div>
+      ${ds.installed&&!ds.logged_in?`<p class="stat">${esc(ds.detail||'')}</p>`:''}
+      ${inst('dsh',ds,'DeepSeek Harness','Ставится pip-пакет deepseek-harness-sdk с готовым рантаймом dsh в окружение Artel, без прав администратора и без Node.js.')}</div>
     <div class="pvc"><h3>${ri('librarian')}Ключи API</h3><div class="kv">${o.keys.map(k=>`<span>${esc(k.label)}</span><span>${k.set?'<span style="color:var(--ok)">задан</span>':'не задан'} · <code>${esc(k.env)}</code></span>`).join('')}</div>
       <p class="stat">Задаются в настройках окружения, не в чате и не здесь.</p></div>
     <div class="pvc"><h3>${ri('auditor')}System One${st(o.system_one.connected,'подключена','не подключена')}</h3>
@@ -350,7 +354,8 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
     ${r.roles.map(role=>`<tr><td>${ri(role)}${esc(role)}</td><td><select data-role="${role}"><option value="">как по умолчанию</option>${r.runtimes.map(x=>`<option value="${x}" ${r.runtime_by_role[role]===x?'selected':''}>${RT[x]}</option>`).join('')}</select></td></tr>`).join('')}
    </table></div>
    <div class="kv" style="margin-top:10px;max-width:520px"><span>модель Claude Code</span><input id="m-cc" value="${esc(r.models.claude_code||'')}" placeholder="sonnet">
-     <span>модель Codex</span><input id="m-cx" value="${esc(r.models.codex||'')}" placeholder="по умолчанию аккаунта"></div>
+     <span>модель Codex</span><input id="m-cx" value="${esc(r.models.codex||'')}" placeholder="по умолчанию аккаунта">
+     <span>модель DeepSeek Harness</span><input id="m-ds" value="${esc(r.models.dsh||'')}" placeholder="по умолчанию dsh"></div>
    <div class="kv" style="margin-top:10px;max-width:520px"><span>часовой пояс</span><input id="tz" value="${esc((o.timezone||{}).configured||'')}" placeholder="${esc((o.timezone||{}).effective||'Europe/Moscow')}" list="tzl"><datalist id="tzl">${(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]).map(z=>`<option value="${z}">`).join('')}</datalist></div>
    <p class="stat">IANA-имя, например Asia/Sakhalin; пусто — часовой пояс системы (сейчас ${esc((o.timezone||{}).effective||'')}). Время в панели, CLI и уведомлениях показывается в нём.</p>
    <p><button class="primary" id="rt-save">Сохранить</button> <span class="stat" id="rt-msg"></span></p>
@@ -362,13 +367,13 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST'});draw()});
    on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST'});draw()});
    on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});
-     const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value}};
+     const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value,dsh:$('#m-ds').value}};
      const tzr=await fetch('/api/providers/timezone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timezone:$('#tz').value})});
      if(!tzr.ok){const j=await tzr.json().catch(()=>({}));$('#rt-msg').textContent='Часовой пояс не сохранён: '+(j.error||tzr.status);return}
      TZ=(await tzr.json()).configured||'';
      await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
      const used=new Set([body.runtime,...Object.values(byRole)]);const miss=[];
-     if(used.has('codex')&&!cx.installed)miss.push('Codex CLI');if(used.has('claude_code')&&!cc.installed)miss.push('Claude Code CLI');
+     if(used.has('codex')&&!cx.installed)miss.push('Codex CLI');if(used.has('claude_code')&&!cc.installed)miss.push('Claude Code CLI');if(used.has('dsh')&&!ds.installed)miss.push('DeepSeek Harness');
      $('#rt-msg').textContent=miss.length?`Сохранено. Не установлен: ${miss.join(', ')} — установите в карточке выше.`:'Сохранено.'});
    return L.phase};
   const phase=await draw();

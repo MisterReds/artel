@@ -79,7 +79,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "thresholds": {"skip_learning_below": 0.25, "shortcut_min": 0.8},
     },
     "gate_timeout_s": 900,               # shell gates often run a whole test suite; tool calls keep tool_timeout_s
-    "runtime": "auto",                   # auto | native | claude_code | codex (auto: whatever is connected)
+    "runtime": "auto",                   # auto | native | claude_code | codex | dsh (auto: whatever is connected)
     "runtime_by_role": {},               # e.g. {reviewer: native}
     "claude_code": {"model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
                     "timeout_s": 2400},

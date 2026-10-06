@@ -49,7 +49,8 @@ def call(name, a):
     req = urllib.request.Request(url, data=json.dumps({"name": name, "args": a}).encode(),
                                  headers={"X-Artel-Token": token, "Content-Type": "application/json"})
     return json.loads(urllib.request.urlopen(req).read())
+# usage is reported before the terminal tool: Artel stops the process as soon as the terminal is accepted
+emit({"type": "turn.completed", "usage": {"input_tokens": 1000, "cached_input_tokens": 400, "output_tokens": 200}})
 r = call("task_submit", {"summary": "hello.py prints hi", "evidence": "$ python hello.py\nhi"})
 emit({"type": "item.completed", "item": {"id": "i4", "type": "mcp_tool_call", "server": "artel", "tool": "task_submit", "arguments": {}, "status": "completed"}})
-emit({"type": "turn.completed", "usage": {"input_tokens": 1000, "cached_input_tokens": 400, "output_tokens": 200}})
 time.sleep(5)  # Artel stops the run as soon as the terminal tool is accepted

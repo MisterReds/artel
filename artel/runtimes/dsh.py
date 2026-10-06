@@ -129,9 +129,10 @@ def ensure_plugins(cfg: dict, env: dict) -> Optional[str]:
             p = subprocess.run([*argv, "plugin", "--profile", cfg["profile"], "add", *missing], capture_output=True,
                                text=True, env={**env, "DSH_HOME": str(home)}, timeout=900)
         except (OSError, subprocess.TimeoutExpired) as e:
-            return f"dsh plugin add failed: {e}"
+            return f"dsh-плагины не установлены (not installed): dsh plugin add: {e}"
         if p.returncode != 0:
-            return f"dsh plugin add {' '.join(missing)} failed: {(p.stdout + p.stderr).strip()[-800:]}"
+            return (f"dsh-плагины не установлены (not installed): dsh plugin add {' '.join(missing)}: "
+                    f"{(p.stdout + p.stderr).strip()[-800:]}")
         marker.parent.mkdir(parents=True, exist_ok=True)
         marker.write_text(json.dumps(sorted(done | set(missing))))
     return None
@@ -327,7 +328,7 @@ def run_dsh(kernel, project, *, role: str, system: str, first_user: str, ctx: To
     patch_path.parent.mkdir(exist_ok=True)
     patch_path.write_text(json.dumps(artel_patch(cfg, bridge_url=bridge.url, bridge_token=bridge.token), indent=1))
     project.log.append("agent/start", actor=actor, role=role, purpose=purpose, task_id=task_id, model=model,
-                       effort=ctx.state.get("effort") or cfg.get("reasoning_effort") or "default", system=system + note,
+                       effort=cfg.get("reasoning_effort") or "default", system=system + note,
                        user=first_user, tools=[MCP_PREFIX + s.name for s in bridge.specs],
                        plugins=list(cfg.get("plugins") or []), runtime="dsh")
     mirror = _Mirror(project, ctx, out, actor, task_id, model, session_id, max_turns)
@@ -340,9 +341,8 @@ def run_dsh(kernel, project, *, role: str, system: str, first_user: str, ctx: To
     for k, sk in (("model", "model"), ("max_tokens", "max_tokens"), ("binary", "dsh_bin")):
         if cfg.get(k):
             kw[sk] = launcher(cfg)[0] if k == "binary" else cfg[k]
-    effort = ctx.state.get("effort") or cfg.get("reasoning_effort")
-    if effort and cfg.get("reasoning_effort") is not False:
-        kw["reasoning_effort"] = effort
+    if cfg.get("reasoning_effort"):  # adapter-owned identifiers: only an explicit setting, never Artel's effort hint
+        kw["reasoning_effort"] = cfg["reasoning_effort"]
     try:
         for attempt in range(1 + int(cfg["max_resumes"])):
             if stop_event is not None and stop_event.is_set():
@@ -354,12 +354,12 @@ def run_dsh(kernel, project, *, role: str, system: str, first_user: str, ctx: To
                 break
             mirror.failure, mirror.finish, mirror.blocked, mirror.abort = "", None, "", False
             exc = None
+            deadline = time.time() + float(cfg["timeout_s"])
             try:
                 if harness is None:  # a fresh runtime on the same home + session id continues the durable session
                     harness = sdk.DeepSeekHarness(**kw)
                     harness.start()
                 done = threading.Event()
-                deadline = time.time() + float(cfg["timeout_s"])
 
                 def watchdog(h=harness):
                     while not done.wait(0.2):

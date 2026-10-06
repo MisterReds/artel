@@ -63,9 +63,11 @@ models: {default: deepseek-chat}
   запускает `codex exec --json` в рабочей папке роли; инструменты Artel (сдача задачи, доска, скиллы, вердикты)
   приходят по MCP, все действия Codex пишутся в журнал.
 - **Claude Code — подписка Claude.** Статус входа установленного CLI; вход — `claude`, затем `/login`.
+- **DeepSeek Harness — ключ DeepSeek.** «Установить» ставит pip-пакет `deepseek-harness-sdk` с готовым рантаймом
+  `dsh`; доступ — переменная окружения `DEEPSEEK_API_KEY`. Подробнее — раздел «DeepSeek Harness как исполнитель».
 - **Ключи API** (Anthropic, OpenAI, OpenRouter, DeepSeek…) — только признак «задан / не задан»; значения задаются
   в переменных окружения и нигде не показываются.
-- **Роли → рантайм.** Для каждой роли можно выбрать Artel / Claude Code / Codex и модель; сохраняется в
+- **Роли → рантайм.** Для каждой роли можно выбрать Artel / Claude Code / Codex / DeepSeek Harness и модель; сохраняется в
   `ARTEL_HOME/artel.yaml`. Разные подписки на разных ролях разносят нагрузку по их лимитам.
 - **Часовой пояс.** Настройка `ui.timezone` (имя IANA, например `Asia/Sakhalin`; пусто — системный пояс) задаётся
   на странице «Провайдеры» и хранится в `ARTEL_HOME/artel.yaml`. В этом поясе показывается любое время: в дашборде,
@@ -172,6 +174,56 @@ runtime: claude_code
 claude_code: {model: sonnet, max_resumes: 2, timeout_s: 1800}
 runtime_by_role: {reviewer: native}   # смешивать рантаймы по ролям
 ```
+
+## DeepSeek Harness как исполнитель
+
+[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`, лицензия MIT) — харнесс, в котором всё —
+плагин (Cordis). Рантайм `dsh` исполняет роль Artel внутри dsh, поэтому плагины dsh работают в воркерах Artel
+без изменений.
+
+Как устроено: Artel использует официальный Python SDK dsh (`deepseek_harness`). SDK запускает встроенный в пакет
+рантайм `dsh --profile sdk` той же версии (Node.js не нужен) и получает по JSON-RPC каждое событие сессии. Профиль
+собирается как обычно в dsh: бандлы профиля, плагины, установленные в профиль, и слои `--patch`. Artel добавляет
+поверх один свой слой: строку `@deepseek-ai/dsh-mcp-client` с инструментами Artel (`mcp__artel__task_submit`, доска,
+скиллы, память, вердикты) через тот же MCP-прокси, что у Claude Code и Codex. Все сообщения, вызовы инструментов и их
+результаты пишутся в журнал. Если dsh закончил ход без терминального инструмента, та же сессия получает
+продолжение (до `max_resumes` раз). Роли планирования и проверки работают в песочнице dsh `read-only`, исполнители —
+в `workspace-write` (запись только в рабочую папку роли). Команды оболочки проходят политику Artel: запрещённая
+команда останавливает рантайм.
+
+Как включить:
+
+1. «Провайдеры» → карточка DeepSeek Harness → «Установить» (или `artel providers install dsh`). Ставится
+   `pip install --pre deepseek-harness-sdk` в окружение Artel; пакет приносит рантайм для Linux x64/arm64,
+   macOS и Windows x64.
+2. Ключ: `export DEEPSEEK_API_KEY=sk-…` в окружении, из которого запускается Artel. Его читает сам dsh; Artel значение
+   не читает, не показывает и не хранит. Свой адрес API — `DEEPSEEK_BASE_URL`.
+3. Выбрать рантайм `dsh` для всех ролей или для части ролей на странице «Провайдеры» либо в `~/.artel/artel.yaml`.
+   В режиме `runtime: auto` dsh выбирается после Codex, если SDK установлен и `DEEPSEEK_API_KEY` задан.
+
+```yaml
+runtime_by_role: {worker: dsh, tester: dsh}
+dsh:
+  model: null              # пусто — модель dsh по умолчанию
+  provider: deepseek-official
+  plugins:                 # плагины dsh: пакеты npm/git ставятся в профиль один раз (`dsh plugin add`),
+    - "@scope/dsh-plugin"  #   файлы .yml/.yaml подключаются как слои --patch при каждом запуске
+    - github:owner/dsh-plugin
+    - ~/my-dsh/extra.cordis.yml
+  timeout_s: 2400
+  max_resumes: 3
+  # home: ~/.artel/dsh     DSH_HOME для Artel: профили, плагины, сессии dsh
+  # profile: sdk           свой профиль должен содержать сервер @deepseek-ai/dsh-sdk-app
+  # sandbox: workspace-write
+  # share_session_log: false   по умолчанию Artel выключает выгрузку журнала сессии в DeepSeek
+```
+
+Как добавить плагины dsh: впишите пакет в `dsh.plugins` — перед первым запуском Artel выполнит
+`dsh plugin --profile sdk add <пакеты>` в своём `DSH_HOME` (менеджер пакетов — pnpm, он нужен только для установки).
+Можно поставить и вручную: `DSH_HOME=~/.artel/dsh dsh plugin --profile sdk add <пакет>`. Разовые изменения
+композиции (например, свой MCP-сервер или `str_replace_editor`) — файлом патча Cordis в том же списке. Ошибка
+установки плагина, отсутствие SDK или ключа сразу уходят человеку как ошибка настройки; лимит или нехватка баланса
+DeepSeek (`RATE_LIMIT`, `QUOTA`) — как лимит провайдера, который ждёт сброса.
 
 ## Самоулучшение: Artel улучшает Artel
 

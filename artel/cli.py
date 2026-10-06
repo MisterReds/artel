@@ -324,7 +324,7 @@ def cmd_providers(args) -> int:
     if args.action in ("install", "uninstall"):
         from .tools import install, uninstall
 
-        name = "claude" if args.name in ("claude", "claude_code") else "codex"
+        name = "claude" if args.name in ("claude", "claude_code") else args.name
         res = install(name) if args.action == "install" else uninstall(name)
         if not res.get("ok"):
             print(res.get("error", "failed"))
@@ -337,7 +337,7 @@ def cmd_providers(args) -> int:
         return 0
     o = overview(cfg)
     print(banner("провайдеры"))
-    for key, label in (("codex", "Codex"), ("claude_code", "Claude Code")):
+    for key, label in (("codex", "Codex"), ("claude_code", "Claude Code"), ("dsh", "DeepSeek Harness")):
         st = o[key]
         state = ("вход выполнен" + (f" ({st['method']})" if st.get("method") else "")) if st["logged_in"] else \
             ("не подключён" if st["installed"] else "не установлен")
@@ -473,7 +473,7 @@ def main(argv=None) -> int:
     r.add_argument("--workdir", help="work directly in this directory (e.g. a git worktree) instead of shared/")
     r.add_argument("--ref", action="append", help="read-only source directory the team may study (repeatable)")
     r.add_argument("--seed", help="copy this directory into the deliverables directory before planning")
-    r.add_argument("--runtime", choices=["native", "claude_code", "codex"])
+    r.add_argument("--runtime", choices=["native", "claude_code", "codex", "dsh"])
     r.add_argument("--port", type=int, default=8765)
     r.set_defaults(fn=cmd_run)
 
@@ -516,7 +516,7 @@ def main(argv=None) -> int:
         p.add_argument("--repo", help="Artel git repo to evolve (default: this installation)")
         p.add_argument("--tasks", help="comma-separated benchmark task ids")
         p.add_argument("--parallel-bench", type=int, default=2)
-        p.add_argument("--runtime", choices=["native", "claude_code", "codex"])
+        p.add_argument("--runtime", choices=["native", "claude_code", "codex", "dsh"])
         p.add_argument("--provider", choices=["anthropic", "openai_compat", "scripted"])
 
     bn = sub.add_parser("bench", help="run the benchmark suite with hidden checks")
@@ -560,7 +560,7 @@ def main(argv=None) -> int:
 
     pv = sub.add_parser("providers", help="subscriptions, API keys and runtimes; Codex device-code login")
     pv.add_argument("action", nargs="?", default="status", choices=["status", "login", "logout", "install", "uninstall"])
-    pv.add_argument("name", nargs="?", default="codex", choices=["codex", "claude", "claude_code"])
+    pv.add_argument("name", nargs="?", default="codex", choices=["codex", "claude", "claude_code", "dsh"])
     pv.add_argument("--config")
     pv.set_defaults(fn=cmd_providers)
 

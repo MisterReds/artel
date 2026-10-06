@@ -3,6 +3,7 @@
 - Codex (ChatGPT subscription): device-code login driven through the official CLI (`codex login --device-auth`);
   the code and link are shown in the dashboard, the CLI stores and refreshes the tokens itself.
 - Claude Code (Claude subscription): status of the installed CLI; login happens in the CLI.
+- DeepSeek Harness: whether the SDK (with its bundled runtime) is installed and DEEPSEEK_API_KEY is set; dsh plugins.
 - API keys: only whether the configured environment variable is set — values are never read out or stored.
 - Local System One model: whether its server answers.
 - Routing: which runtime and model each role uses (saved to ARTEL_HOME/artel.yaml).
@@ -26,7 +27,7 @@ from .tools import installed_by_artel, resolve
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 ROLES = ["manager", "planner", "worker", "tester", "reviewer", "auditor", "librarian", "refiner", "evolver", "absorber"]
-RUNTIMES = ["auto", "native", "claude_code", "codex"]
+RUNTIMES = ["auto", "native", "claude_code", "codex", "dsh"]
 KEY_VARS = {"ANTHROPIC_API_KEY": "Anthropic API", "OPENAI_API_KEY": "OpenAI API", "OPENROUTER_API_KEY": "OpenRouter",
             "DEEPSEEK_API_KEY": "DeepSeek"}
 
@@ -135,6 +136,29 @@ def claude_code_status(config: dict) -> dict:
             "detail": "вход: запустите `claude` в терминале и выполните /login"}
 
 
+def dsh_status(config: dict) -> dict:
+    """DeepSeek Harness: SDK installed, key present (the value is never read out), configured plugins."""
+    from .runtimes.dsh import KEY_ENV, dsh_settings, key_available, sdk_available
+
+    cfg = dsh_settings(config)
+    installed = sdk_available(cfg)
+    version = ""
+    if installed:
+        try:
+            from importlib.metadata import version as _v
+
+            version = _v("deepseek-harness-sdk")
+        except Exception:  # noqa: BLE001 - a custom SDK module without distribution metadata
+            version = ""
+    key = installed and key_available(cfg)
+    return {"installed": installed, "by_artel": installed_by_artel("dsh"), "version": version, "logged_in": key,
+            "method": f"ключ {KEY_ENV}" if key else "", "key_env": KEY_ENV,
+            "key_set": bool(os.environ.get(KEY_ENV)), "model": cfg.get("model") or "",
+            "provider": cfg.get("provider"), "profile": cfg.get("profile"),
+            "plugins": [str(p) for p in cfg.get("plugins") or []],
+            "detail": "" if key else f"задайте переменную окружения {KEY_ENV} и перезапустите Artel"}
+
+
 def api_keys(config: dict) -> list[dict]:
     names = dict(KEY_VARS)
     oc = config.get("openai_compat") or {}
@@ -162,7 +186,8 @@ def routing(config: dict) -> dict:
     return {"runtime": config.get("runtime", "auto"), "auto_resolves_to": detect_runtime(config, ttl=0), "runtime_by_role": config.get("runtime_by_role") or {},
             "roles": ROLES, "runtimes": RUNTIMES,
             "models": {"claude_code": (config.get("claude_code") or {}).get("model", "sonnet"),
-                       "codex": (config.get("codex") or {}).get("model") or ""}}
+                       "codex": (config.get("codex") or {}).get("model") or "",
+                       "dsh": (config.get("dsh") or {}).get("model") or ""}}
 
 
 def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
@@ -174,7 +199,7 @@ def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
         upd["runtime"] = data["runtime"]
     if isinstance(data.get("runtime_by_role"), dict):
         upd["runtime_by_role"] = {r: v for r, v in data["runtime_by_role"].items() if r in ROLES and v in RUNTIMES}
-    for rt in ("claude_code", "codex"):
+    for rt in ("claude_code", "codex", "dsh"):
         m = (data.get("models") or {}).get(rt)
         if isinstance(m, str):
             upd[rt] = {"model": m.strip() or None}
@@ -220,7 +245,8 @@ def save_timezone(config: dict, name, path: Optional[Path] = None) -> dict:
 
 
 def overview(config: dict) -> dict:
-    return {"codex": codex_status(config), "claude_code": claude_code_status(config), "keys": api_keys(config),
+    return {"codex": codex_status(config), "claude_code": claude_code_status(config), "dsh": dsh_status(config),
+            "keys": api_keys(config),
             "system_one": system_one_status(config), "routing": routing(config),
             "timezone": __import__("artel.tz", fromlist=["info"]).info(config)}
 

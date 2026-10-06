@@ -270,7 +270,11 @@ items:
   - id: W3-dsh-runtime
     wave: 3
     mode: design
-    status: planned
+    status: done
+    result: >-
+      Runtime `dsh` (artel/runtimes/dsh.py) on the official Python SDK; dsh plugins (profile packages and patch
+      layers) load unchanged, Artel tools over dsh-mcp-client; verified for real (boot, MCP tool discovery, missing-key
+      classification, no key used) and end to end against a stand-in SDK (tests/test_dsh.py)
     title: DeepSeek Harness as a runtime plugin, so dsh plugins work inside Artel workers
     source: {harness: DeepSeek Harness, repo: deepseek-ai/deepseek-harness, paths: [docs/user/guide/python-sdk.md]}
     target: [artel/plugins/runtimes.py]

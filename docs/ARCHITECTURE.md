@@ -29,7 +29,7 @@ unload_plugin → эффекты в обратном порядке; стек с
 reload_plugin → unload + importlib.reload + load (горячая замена)
 ```
 
-Плагины по умолчанию: `llm_providers`, `runtimes` (native, claude_code), `builtin_tools`, `skill_tools`,
+Плагины по умолчанию: `llm_providers`, `runtimes` (native, claude_code, codex, dsh), `builtin_tools`, `skill_tools`,
 `board_tools`, `evolve_tools`. Свои — через `plugins: [...]` в конфиге, отключение — `disable_plugins: [...]`.
 
 Производительность (замер на 4 ядрах): поиск сервиса — 0.1 мкс; вызов через ядро без перехватчиков — 0.4 мкс,
