@@ -8,6 +8,7 @@
     artel web [--port 8765]                                 live dashboard
     artel skills list|view|import|curate|pin|unpin|ledger|rollback|restore
     artel refine history|rollback <project> [<edit>]
+    artel plugins list|install <git-url|pip-spec|path>|show|enable|disable|remove|update [<name>]
 """
 
 from __future__ import annotations
@@ -193,6 +194,91 @@ def cmd_skills(args) -> int:
         print(store.rollback(args.arg))
     elif a == "restore":
         print(store.restore(args.arg))
+    return 0
+
+
+def _print_manifest(entry: dict) -> None:
+    from .packages import PERMISSIONS
+
+    print(f"  {entry.get('name') or entry.get('id')} {entry.get('version', '')}  <- {entry.get('source', '')}")
+    for ep, m in (entry.get("manifests") or {}).items():
+        print(f"  плагин {m.get('name', ep)} {m.get('version', '')}"
+              + (f" — {m['description']}" if m.get("description") else ""))
+        print(f"    provides: {', '.join(m.get('provides', [])) or '—'}")
+        print(f"    requires: {', '.join(m.get('requires', [])) or '—'}")
+        if m.get("note"):
+            print(f"    примечание: {m['note']}")
+    perms = entry.get("permissions") or []
+    print("  разрешения: " + (", ".join(f"{p} ({PERMISSIONS.get(p, 'своё')})" for p in perms) if perms else "не просит"))
+
+
+def cmd_plugins(args) -> int:
+    from . import packages as P
+
+    cfg = load_config()
+    a = args.action
+    try:
+        if a == "list":
+            from .kernel import build_kernel
+
+            kernel = build_kernel(cfg)  # loads what is enabled: the state column is what a run would get
+            for r in P.overview(cfg, kernel):
+                state = ("ошибка" if r.get("error") else "включён" if r["enabled"] else "выключен") + \
+                    (" (ядро)" if r.get("core") else "")
+                print(f"  {r['id']:<34} {r['kind']:<8} {str(r.get('version') or ''):<8} {state:<18} "
+                      f"{', '.join(r.get('permissions') or [])}")
+                if r.get("error"):
+                    print(f"      {r['error'].splitlines()[0][:200]}")
+            kernel.shutdown(reason="cli")
+            return 0
+        if not args.target:
+            print(f"artel plugins {a}: укажите {'источник' if a == 'install' else 'имя плагина'}")
+            return 2
+        if a == "install":
+            entry = P.install(args.target)
+            print(f"установлен {entry['name']} {entry['version']} (выключен):")
+            _print_manifest(entry)
+            if not args.enable:
+                print(f"включить: artel plugins enable {entry['name']}")
+                return 0
+            a, args.target = "enable", entry["name"]
+        if a == "show":
+            _print_manifest(P.get(args.target))
+            return 0
+        if a == "enable":
+            if args.target.startswith("artel.plugins."):
+                P.set_builtin(args.target, True)
+                print(f"включён {args.target}")
+                return 0
+            _print_manifest(P.get(args.target))
+            if not args.yes:
+                if not sys.stdin.isatty():
+                    print("подтвердите включение флагом --yes")
+                    return 2
+                answer = input("Включить? Плагин работает внутри Artel с его правами. [y/N] ").strip().lower()
+                if answer not in ("y", "yes", "д", "да"):
+                    return 1
+            entry = P.enable(args.target, config=cfg)
+            if entry.get("error"):
+                print(f"не загрузился, оставлен выключенным: {entry['error']}")
+                return 1
+            print(f"включён {entry['name']}")
+        elif a == "disable":
+            if args.target.startswith("artel.plugins."):
+                P.set_builtin(args.target, False)
+            else:
+                P.disable(args.target)
+            print(f"выключен {args.target}")
+        elif a == "remove":
+            print(f"удалён {P.remove(args.target)['name']}")
+        elif a == "update":
+            names = list(P.load_registry()["packages"]) if args.target == "all" else [args.target]
+            for n in names:
+                e = P.update(n)
+                print(f"обновлён {e['name']} {e['version']}" + (f" — {e['error']}" if e.get("error") else ""))
+    except P.PackageError as exc:
+        print(f"ошибка: {exc}")
+        return 1
     return 0
 
 
@@ -593,6 +679,15 @@ def main(argv=None) -> int:
     el = sub.add_parser("evolution", help="show the experiment ledger")
     evo_common(el)
     el.set_defaults(fn=cmd_evolution)
+
+    pl = sub.add_parser("plugins", help="plugin packages: install from git / pip / a path, enable, disable, remove")
+    pl.add_argument("action", nargs="?", default="list",
+                    choices=["list", "install", "show", "enable", "disable", "remove", "update"])
+    pl.add_argument("target", nargs="?", help="install: git URL, pip spec or path; otherwise the plugin name "
+                                               "(update all: 'all')")
+    pl.add_argument("--yes", "-y", action="store_true", help="enable without asking (the manifest is still printed)")
+    pl.add_argument("--enable", action="store_true", help="install: enable right after showing the manifest")
+    pl.set_defaults(fn=cmd_plugins)
 
     rf = sub.add_parser("refine")
     rf.add_argument("action", choices=["history", "rollback"])

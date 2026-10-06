@@ -347,7 +347,8 @@ def install(source: str, *, runner: Runner = _run, replace: bool = False) -> dic
             shutil.move(str(staging / "site"), str(dest))
             now = time.time()
             entry = {"name": name, "dist": built["name"], "version": built.get("version", ""),
-                     "summary": built.get("summary", ""), "source": source, "kind": kind,
+                     "summary": built.get("summary", ""), "kind": kind,
+                     "source": location if kind == "path" else source,
                      "revision": built.get("revision"), "path": str(dest),
                      "entry_points": built["entry_points"], **describe_site(dest, built["entry_points"]),
                      "enabled": False, "error": None,
