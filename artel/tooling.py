@@ -26,6 +26,44 @@ def window_text(text: str, limit: int, head_frac: float = 0.3, marker: str = "\n
     return text[:head] + mark + (text[len(text) - (keep - head):] if keep - head else "")
 
 
+READONLY_ROLES = {"planner", "reviewer", "auditor", "manager", "evolver", "absorber"}
+
+
+def effective_grants(project: Any, role: str, workspace: Any = None) -> dict:
+    """Effective ``{"read": [...], "write": [...]}`` path grants of ``role`` as plain string lists.
+
+    Defaults: write = role workspace + project shared deliverables (workdir); read = write + project root +
+    refs. Refs are read-only and never writable. Overrides come from project meta
+    ``grants = {"read": [..], "write": [..], "roles": {role: {"read": [..], "write": [..]}}}``; entries add
+    to the defaults. Read-only roles (READONLY_ROLES) get no write grants.
+    """
+    meta = {}
+    try:
+        meta = project.meta or {}
+    except (OSError, ValueError, AttributeError):
+        pass
+    over = meta.get("grants") or {}
+    per_role = (over.get("roles") or {}).get(role) or {}
+    ws = Path(workspace) if workspace is not None else project.shared
+    write: list = []
+    if role not in READONLY_ROLES:
+        write = [ws, project.shared, *over.get("write", []), *per_role.get("write", [])]
+    refs = [Path(r).resolve() for r in getattr(project, "refs", [])]
+    # a ref can be read, never written, even if an override asks for it
+    def writable(x: Path) -> bool:
+        return not any(x == r or r in x.parents for r in refs)
+
+    write_p = [Path(w).resolve() for w in write]
+    write_p = [w for w in write_p if writable(w)]
+    read_p = [*write_p, project.root.resolve(), *refs,
+              *[Path(r).resolve() for r in [*over.get("read", []), *per_role.get("read", [])]]]
+
+    def uniq(paths: list) -> list:
+        return list(dict.fromkeys(str(x) for x in paths))
+
+    return {"read": uniq(read_p), "write": uniq(write_p)}
+
+
 class ToolError(Exception):
     """Raised by a tool to return ``is_error`` to the model without crashing the loop."""
 
@@ -80,19 +118,19 @@ class ToolContext:
             target = (self.project.shared / Path(*p.parts[1:])).resolve()
         else:
             target = (self.workspace / p).resolve()
-        def inside(base: Path) -> bool:
-            base = base.resolve()
-            return target == base or base in target.parents
-
-        if not inside(root) and not inside(self.project.shared):
-            if not write and any(inside(r) for r in getattr(self.project, "refs", [])):
-                return target  # read-only reference sources
-            raise ToolError(f"path {path!r} is outside the project; use a workspace-relative path or shared/...")
+        grants = self.grants()
+        kind = "write" if write else "read"
+        if not any(target == Path(g) or Path(g) in target.parents for g in grants[kind]):
+            raise ToolError(f"{kind} to {path!r} denied: {target} is not in {kind} grants {grants[kind]}"
+                            + ("" if write or not self.role else f" (role {self.role})"))
         if write:
             protected = {"events.jsonl", "board.db", "project.json"}
             if target.parent == root and target.name in protected:
                 raise ToolError(f"{target.name} is managed by the harness")
         return target
+
+    def grants(self) -> dict:
+        return effective_grants(self.project, self.role, self.workspace)
 
     def display(self, p: Path) -> str:
         p = p.resolve()

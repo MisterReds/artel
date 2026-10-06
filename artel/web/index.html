@@ -238,6 +238,7 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
     <div class="stat" style="font-size:12px">готово ${s.done||0}/${s.tasks||0} · с 1-й попытки ${s.first_pass||0} · отказов ${s.rejections||0} · ${money(s.cost_usd)}</div></div>`}).join('')}</div>
   <h2>Доска</h2><div class="board">${COLS.map(([s,l])=>`<div class="col"><h3>${l}<span>${by(s).length}</span></h3>${by(s).map(card).join('')}</div>`).join('')}</div>
   ${v.notes?`<h2>Заметки харнесса (refine)</h2><pre>${esc(v.notes)}</pre>`:''}
+  ${v.grants?`<h2>Доступ к путям (grants)</h2><div class="stat"><b>Чтение:</b> ${v.grants.read.map(esc).join(' · ')||'—'}<br><b>Запись:</b> ${v.grants.write.map(esc).join(' · ')||'—'}<br><b>Источники (refs, только чтение):</b> ${v.grants.refs.map(esc).join(' · ')||'—'}</div>`:''}
   <h2>Результаты (shared/)</h2><div id="filesbox" class="files"></div>`;
   document.querySelectorAll('.card,.alert[data-t]').forEach(c=>c.onclick=()=>showTask(c.dataset.t));
   document.querySelectorAll('.worker').forEach(c=>c.onclick=()=>showWorker(c.dataset.w));

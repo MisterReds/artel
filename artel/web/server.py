@@ -16,6 +16,7 @@ from urllib.parse import parse_qs, unquote, urlparse
 from .. import analytics
 from ..manager import human_comment, new_kernel, resume, run_goal
 from ..project import Project, list_projects
+from ..tooling import effective_grants
 
 STATIC = Path(__file__).parent / "index.html"
 REGISTRY = Path(__file__).parent.parent / "data" / "harnesses.json"
@@ -127,6 +128,13 @@ class Runner:
         return bool(ev)
 
 
+def project_grants(project: Project) -> dict:
+    """Path grants of a regular worker: read paths, write paths and read-only refs."""
+    g = effective_grants(project, "worker")
+    refs = [str(Path(r).resolve()) for r in getattr(project, "refs", [])]
+    return {"read": g["read"], "write": g["write"], "refs": refs}
+
+
 def project_view(project: Project, runner: Runner) -> dict:
     snap = project.board.snapshot()
     workers = []
@@ -141,6 +149,7 @@ def project_view(project: Project, runner: Runner) -> dict:
         t["timeline"] = timelines.get(t["id"], [])
     stats = analytics.project_stats(project, live=project.slug in runner.active)
     return {"slug": project.slug, "meta": project.meta, "board": snap, "workers": workers, "stats": stats,
+            "grants": project_grants(project),
             "notes": project.prompt_notes(), "live": project.slug in runner.active, "seq": project.log.seq}
 
 

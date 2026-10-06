@@ -48,7 +48,8 @@ def _toml(value) -> str:
 
 
 def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url: str, bridge_token: str,
-               effort: Optional[str], thread_id: Optional[str], last_message: Path) -> list:
+               effort: Optional[str], thread_id: Optional[str], last_message: Path,
+               grants: Optional[dict] = None) -> list:
     pkg_root = str(Path(__file__).resolve().parents[2])
     sandbox = "read-only" if role in READONLY_ROLES else cc["sandbox"]
     from ..tools import resolve
@@ -65,7 +66,10 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
     else:
         args += ["-s", sandbox]
         if sandbox == "workspace-write":
-            args += ["--add-dir", str(shared)]
+            # one writable dir per extra write grant; refs are read-only and never reach this list
+            extra = [shared] if grants is None else [Path(w) for w in grants.get("write", [])]
+            for d in dict.fromkeys(str(Path(x)) for x in extra):
+                args += ["--add-dir", d]
     if cc.get("model"):
         args += ["-m", cc["model"]]
     eff = EFFORT.get(effort or cc.get("reasoning_effort") or "")
@@ -122,7 +126,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                 break
             args = build_args(cc, workspace=Path(ctx.workspace), shared=project.shared, role=role,
                               bridge_url=bridge.url, bridge_token=bridge.token, effort=ctx.state.get("effort"),
-                              thread_id=thread_id, last_message=last_msg)
+                              thread_id=thread_id, last_message=last_msg, grants=ctx.grants())
             proc = subprocess.Popen(args, cwd=ctx.workspace, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, text=True, env=codex_env(cc), bufsize=1)
             proc.stdin.write(prompt)

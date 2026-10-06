@@ -26,7 +26,7 @@ from typing import Optional
 
 from ..agent import LoopDetector, Outcome, _short, execute_tool
 from ..prompts import CONTINUATION
-from ..tooling import ToolContext
+from ..tooling import READONLY_ROLES, ToolContext
 
 # Claude Code ships better versions of these; do not expose Artel's duplicates.
 NATIVE_DUPLICATES = {"bash", "read_file", "write_file", "edit_file", "list_files"}
@@ -39,7 +39,6 @@ SESSION_ENV = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUD
                "CLAUDE_AFTER_LAST_COMPACT", "CLAUDE_CODE_SESSION_ATTENDED")
 MCP_PREFIX = "mcp__artel__"
 # Roles that judge or plan must not edit the deliverables they are judging.
-READONLY_ROLES = {"planner", "reviewer", "auditor", "manager", "evolver", "absorber"}
 WRITE_TOOLS = ("Write", "Edit", "MultiEdit")
 
 DEFAULTS = {"binary": "claude", "model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
@@ -121,6 +120,28 @@ def _normalize(block: dict) -> Optional[dict]:
     return None
 
 
+def build_args(cc: dict, *, role: str, prompt: str, system: str, cfg_path, shared, refs=(),
+               grants: Optional[dict] = None) -> list:
+    """Claude Code argv. ``grants`` (effective_grants) become --add-dir; write tools are disallowed for
+    read-only roles and for roles without any write grant. ``grants=None`` keeps shared + refs."""
+    from ..tools import resolve
+
+    if grants is None:
+        dirs = [str(shared), *map(str, refs)]
+        can_write = role not in READONLY_ROLES
+    else:
+        dirs = list(dict.fromkeys([*grants.get("write", []), *grants.get("read", [])]))
+        can_write = role not in READONLY_ROLES and bool(grants.get("write"))
+    args = [resolve(cc["binary"]) or cc["binary"], "-p", prompt, "--model", cc["model"], "--output-format",
+            "stream-json", "--verbose", "--mcp-config", str(cfg_path), "--strict-mcp-config",
+            "--append-system-prompt", system, "--permission-mode", cc["permission_mode"],
+            *[x for d in dirs for x in ("--add-dir", str(d))],
+            "--allowedTools", *[t for t in BUILTIN_TOOLS if can_write or t not in WRITE_TOOLS], "mcp__artel"]
+    if not can_write:
+        args += ["--disallowedTools", *WRITE_TOOLS]
+    return args
+
+
 def run_claude_code(kernel, project, *, role: str, system: str, first_user: str, ctx: ToolContext, max_turns: int,
                     purpose: str, persona=None, stop_event: Optional[threading.Event] = None,
                     tool_names: Optional[list] = None) -> Outcome:
@@ -170,14 +191,8 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                 break
             from ..tools import resolve
 
-            args = [resolve(cc["binary"]) or cc["binary"], "-p", prompt, "--model", cc["model"], "--output-format", "stream-json", "--verbose",
-                    "--mcp-config", str(cfg_path), "--strict-mcp-config", "--append-system-prompt", system + note,
-                    "--permission-mode", cc["permission_mode"], "--add-dir", str(project.shared),
-                    *[x for r in getattr(project, "refs", []) for x in ("--add-dir", str(r))],
-                    "--allowedTools", *[t for t in BUILTIN_TOOLS if role not in READONLY_ROLES or t not in WRITE_TOOLS],
-                    "mcp__artel"]
-            if role in READONLY_ROLES:
-                args += ["--disallowedTools", *WRITE_TOOLS]
+            args = build_args(cc, role=role, prompt=prompt, system=system + note, cfg_path=cfg_path,
+                              shared=project.shared, refs=list(getattr(project, "refs", [])), grants=ctx.grants())
             eff = ctx.state.get("effort") or cc.get("effort")
             if eff:
                 args += ["--effort", eff]

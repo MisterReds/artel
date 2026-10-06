@@ -62,3 +62,11 @@ reload_plugin → unload + importlib.reload + load (горячая замена)
   следующие пункты карты по порядку». Найденное встаёт в очередь после запланированных волн; `absorb --run`
   реализует его сразу — только явным решением.
 - **Свободные гипотезы** эволюционера по диагностике — отдельный режим, не основной.
+
+## Path grants
+
+`ToolContext.resolve` enforces per-role read/write grants (`artel.tooling.effective_grants`) for every file
+tool, after resolving symlinks. Default write = role workspace + project shared/workdir; read = write + project
+root + refs. Refs are never writable and read-only roles get no write grants. Project meta may add paths:
+`grants = {"read": [...], "write": [...], "roles": {role: {"read": [...], "write": [...]}}}`. A denial raises a
+`ToolError` naming the grant list.
