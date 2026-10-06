@@ -84,6 +84,21 @@ models: {default: deepseek-chat}
 Сам пишет, когда цель достигнута, когда нужен человек (с причиной), при ошибке, при исчерпании бюджета и когда
 вышло обновление.
 
+## Доступ с телефона
+
+Дашборд можно открыть с телефона и установить как приложение (PWA: «На экран Домой» в Safari, «Установить
+приложение» в Chrome).
+
+1. `artel web --remote` (или в `~/.artel/artel.yaml`: `web: {remote: true}`) — дашборд слушает не только localhost,
+   но пускает только после входа. Токен доступа печатается в терминале один раз; хранится только его хэш
+   (`~/.artel/web_auth.json`). Новый токен — `artel web token --new`, все прежние входы при этом закрываются.
+2. На телефоне откройте адрес и введите токен — вход запоминается на 30 дней (cookie HttpOnly, SameSite=Strict).
+   Пять неверных попыток с одного адреса — пауза 10 минут.
+3. **Только через HTTPS**: без него токен и сессия идут по сети открытым текстом (дашборд покажет предупреждение).
+   Рецепты с Caddy (свой домен) и Tailscale (без домена, приватно) — в [docs/REMOTE.md](docs/REMOTE.md).
+
+Без `--remote` всё как раньше: только 127.0.0.1, без входа.
+
 ## Обновление
 
 Artel ставится клоном репозитория (`git clone … && pip install -e .`) и обновляется сам: в дашборде кнопка
@@ -234,7 +249,8 @@ artel evolve --candidates 20 --parallel-candidates 4 --screen-tasks adr-doc,csv-
 ```
 artel run "<цель>" [--web] [--provider P] [--model M] [--parallel N] [--max-tokens-total T]
 artel resume <проект>          artel status [<проект>]        artel log <проект> -f
-artel comment <проект> <задача> "<текст>"                      artel web
+artel comment <проект> <задача> "<текст>"                      artel web [--remote]
+artel web token --new          # удалённый режим: новый токен доступа
 artel refine history|rollback <проект> [<id>]
 ```
 
