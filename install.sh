@@ -1,11 +1,14 @@
 #!/usr/bin/env bash
 # Artel installer for Linux and macOS.
 #
-#   bash install.sh [--dir DIR] [--no-codex] [--with-claude] [--service] [--no-start] [--yes]
+#   bash install.sh [--dir DIR] [--with-codex] [--with-claude] [--service] [--no-start] [--yes]
 #
-# Installs what Artel needs (git, Python 3.10+, Node.js for the Codex / Claude Code CLIs, GitHub access for the
-# private repository), clones Artel into ~/.artel/app as a git clone (so the built-in updater works), creates a
-# virtual environment, puts `artel` on PATH, and starts the dashboard. Safe to run again: it updates in place.
+# Installs only what Artel itself needs (git, Python 3.10+, GitHub access for the private repository), clones Artel
+# into ~/.artel/app as a git clone (so the built-in updater works), creates a virtual environment, puts `artel` on
+# PATH and starts the dashboard. Safe to run again: it updates in place.
+# Agent CLIs (Codex, Claude Code) are NOT installed by default: install them when you need them from the dashboard
+# ("Провайдеры" → "Установить") or with `artel providers install codex|claude` — into ~/.artel/tools, no sudo.
+# --with-codex / --with-claude do that right away.
 # Secrets are never asked for here: GitHub and Codex sign in through their own device-code flows.
 set -euo pipefail
 
@@ -14,11 +17,12 @@ GH_REPO="MisterReds/artel"
 DIR="${ARTEL_DIR:-$HOME/.artel/app}"
 VENV="${ARTEL_VENV:-$HOME/.artel/venv}"
 BIN="${ARTEL_BIN:-$HOME/.local/bin}"
-CODEX=1 CLAUDE=0 SERVICE=0 START=1 YES=0
+CODEX=0 CLAUDE=0 SERVICE=0 START=1 YES=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --dir) DIR="$2"; shift ;;
-    --no-codex) CODEX=0 ;;
+    --with-codex) CODEX=1 ;;
+    --no-codex) CODEX=0 ;;  # kept for compatibility: the default now
     --with-claude) CLAUDE=1 ;;
     --service) SERVICE=1 ;;
     --no-start) START=0 ;;
@@ -54,9 +58,6 @@ pkg_install() {  # pkg_install <generic name>...
       dnf:python|zypper:python) names+=(python3 python3-pip) ;;
       pacman:python) names+=(python python-pip) ;;
       brew:python) names+=(python@3.12) ;;
-      apt:node|dnf:node|zypper:node) names+=(nodejs npm) ;;
-      pacman:node) names+=(nodejs npm) ;;
-      brew:node) names+=(node) ;;
       pacman:gh) names+=(github-cli) ;;
       *) names+=("$n") ;;
     esac
@@ -86,13 +87,12 @@ step "Dependencies"
 missing=()
 have git || missing+=(git)
 PY="$(find_python || true)"; [ -n "$PY" ] || missing+=(python)
-if [ "$CODEX" = 1 ] || [ "$CLAUDE" = 1 ]; then have npm || missing+=(node); fi
 if [ ${#missing[@]} -gt 0 ]; then
   note "installing: ${missing[*]}"
   pkg_install "${missing[@]}"
 fi
 PY="$(find_python || true)"; [ -n "$PY" ] || die "Python 3.10+ is required"
-note "git $(git --version | awk '{print $3}') · $($PY --version) $(have node && echo "· node $(node --version)")"
+note "git $(git --version | awk '{print $3}') · $($PY --version)"
 if [ "$PM" = apt ] && ! "$PY" -c 'import venv, ensurepip' 2>/dev/null; then pkg_install python; fi
 
 # GitHub access: the repository is private, and the updater pulls from it later with the same credentials.
@@ -134,19 +134,8 @@ case ":$PATH:" in *":$BIN:"*) ;; *)
   note "added $BIN to PATH (new terminals pick it up)" ;;
 esac
 
-npm_global() {  # npm -g without sudo: user prefix when the global dir is not writable
-  local prefix; prefix="$(npm prefix -g 2>/dev/null || echo /usr/local)"
-  if [ -w "$prefix/lib" ] || [ -w "$prefix" ]; then npm install -g --silent "$@"
-  else npm config set prefix "$HOME/.local" >/dev/null; npm install -g --silent "$@"; fi
-}
-if [ "$CODEX" = 1 ]; then
-  step "Codex CLI (ChatGPT subscription)"
-  have codex && note "already installed: $(codex --version 2>/dev/null | tail -1)" || { npm_global @openai/codex && note "installed"; }
-fi
-if [ "$CLAUDE" = 1 ]; then
-  step "Claude Code CLI (Claude subscription)"
-  have claude && note "already installed" || { npm_global @anthropic-ai/claude-code && note "installed"; }
-fi
+if [ "$CODEX" = 1 ]; then step "Codex CLI (ChatGPT subscription)"; "$VENV/bin/artel" providers install codex; fi
+if [ "$CLAUDE" = 1 ]; then step "Claude Code CLI (Claude subscription)"; "$VENV/bin/artel" providers install claude; fi
 
 if [ "$SERVICE" = 1 ]; then
   step "Dashboard as a background service"
@@ -189,7 +178,7 @@ step "Check"
 "$VENV/bin/artel" providers || true
 printf '\n%s▲ Artel установлен.%s\n' "$C" "$R"
 note "дашборд:   artel web  →  http://127.0.0.1:8765"
-note "Codex:     «Провайдеры» → «Войти через device code»  (или: artel providers login codex)"
+note "Codex / Claude Code: по необходимости — «Провайдеры» → «Установить», затем вход"
 note "обновление: кнопка в дашборде или artel update"
 if [ "$START" = 1 ] && [ -t 1 ]; then
   url="http://127.0.0.1:8765"

@@ -232,7 +232,10 @@ class Evolution:
         tar = subprocess.run(["git", "archive", "--format=tar", self.JOURNAL_BRANCH], cwd=self.repo,
                              capture_output=True, check=True).stdout
         with tarfile.open(fileobj=io.BytesIO(tar)) as tf:
-            tf.extractall(self.home, filter="data")
+            try:
+                tf.extractall(self.home, filter="data")
+            except TypeError:  # Python without extraction filters
+                tf.extractall(self.home)
         return True
 
     def _has_remote(self) -> bool:

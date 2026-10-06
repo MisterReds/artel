@@ -302,6 +302,13 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
   const RT={native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)'};
   const draw=async()=>{const o=await api('/api/providers');const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
    const st=(ok,on,off)=>`<span class="st ${ok?'on':'off'}">${ok?on:off}</span>`;
+   const I=o.installs||{};
+   const inst=(name,s,label)=>{const j=I[name]||{};
+     if(j.phase==='running')return `<p class="stat">Устанавливаю ${label}…</p><pre>${esc((j.log||[]).join('\n'))}</pre>`;
+     if(j.phase==='error')return `<pre>${esc(j.error||'')}</pre><button data-inst="${name}">Повторить установку</button>`;
+     if(!s.installed)return `<p class="stat">Не установлен. Ставится в папку Artel, без прав администратора; Node.js скачается туда же, если его нет.</p><button class="primary" data-inst="${name}">Установить ${label}</button>`;
+     if(s.by_artel)return `<button data-uninst="${name}">Удалить ${label}</button>`;
+     return ''};
    const cx=o.codex,cc=o.claude_code,r=o.routing;
    const login=L.phase==='waiting'?`<p>Откройте ссылку, войдите в аккаунт ChatGPT и введите код:</p>
       <a href="${esc(L.url)}" target="_blank" rel="noopener">${esc(L.url)}</a><div class="devcode">${esc(L.code)}</div>
@@ -312,13 +319,15 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    box.innerHTML=`<p class="stat">Кто выполняет работу. Подписки подключаются входом в их официальные CLI; ключи API задаются только переменными окружения — их значения здесь не показываются и не хранятся.</p>
    <div class="pv">
     <div class="pvc"><h3>${ri('worker')}Codex${st(cx.logged_in,'подключён',cx.installed?'не подключён':'не установлен')}</h3>
-      <div class="kv"><span>вход</span><span>${cx.logged_in?esc(cx.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка ChatGPT (device code) или ключ API</span><span>CLI</span><span>${esc(cx.version||'нет — npm install -g @openai/codex')}</span><span>модель</span><span>${esc(cx.model||'')}</span></div>
+      <div class="kv"><span>вход</span><span>${cx.logged_in?esc(cx.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка ChatGPT (device code) или ключ API</span>${cx.installed?`<span>CLI</span><span>${esc(cx.version)}${cx.by_artel?' · в папке Artel':''}</span><span>модель</span><span>${esc(cx.model||'')}</span>`:''}</div>
       ${login}
       ${cx.installed&&!cx.logged_in&&L.phase!=='waiting'?'<button class="primary" id="cx-login">Войти через device code</button>':''}
-      ${cx.logged_in?'<button id="cx-logout">Выйти</button>':''}</div>
+      ${cx.logged_in?'<button id="cx-logout">Выйти</button>':''}
+      ${inst('codex',cx,'Codex CLI')}</div>
     <div class="pvc"><h3>${ri('worker')}Claude Code${st(cc.logged_in,'подключён',cc.installed?'не подключён':'не установлен')}</h3>
-      <div class="kv"><span>вход</span><span>${cc.logged_in?esc(cc.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка Claude или ключ API</span><span>CLI</span><span>${esc(cc.version||'нет')}</span><span>модель</span><span>${esc(cc.model)}</span></div>
-      ${cc.logged_in?'':`<p class="stat">${esc(cc.detail)}</p>`}</div>
+      <div class="kv"><span>вход</span><span>${cc.logged_in?esc(cc.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка Claude или ключ API</span>${cc.installed?`<span>CLI</span><span>${esc(cc.version)}${cc.by_artel?' · в папке Artel':''}</span><span>модель</span><span>${esc(cc.model)}</span>`:''}</div>
+      ${cc.installed&&!cc.logged_in?`<p class="stat">${esc(cc.detail)}</p>`:''}
+      ${inst('claude',cc,'Claude Code CLI')}</div>
     <div class="pvc"><h3>${ri('librarian')}Ключи API</h3><div class="kv">${o.keys.map(k=>`<span>${esc(k.label)}</span><span>${k.set?'<span style="color:var(--ok)">задан</span>':'не задан'} · <code>${esc(k.env)}</code></span>`).join('')}</div>
       <p class="stat">Задаются в настройках окружения, не в чате и не здесь.</p></div>
     <div class="pvc"><h3>${ri('auditor')}System One (локально)${st(o.local.reachable,'отвечает','не запущена')}</h3>
@@ -335,15 +344,21 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    <p><button class="primary" id="rt-save">Сохранить</button> <span class="stat" id="rt-msg"></span></p>
    <p class="stat">Сохраняется в ARTEL_HOME/artel.yaml и действует для новых запусков. Разные подписки на разных ролях разносят нагрузку по лимитам.</p>`;
    const on=(id,fn)=>{const el=$('#'+id);if(el)el.onclick=fn};
+   document.querySelectorAll('[data-inst]').forEach(b=>b.onclick=async()=>{b.disabled=true;await api('/api/providers/install/'+b.dataset.inst,{method:'POST'});state.inst=true;draw()});
+   document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!confirm('Удалить из папки Artel?'))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST'});draw()});
    on('cx-login',async()=>{$('#cx-login').disabled=true;await api('/api/providers/codex/login',{method:'POST'});draw()});
    on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST'});draw()});
    on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST'});draw()});
    on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});
      const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value}};
-     await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});$('#rt-msg').textContent='Сохранено.'});
+     await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+     const used=new Set([body.runtime,...Object.values(byRole)]);const miss=[];
+     if(used.has('codex')&&!cx.installed)miss.push('Codex CLI');if(used.has('claude_code')&&!cc.installed)miss.push('Claude Code CLI');
+     $('#rt-msg').textContent=miss.length?`Сохранено. Не установлен: ${miss.join(', ')} — установите в карточке выше.`:'Сохранено.'});
    return L.phase};
   const phase=await draw();
-  timer=setInterval(async()=>{const L=await api('/api/providers/codex/login');if(['waiting','starting'].includes(L.phase)||state.cxw){state.cxw=['waiting','starting'].includes(L.phase);if(!document.activeElement||document.activeElement.tagName!=='SELECT')draw()}},3000)}
+  timer=setInterval(async()=>{if(state.inst){const o=await api('/api/providers');state.inst=Object.values(o.installs||{}).some(j=>j.phase==='running');draw();return}
+    const L=await api('/api/providers/codex/login');if(['waiting','starting'].includes(L.phase)||state.cxw){state.cxw=['waiting','starting'].includes(L.phase);if(!document.activeElement||document.activeElement.tagName!=='SELECT')draw()}},3000)}
 
 /* ---------- Агенты ---------- */
 async function agents(){$('#view').innerHTML='<div class="wrap" id="ag"><div class="empty">Загрузка…</div></div>';

@@ -13,7 +13,6 @@ from __future__ import annotations
 import json
 import os
 import re
-import shutil
 import subprocess
 import threading
 import time
@@ -24,6 +23,7 @@ from typing import Optional
 import yaml
 
 from .runtimes.codex import codex_env, codex_settings
+from .tools import installed_by_artel, resolve
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 ROLES = ["manager", "planner", "worker", "tester", "reviewer", "auditor", "librarian", "refiner", "evolver", "absorber"]
@@ -54,10 +54,11 @@ class CodexLogin:
         with self.lock:
             if self.proc and self.proc.poll() is None:
                 return self.state
-            if not shutil.which(cfg["binary"]):
-                self.state = {"phase": "error", "error": f"`{cfg['binary']}` not found: npm install -g @openai/codex"}
+            binary = resolve(cfg["binary"])
+            if not binary:
+                self.state = {"phase": "error", "error": "Codex CLI не установлен — сначала «Установить»"}
                 return self.state
-            self.proc = subprocess.Popen([cfg["binary"], "login", "--device-auth"], stdout=subprocess.PIPE,
+            self.proc = subprocess.Popen([binary, "login", "--device-auth"], stdout=subprocess.PIPE,
                                          stderr=subprocess.STDOUT, text=True, env=codex_env(cfg), bufsize=1)
             self.state = {"phase": "starting", "since": time.time()}
         found = threading.Event()
@@ -94,31 +95,33 @@ class CodexLogin:
 
 def codex_status(config: dict) -> dict:
     cfg = codex_settings(config)
-    binary = shutil.which(cfg["binary"])
+    binary = resolve(cfg["binary"])
     if not binary:
-        return {"installed": False, "logged_in": False, "detail": "npm install -g @openai/codex"}
-    rc, text = _run([cfg["binary"], "login", "status"], env=codex_env(cfg))
+        return {"installed": False, "logged_in": False, "detail": "не установлен"}
+    rc, text = _run([binary, "login", "status"], env=codex_env(cfg))
     logged = rc == 0 and "not logged in" not in text.lower()
     method = "ChatGPT" if "chatgpt" in text.lower() else ("API key" if "api key" in text.lower() else "")
-    _, ver = _run([cfg["binary"], "--version"])
+    _, ver = _run([binary, "--version"], env=codex_env(cfg))
     ver = next((ln for ln in ver.splitlines() if ln.lower().startswith("codex")), ver.splitlines()[-1] if ver else "")
-    return {"installed": True, "version": ver, "logged_in": logged, "method": method,
+    return {"installed": True, "by_artel": installed_by_artel("codex"), "version": ver, "logged_in": logged,
+            "method": method,
             "detail": next((ln for ln in reversed(text.splitlines()) if "WARNING" not in ln), ""), "model": cfg.get("model") or "по умолчанию аккаунта"}
 
 
 def logout_codex(config: dict) -> dict:
     cfg = codex_settings(config)
-    rc, text = _run([cfg["binary"], "logout"], env=codex_env(cfg))
+    rc, text = _run([resolve(cfg["binary"]) or cfg["binary"], "logout"], env=codex_env(cfg))
     return {"ok": rc == 0, "detail": text}
 
 
 def claude_code_status(config: dict) -> dict:
     cc = config.get("claude_code") or {}
-    binary = shutil.which(cc.get("binary", "claude"))
-    if not binary:
-        return {"installed": False, "logged_in": False, "detail": "npm install -g @anthropic-ai/claude-code"}
-    _, ver = _run([binary, "--version"])
     from .runtimes.claude_code import child_env
+
+    binary = resolve(cc.get("binary", "claude"))
+    if not binary:
+        return {"installed": False, "logged_in": False, "detail": "не установлен"}
+    _, ver = _run([binary, "--version"], env=child_env())
 
     rc, text = _run([binary, "auth", "status"], env=child_env())
     try:
@@ -127,7 +130,8 @@ def claude_code_status(config: dict) -> dict:
         st = {}
     method = {"oauth_token": "подписка Claude", "claude.ai": "подписка Claude", "api_key": "API key"}.get(
         st.get("authMethod", ""), st.get("authMethod", ""))
-    return {"installed": True, "version": ver.splitlines()[-1] if ver else "", "logged_in": bool(st.get("loggedIn")),
+    return {"installed": True, "by_artel": installed_by_artel("claude"), "version": ver.splitlines()[-1] if ver else "",
+            "logged_in": bool(st.get("loggedIn")),
             "method": method, "model": cc.get("model", "sonnet"),
             "detail": "вход: запустите `claude` в терминале и выполните /login"}
 

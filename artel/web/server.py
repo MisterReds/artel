@@ -35,6 +35,9 @@ class Runner:
         from ..providers import CodexLogin
 
         self.codex_login = CodexLogin(config)
+        from ..tools import Installer
+
+        self.installer = Installer()
         self.update_state: dict = {"phase": "idle"}  # idle | checking | verifying | restart_pending | error
         self.restart_pending = False
 
@@ -218,7 +221,8 @@ def make_handler(runner: Runner):
                 elif parts == ["api", "providers"]:
                     from ..providers import overview
 
-                    self._json({**overview(runner.config), "codex_login": runner.codex_login.state})
+                    self._json({**overview(runner.config), "codex_login": runner.codex_login.state,
+                                "installs": runner.installer.state})
                 elif parts == ["api", "providers", "codex", "login"]:
                     self._json(runner.codex_login.state)
                 elif parts == ["api", "update"]:
@@ -304,6 +308,12 @@ def make_handler(runner: Runner):
                     if not goal:
                         return self._json({"error": "goal required"}, 400)
                     return self._json({"slug": runner.start(goal, data.get("name") or None)})
+                if len(parts) == 4 and parts[:3] == ["api", "providers", "install"]:
+                    return self._json(runner.installer.start(parts[3]))
+                if len(parts) == 4 and parts[:3] == ["api", "providers", "uninstall"]:
+                    from ..tools import TOOLS, uninstall
+
+                    return self._json(uninstall(parts[3]) if parts[3] in TOOLS else {"ok": False})
                 if parts == ["api", "providers", "codex", "login"]:
                     return self._json(runner.codex_login.start())
                 if parts == ["api", "providers", "codex", "cancel"]:

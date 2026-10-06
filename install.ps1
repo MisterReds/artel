@@ -1,14 +1,15 @@
 ﻿# Artel installer for Windows (PowerShell 5+).
 #
-#   powershell -ExecutionPolicy Bypass -File install.ps1 [-Dir PATH] [-NoCodex] [-WithClaude] [-Service] [-NoStart]
+#   powershell -ExecutionPolicy Bypass -File install.ps1 [-Dir PATH] [-WithCodex] [-WithClaude] [-Service] [-NoStart]
 #
-# Installs git, Python 3.12, Node.js (for the Codex / Claude Code CLIs) and the GitHub CLI with winget when they are
-# missing, signs in to GitHub with a device code if the private repository is not reachable, clones Artel into
-# %USERPROFILE%\.artel\app (a git clone, so the built-in updater works), creates a virtual environment, puts
-# `artel` on the user PATH and starts the dashboard. Safe to run again: it updates in place.
+# Installs only what Artel itself needs (git, Python 3.12, and the GitHub CLI when the private repository is not
+# reachable) with winget, signs in to GitHub with a device code, clones Artel into %USERPROFILE%\.artel\app (a git
+# clone, so the built-in updater works), creates a virtual environment, puts `artel` on the user PATH and starts the
+# dashboard. Safe to run again: it updates in place. Agent CLIs (Codex, Claude Code) are installed only when needed:
+# dashboard "Провайдеры" → "Установить", or `artel providers install codex|claude` (into ~\.artel\tools).
 param(
   [string]$Dir = "$env:USERPROFILE\.artel\app",
-  [switch]$NoCodex, [switch]$WithClaude, [switch]$Service, [switch]$NoStart
+  [switch]$WithCodex, [switch]$WithClaude, [switch]$Service, [switch]$NoStart
 )
 $ErrorActionPreference = "Stop"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
@@ -43,7 +44,6 @@ if (-not (Have git)) { Note "installing git"; Winget "Git.Git" }
 $py = Find-Python
 if (-not $py) { Note "installing Python 3.12"; Winget "Python.Python.3.12"; $py = Find-Python }
 if (-not $py) { throw "Python 3.10+ is required" }
-if ((-not $NoCodex -or $WithClaude) -and -not (Have npm)) { Note "installing Node.js"; Winget "OpenJS.NodeJS.LTS" }
 Note ("git " + (git --version) + " · " + (Py --version))
 
 Step "Access to the repository"
@@ -72,14 +72,8 @@ if ($userPath -notlike "*$Venv\Scripts*") {
   Note "added $Venv\Scripts to the user PATH (new terminals pick it up)"
 }
 
-if (-not $NoCodex) {
-  Step "Codex CLI (ChatGPT subscription)"
-  if (Have codex) { Note "already installed" } else { npm install -g --silent @openai/codex; Refresh-Path; Note "installed" }
-}
-if ($WithClaude) {
-  Step "Claude Code CLI (Claude subscription)"
-  if (Have claude) { Note "already installed" } else { npm install -g --silent @anthropic-ai/claude-code; Refresh-Path; Note "installed" }
-}
+if ($WithCodex) { Step "Codex CLI (ChatGPT subscription)"; & "$Venv\Scripts\artel.exe" providers install codex }
+if ($WithClaude) { Step "Claude Code CLI (Claude subscription)"; & "$Venv\Scripts\artel.exe" providers install claude }
 
 if ($Service) {
   Step "Dashboard at sign-in (Task Scheduler)"
@@ -95,7 +89,7 @@ Step "Check"
 & "$Venv\Scripts\artel.exe" providers
 Write-Host "`n▲ Artel установлен." -ForegroundColor DarkYellow
 Note "дашборд:    artel web  →  http://127.0.0.1:8765"
-Note "Codex:      «Провайдеры» → «Войти через device code»  (или: artel providers login codex)"
+Note "Codex / Claude Code: по необходимости — «Провайдеры» → «Установить», затем вход"
 Note "обновление: кнопка в дашборде или artel update"
 if (-not $NoStart) {
   Start-Job { Start-Sleep 2; Start-Process "http://127.0.0.1:8765" } | Out-Null

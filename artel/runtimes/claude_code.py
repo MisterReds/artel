@@ -47,7 +47,9 @@ DEFAULTS = {"binary": "claude", "model": "sonnet", "permission_mode": "bypassPer
 
 
 def child_env() -> dict:
-    env = {k: v for k, v in os.environ.items() if k not in SESSION_ENV}
+    from ..tools import env_with_tools
+
+    env = env_with_tools({k: v for k, v in os.environ.items() if k not in SESSION_ENV})
     env["ARTEL_CHILD"] = "1"
     return env
 
@@ -158,7 +160,9 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
             if reason:
                 out.status, out.error = "budget", reason
                 break
-            args = [cc["binary"], "-p", prompt, "--model", cc["model"], "--output-format", "stream-json", "--verbose",
+            from ..tools import resolve
+
+            args = [resolve(cc["binary"]) or cc["binary"], "-p", prompt, "--model", cc["model"], "--output-format", "stream-json", "--verbose",
                     "--mcp-config", str(cfg_path), "--strict-mcp-config", "--append-system-prompt", system + note,
                     "--permission-mode", cc["permission_mode"], "--add-dir", str(project.shared),
                     *[x for r in getattr(project, "refs", []) for x in ("--add-dir", str(r))],

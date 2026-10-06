@@ -35,7 +35,9 @@ def codex_settings(config: dict) -> dict:
 
 
 def codex_env(cfg: dict) -> dict:
-    env = child_env()
+    from ..tools import env_with_tools
+
+    env = env_with_tools(child_env())
     if cfg.get("home"):
         env["CODEX_HOME"] = str(Path(cfg["home"]).expanduser())
     return env
@@ -49,7 +51,9 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
                effort: Optional[str], thread_id: Optional[str], last_message: Path) -> list:
     pkg_root = str(Path(__file__).resolve().parents[2])
     sandbox = "read-only" if role in READONLY_ROLES else cc["sandbox"]
-    args = [cc["binary"], "exec", "--json", "--skip-git-repo-check", "--color", "never", "-C", str(workspace),
+    from ..tools import resolve
+
+    args = [resolve(cc["binary"]) or cc["binary"], "exec", "--json", "--skip-git-repo-check", "--color", "never", "-C", str(workspace),
             "-o", str(last_message),
             "-c", f"mcp_servers.artel.command={_toml(sys.executable)}",
             "-c", f"mcp_servers.artel.args={_toml(['-m', 'artel.runtimes.mcp_proxy', bridge_url, bridge_token])}",
@@ -75,8 +79,17 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
 def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: ToolContext, max_turns: int,
               purpose: str, persona=None, stop_event: Optional[threading.Event] = None,
               tool_names: Optional[list] = None) -> Outcome:
+    from ..tools import resolve
+
     cc = codex_settings(kernel.config)
     actor = persona.name if persona else role
+    if not resolve(cc["binary"]):
+        out = Outcome(status="error", error="Codex CLI не установлен: «Провайдеры» → «Установить» "
+                                            "или `artel providers install codex`")
+        out.cost_usd = 0.0
+        project.log.append("llm/error", actor=actor, task_id=(ctx.task or {}).get("id"), error=out.error,
+                           runtime="codex")
+        return out
     task_id = (ctx.task or {}).get("id")
     out = Outcome(status="stalled")
     out.cost_usd = 0.0  # subscription runs are not billed per token; tokens are still counted

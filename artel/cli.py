@@ -318,6 +318,14 @@ def cmd_providers(args) -> int:
     from .runtimes.codex import codex_env, codex_settings
 
     cfg = _cfg(args)
+    if args.action in ("install", "uninstall"):
+        from .tools import install, uninstall
+
+        name = "claude" if args.name in ("claude", "claude_code") else "codex"
+        res = install(name) if args.action == "install" else uninstall(name)
+        if not res.get("ok"):
+            print(res.get("error", "failed"))
+        return 0 if res.get("ok") else 1
     if args.action == "login" and args.name == "codex":
         c = codex_settings(cfg)  # the CLI prints the link and the one-time code, then waits for the browser
         return subprocess.call([c["binary"], "login", "--device-auth"], env=codex_env(c))
@@ -548,8 +556,8 @@ def main(argv=None) -> int:
     ev.set_defaults(fn=cmd_evolve)
 
     pv = sub.add_parser("providers", help="subscriptions, API keys and runtimes; Codex device-code login")
-    pv.add_argument("action", nargs="?", default="status", choices=["status", "login", "logout"])
-    pv.add_argument("name", nargs="?", default="codex", choices=["codex"])
+    pv.add_argument("action", nargs="?", default="status", choices=["status", "login", "logout", "install", "uninstall"])
+    pv.add_argument("name", nargs="?", default="codex", choices=["codex", "claude", "claude_code"])
     pv.add_argument("--config")
     pv.set_defaults(fn=cmd_providers)
 

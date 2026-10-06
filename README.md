@@ -8,10 +8,14 @@
 
 ## Установка
 
-Установщик сам ставит недостающее (git, Python 3.10+, Node.js, GitHub CLI), при необходимости входит в GitHub по
-device code (репозиторий приватный), клонирует Artel в `~/.artel/app` (клон — значит, работает автообновление),
-создаёт окружение, кладёт команду `artel` в PATH, ставит Codex CLI и открывает дашборд. Повторный запуск обновляет
-установку на месте.
+Установщик ставит только то, что нужно самому Artel (git, Python 3.10+, GitHub CLI — если нужен вход в GitHub),
+при необходимости входит в GitHub по device code (репозиторий приватный), клонирует Artel в `~/.artel/app` (клон —
+значит, работает автообновление), создаёт окружение, кладёт команду `artel` в PATH и открывает дашборд. Повторный
+запуск обновляет установку на месте.
+
+Codex CLI и Claude Code CLI по умолчанию не ставятся. Когда понадобятся: «Провайдеры» → «Установить» (или
+`artel providers install codex|claude`). Они ставятся в `~/.artel/tools` без прав администратора; если на машине
+нет Node.js, его переносная версия скачивается туда же. «Удалить» убирает их оттуда.
 
 **Linux / macOS**
 ```bash
@@ -20,16 +24,16 @@ bash <(gh api repos/MisterReds/artel/contents/install.sh -H "Accept: application
 # иначе: скачайте install.sh со страницы репозитория (Raw → сохранить) и выполните
 bash install.sh
 ```
-Опции: `--with-claude` (поставить Claude Code CLI), `--service` (дашборд в фоне: systemd --user / launchd),
-`--no-codex`, `--no-start`, `--dir ПУТЬ`.
+Опции: `--with-codex`, `--with-claude` (сразу поставить CLI), `--service` (дашборд в фоне: systemd --user /
+launchd), `--no-start`, `--dir ПУТЬ`.
 
 **Windows** (PowerShell): скачайте `install.ps1` и выполните
 ```powershell
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
-Опции: `-WithClaude`, `-Service` (запуск дашборда при входе в Windows), `-NoCodex`, `-NoStart`, `-Dir ПУТЬ`.
+Опции: `-WithCodex`, `-WithClaude`, `-Service` (запуск дашборда при входе в Windows), `-NoStart`, `-Dir ПУТЬ`.
 
-После установки: «Провайдеры» → «Войти через device code», чтобы подключить подписку Codex.
+Подписка Codex: «Провайдеры» → «Установить Codex CLI» → «Войти через device code».
 
 ## Быстрый старт
 
@@ -53,7 +57,7 @@ models: {default: deepseek-chat}
 
 Раздел «Провайдеры» в дашборде (и `artel providers`) показывает, кто может выполнять работу, и даёт подключить его:
 
-- **Codex — подписка ChatGPT.** «Войти через device code» показывает ссылку и одноразовый код; после подтверждения в
+- **Codex — подписка ChatGPT.** Если CLI нет — «Установить» (в `~/.artel/tools`). «Войти через device code» показывает ссылку и одноразовый код; после подтверждения в
   браузере Codex CLI хранит и обновляет вход сам. В терминале: `artel providers login codex`. Рантайм `codex`
   запускает `codex exec --json` в рабочей папке роли; инструменты Artel (сдача задачи, доска, скиллы, вердикты)
   приходят по MCP, все действия Codex пишутся в журнал.
