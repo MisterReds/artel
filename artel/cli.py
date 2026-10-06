@@ -352,6 +352,30 @@ def cmd_providers(args) -> int:
     return 0
 
 
+def cmd_telegram(args) -> int:
+    from .brand import banner
+    from .telegram import TOKEN_ENV, Store, TelegramBot, token
+
+    if args.action == "pair":
+        print(f"Отправьте боту: /pair {Store().new_code()}  (код действует 15 минут)")
+        return 0
+    if not token():
+        print(f"Задайте токен бота в переменной окружения {TOKEN_ENV} (получить: @BotFather → /newbot).")
+        return 1
+    from .web.server import Runner
+
+    runner = Runner(_cfg(args))
+    bot = TelegramBot(runner)
+    code = bot.store.new_code() if not bot.store.data["paired"] else None
+    print(banner("Telegram-бот запущен") + (f"\nОтправьте боту: /pair {code}" if code else ""), flush=True)
+    bot.start()
+    try:
+        while True:
+            time.sleep(3600)
+    except KeyboardInterrupt:
+        return 0
+
+
 def cmd_update(args) -> int:
     from .updater import Updater, UpdateError
 
@@ -563,6 +587,11 @@ def main(argv=None) -> int:
     pv.add_argument("name", nargs="?", default="codex", choices=["codex", "claude", "claude_code"])
     pv.add_argument("--config")
     pv.set_defaults(fn=cmd_providers)
+
+    tg = sub.add_parser("telegram", help="Telegram bot: control Artel and get notifications on the phone")
+    tg.add_argument("action", nargs="?", default="run", choices=["run", "pair"])
+    tg.add_argument("--config")
+    tg.set_defaults(fn=cmd_telegram)
 
     upd = sub.add_parser("update", help="pull the improvements published since this installation (verified first)")
     upd.add_argument("--check", action="store_true", help="only show what is new")

@@ -52,7 +52,7 @@
 | W2-fs-grants | Explicit read/write grants per path | OpenScience (`synthetic-sciences/openscience`) | evolve | план — gen 4: conflicted in artel/plugins/builtin_tools.py with the adopted items; retried on the new main |
 | W2-cost-down | Bring cost back down — wave 1 raised the benchmark cost from $4.57 to $5.99 (+31%) | Claude Code / Codex (`anthropics/claude-code`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-ci | CI on Linux, macOS and Windows — tests, installer and a scripted first run on every push | OpenHands / Codex (`openai/codex`) | design | план |
-| W2-remote-and-notify | Use from the phone — authenticated remote dashboard and notifications (Telegram / webhook) | Hermes Agent / OpenClaw (`NousResearch/hermes-agent`) | design | план |
+| W2-remote-and-notify | Use from the phone — authenticated remote dashboard and notifications (Telegram / webhook) | Hermes Agent / OpenClaw (`NousResearch/hermes-agent`) | design | частично — Telegram bot done (control, answers, notifications, one-time pairing); next: authenticated remote dashboard as an installable phone app (PWA) |
 | W2-timezone | User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin | Artel (`MisterReds/artel`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-evolve-two-subscriptions | Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it | Artel (`MisterReds/artel`) | design | план |
 

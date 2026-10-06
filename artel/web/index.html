@@ -309,7 +309,7 @@ function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter
 /* ---------- Провайдеры ---------- */
 async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div class="empty">Загрузка…</div></div>';
   const RT={auto:'Автоматически — что подключено (рекомендуется)',native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)'};
-  const draw=async()=>{const o=await api('/api/providers');const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
+  const draw=async()=>{const [o,tg]=await Promise.all([api('/api/providers'),api('/api/telegram')]);const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
    const st=(ok,on,off)=>`<span class="st ${ok?'on':'off'}">${ok?on:off}</span>`;
    const I=o.installs||{};
    const inst=(name,s,label)=>{const j=I[name]||{};
@@ -343,6 +343,9 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       <div class="kv"><span>что это</span><span>быстрые решения в узких местах (сложность задачи, нужен ли библиотекарь, разбор застрявшей задачи)</span>
       ${o.system_one.connected?`<span>источник</span><span><code>${esc(o.system_one.name)}</code></span><span>точки</span><span>${esc(o.system_one.points.join(', ')||'не включены')}</span>`:''}</div>
       ${o.system_one.connected?'':'<p class="stat">Своя модель пока не подключена — без неё Artel работает как обычно. Подключение: docs/SYSTEM_ONE.md.</p>'}</div>
+    <div class="pvc"><h3>${ri('human')}Telegram${st(tg.paired>0,'чатов: '+tg.paired,tg.token_set?'не привязан':'не настроен')}</h3>
+      <div class="kv"><span>что даёт</span><span>цели, статус, ответы проектам и уведомления с телефона</span><span>токен</span><span>${tg.token_set?'задан':'не задан'} · <code>${esc(tg.token_env)}</code></span></div>
+      ${tg.token_set?(tg.code?`<p>Отправьте боту в Telegram:</p><div class="devcode">/pair ${esc(tg.code)}</div><p class="stat">Код одноразовый, действует 15 минут.</p>`:'<button id="tg-pair">Показать код привязки</button>'):'<p class="stat">Создайте бота у @BotFather (/newbot) и задайте его токен в переменной окружения ARTEL_TELEGRAM_TOKEN, затем перезапустите <code>artel web</code>. Токен не вводится здесь и нигде не сохраняется.</p>'}</div>
    </div>
    <h2>Кто какую роль выполняет</h2>
    <div class="tablewrap pvroles"><table><tr><th>роль</th><th>рантайм</th></tr>
@@ -358,6 +361,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    const on=(id,fn)=>{const el=$('#'+id);if(el)el.onclick=fn};
    document.querySelectorAll('[data-inst]').forEach(b=>b.onclick=async()=>{b.disabled=true;await api('/api/providers/install/'+b.dataset.inst,{method:'POST'});state.inst=true;draw()});
    document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!confirm('Удалить из папки Artel?'))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST'});draw()});
+   on('tg-pair',async()=>{await api('/api/telegram/pair',{method:'POST'});draw()});
    on('cx-login',async()=>{$('#cx-login').disabled=true;await api('/api/providers/codex/login',{method:'POST'});draw()});
    on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST'});draw()});
    on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST'});draw()});

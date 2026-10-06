@@ -221,6 +221,10 @@ def make_handler(runner: Runner):
                     self._static("/".join(parts[1:]))
                 elif parts == ["favicon.ico"] or parts == ["favicon.svg"]:
                     self._static("favicon.svg")
+                elif parts == ["api", "telegram"]:
+                    from ..telegram import status as tg_status
+
+                    self._json(tg_status(runner.config))
                 elif parts == ["api", "ready"]:
                     from ..runtimes import detect_runtime
 
@@ -333,6 +337,13 @@ def make_handler(runner: Runner):
                     from ..providers import logout_codex
 
                     return self._json(logout_codex(runner.config))
+                if parts == ["api", "telegram", "pair"]:
+                    from ..telegram import Store, token
+
+                    if not token():
+                        return self._json({"error": "ARTEL_TELEGRAM_TOKEN is not set"}, 400)
+                    store = runner.telegram.store if getattr(runner, "telegram", None) else Store()
+                    return self._json({"code": store.new_code()})
                 if parts == ["api", "providers", "routing"]:
                     from ..providers import save_routing
 
@@ -368,6 +379,13 @@ def serve(port: int = 8765, config: dict | None = None, host: str = "127.0.0.1")
 
     runner = Runner(config or load_config())
     runner.start_update_loop()
+    from ..telegram import TelegramBot, token
+
+    if token():
+        runner.telegram = TelegramBot(runner).start()
+        code = (runner.telegram.store.data.get("pair") or {}).get("code")
+        if code:
+            print(f"Telegram: отправьте боту /pair {code} (код действует 15 минут)", flush=True)
     httpd = ThreadingHTTPServer((host, port), make_handler(runner))
     httpd.daemon_threads = True
     from ..brand import banner
