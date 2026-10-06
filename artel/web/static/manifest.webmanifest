@@ -1,0 +1,20 @@
+{
+  "name": "Artel",
+  "short_name": "Artel",
+  "description": "Команда агентов доводит цель до результата: портфель, проекты, задачи, провайдеры.",
+  "lang": "ru",
+  "id": "/",
+  "start_url": "/#/portfolio",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "theme_color": "#B5522B",
+  "background_color": "#F7F4EE",
+  "icons": [
+    {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+    {"src": "/static/icons/maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+    {"src": "/static/icons/maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    {"src": "/static/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any"}
+  ]
+}
