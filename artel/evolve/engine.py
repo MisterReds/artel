@@ -843,10 +843,23 @@ class Evolution:
         if not included:
             return [], stack_entry
         git(self.repo, "checkout", "-q", self.state["main"])
-        git(self.repo, "merge", "--no-ff", "-q", "-m",
-            f"evolve gen {gen}: adopt {len(included)} roadmap items\n\n" +
-            "\n".join(f"- {e['hypothesis']['title']}" for e in adopted if e["branch"] in included) +
-            f"\n\n{stack_entry['reason'] if stack_entry else ''}", f"evolve/g{gen}-adopt")
+        m = subprocess.run(["git", *GIT_ID, "merge", "--no-ff", "-q", "-m",
+                            f"evolve gen {gen}: adopt {len(included)} roadmap items\n\n" +
+                            "\n".join(f"- {e['hypothesis']['title']}" for e in adopted if e["branch"] in included) +
+                            f"\n\n{stack_entry['reason'] if stack_entry else ''}", f"evolve/g{gen}-adopt"],
+                           cwd=self.repo, capture_output=True, text=True)
+        if m.returncode != 0:
+            # main moved during the generation (a hand-made change) and conflicts: never leave main half-merged
+            git(self.repo, "merge", "--abort", check=False)
+            for e in adopted:
+                if e["branch"] in included:
+                    e.update(accepted=False, stage="deferred",
+                             reason="adopted on the integration branch, but main changed during the generation and "
+                                    f"the final merge conflicts ({(m.stdout + m.stderr).strip()[-200:]}); the "
+                                    f"integration branch evolve/g{gen}-adopt is kept for a manual merge")
+            self.record(kind="merge_conflict", generation=gen, branch=f"evolve/g{gen}-adopt",
+                        detail=(m.stdout + m.stderr).strip()[-500:])
+            return [], stack_entry
         return included, stack_entry
 
     def _integrate(self, gen: int, champ: str, entries: list, label: str):

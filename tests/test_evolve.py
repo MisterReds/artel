@@ -357,3 +357,25 @@ def test_unfinished_implementation_is_never_merged(repo, tmp_path):
     e = next(x for x in ev.ledger() if x["kind"] == "candidate")
     assert s["accepted"] == [] and e["stage"] == "unfinished" and "waiting_human" in e["reason"]
     assert not (repo / "half.txt").exists() and git(repo, "branch", "--list", "evolve/g1-1-half")
+
+
+def test_final_merge_conflict_with_a_moved_main_never_breaks_main(repo, tmp_path):
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+
+    def impl(h, wt):
+        (wt / "artel" / "__init__.py").write_text('"""from the candidate"""\n')
+        # a person changes the same file on main while the generation runs
+        (repo / "artel" / "__init__.py").write_text('"""by hand on main"""\n')
+        git(repo, "commit", "-qam", "hand change")
+        return {}
+
+    def bench_fn(code, label, tasks=None):
+        rows = [{"id": "a", "pass": True, "partial": 1.0, "cost_usd": 0.1}]
+        return {"results": rows, "summary": bench.summarize(rows)}
+
+    ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    s = ev.generation(hypotheses=[Hypothesis("clash", "r", "p")], plan_extra={"mode": "adopt"})
+    assert s["accepted"] == [] and not git(repo, "status", "--porcelain", "--untracked-files=no")
+    assert "by hand on main" in (repo / "artel" / "__init__.py").read_text()
+    e = next(x for x in ev.ledger() if x["kind"] == "candidate")
+    assert e["stage"] == "deferred" and any(x["kind"] == "merge_conflict" for x in ev.ledger())
