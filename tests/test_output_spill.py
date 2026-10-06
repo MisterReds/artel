@@ -30,7 +30,7 @@ def test_over_lines_spills(env):
     text = "\n".join(f"line{i}" for i in range(MAX_LINES + 500))
     out = spill_output(ctx, text, "bash")
     files = list((ws / ".spill").iterdir())
-    assert len(files) == 1 and files[0].read_text() == text
+    assert len(files) == 1 and files[0].read_text(encoding="utf-8") == text
     assert out.startswith("line0") and f"line{MAX_LINES + 499}" in out
     assert f".spill/{files[0].name}" in out and "read_file" in out
     assert len(out) < len(text)
@@ -41,7 +41,7 @@ def test_over_bytes_spills_single_line(env):
     text = "H" + "x" * (MAX_BYTES + 10) + "T"
     out = spill_output(ctx, text, "read_file")
     (f,) = (ws / ".spill").iterdir()
-    assert f.read_text() == text
+    assert f.read_text(encoding="utf-8") == text
     assert out.startswith("H") and "T\n" in out and f.name in out
 
 

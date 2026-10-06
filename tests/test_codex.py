@@ -48,7 +48,7 @@ def test_codex_runtime_does_work_and_finishes_through_artel_tools(env):
     assert any(e["kind"] == "tool/call" and e.get("tool") == "task_submit" for e in ev)  # via the bridge
     start = next(e for e in ev if e["kind"] == "agent/start" and e.get("runtime") == "codex")
     assert start["model"] == "codex:default"
-    args = json.loads((tmp / "calls.jsonl").read_text().splitlines()[0])
+    args = json.loads((tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert args[:2] == ["exec", "--json"] and "workspace-write" in args and "--add-dir" in args
     assert 'approval_policy="never"' in args and args[-1] == "-"
     assert out.usage["input_tokens"] == 1000 and out.usage["output_tokens"] == 200
@@ -58,7 +58,7 @@ def test_codex_without_terminal_tool_is_resumed_and_readonly_roles_get_readonly_
     cfg, project, tmp = env
     monkeypatch.setenv("FAKE_CODEX_LAZY", "1")
     out, ctx = _run(cfg, project)
-    calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text().splitlines()]
+    calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
     assert out.status == "terminal" and len(calls) == 2 and calls[1][-3:] == ["resume", "th-1", "-"]
     assert any(e["kind"] == "agent/continuation" and e.get("runtime") == "codex" for e in project.log.read())
     from artel.runtimes.codex import build_args, codex_settings
@@ -86,7 +86,7 @@ def test_device_code_login_status_and_logout(env, tmp_path):
     st = login.start(wait_s=5)
     assert st["phase"] == "waiting" and st["code"] == "ABCD-EFG12" and st["url"] == "https://auth.openai.com/codex/device"
     (Path(os.environ["CODEX_HOME"])).mkdir(parents=True, exist_ok=True)
-    (Path(os.environ["CODEX_HOME"]) / "confirm").write_text("1")  # the user confirms in the browser
+    (Path(os.environ["CODEX_HOME"]) / "confirm").write_text("1", encoding="utf-8")  # the user confirms in the browser
     for _ in range(100):
         if login.state["phase"] == "done":
             break
@@ -120,5 +120,5 @@ def test_codex_policy_stops_disallowed_commands(env, monkeypatch):
     monkeypatch.setenv("FAKE_CODEX_CMD", "rm -rf /")
     monkeypatch.setenv("FAKE_CODEX_LAZY", "1")
     out, ctx = _run(cfg, project)
-    calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text().splitlines()]
+    calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
     assert ctx.terminal is None and calls[-1][-3:] == ["resume", "th-1", "-"]

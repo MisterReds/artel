@@ -45,26 +45,26 @@ class Refiner:
         path.parent.mkdir(parents=True, exist_ok=True)
         if op == "replace":
             text = content if target != "worker_rules" or content.startswith("# RULES") else "# RULES\n\n" + content
-            path.write_text(text.rstrip() + "\n")
+            path.write_text(text.rstrip() + "\n", encoding="utf-8")
         else:
             line = content.strip()
             if target == "worker_rules" and not line.startswith("- "):
                 line = "- " + line
-            prev = path.read_text() if existed else ""
+            prev = path.read_text(encoding="utf-8") if existed else ""
             if prev and not prev.endswith("\n"):
                 prev += "\n"
-            path.write_text(prev + line + "\n")
+            path.write_text(prev + line + "\n", encoding="utf-8")
         entry = {"id": edit_id, "ts": time.time(), "actor": actor, "target": target, "worker": worker, "op": op,
-                 "content": content, "evidence": evidence, "path": str(path.relative_to(project.root)),
-                 "snapshot": str(snap.relative_to(project.root)) if existed else None}
-        with self._journal(project).open("a") as fh:
+                 "content": content, "evidence": evidence, "path": path.relative_to(project.root).as_posix(),
+                 "snapshot": snap.relative_to(project.root).as_posix() if existed else None}
+        with self._journal(project).open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
         project.log.append("harness/edited", **entry)
         return {"id": edit_id, "path": entry["path"]}
 
     def history(self, project) -> list[dict]:
         p = self._journal(project)
-        return [json.loads(ln) for ln in p.read_text().splitlines() if ln.strip()] if p.exists() else []
+        return [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()] if p.exists() else []
 
     def rollback(self, project, edit_id: str) -> dict:
         entry = next((e for e in self.history(project) if e["id"] == edit_id), None)

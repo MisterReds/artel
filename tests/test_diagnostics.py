@@ -39,7 +39,7 @@ def test_edit_reports_diagnostics(env):
 
 def test_missing_ruff_and_timeout_do_not_raise(env, monkeypatch, tmp_path):
     p = tmp_path / "t.py"
-    p.write_text("x = 1\n")
+    p.write_text("x = 1\n", encoding="utf-8")
     monkeypatch.setattr(builtin_tools.shutil, "which", lambda _n: None)
     assert builtin_tools._diagnostics(p) == ""
     monkeypatch.setattr(builtin_tools.shutil, "which", lambda _n: "/bin/sleep")

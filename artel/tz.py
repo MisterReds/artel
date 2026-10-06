@@ -33,7 +33,7 @@ def system_zone() -> str:
         link = os.path.realpath("/etc/localtime")
         if "zoneinfo/" in link and valid_zone(link.split("zoneinfo/", 1)[1]):
             return link.split("zoneinfo/", 1)[1]
-        name = Path("/etc/timezone").read_text().strip()
+        name = Path("/etc/timezone").read_text(encoding="utf-8").strip()
         if valid_zone(name):
             return name
     except OSError:

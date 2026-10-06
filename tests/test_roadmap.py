@@ -48,7 +48,7 @@ items:
 
 def _toy(tmp_path, donor="o/donor"):
     p = tmp_path / "roadmap.yaml"
-    p.write_text(TOY.replace("DONOR", donor))
+    p.write_text(TOY.replace("DONOR", donor), encoding="utf-8")
     return p
 
 
@@ -63,7 +63,7 @@ def test_real_roadmap_is_consistent_and_rendered():
             rm.get(dep)
     assert {p["id"].split("-", 1)[1] for p in rm.pillars} >= {"modularity", "skills", "goal-loop"}
     assert all(p["status"] == "done" for p in rm.pillars)
-    assert (ROOT / "docs" / "ROADMAP.md").read_text() == rm.render_markdown(), "run `artel roadmap render`"
+    assert (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8") == rm.render_markdown(), "run `artel roadmap render`"
 
 
 def test_next_items_order_modes_and_dependencies(tmp_path):
@@ -72,19 +72,19 @@ def test_next_items_order_modes_and_dependencies(tmp_path):
     assert [it["id"] for it in rm.next_items(5, mode="design")] == ["W1-d"]
     rm.set_status("W1-a", "done", "merged in gen 1")
     assert [it["id"] for it in rm.next_items(5)] == ["W1-b", "W2-c"]
-    text = rm.path.read_text()
+    text = rm.path.read_text(encoding="utf-8")
     assert "# toy roadmap — this comment must survive" in text and "# ---- wave 1 ----" in text
     assert rm.get("W1-a")["result"] == "merged in gen 1" and rm.get("W1-b")["status"] == "planned"
     rm.set_status("W1-a", "done", "again")  # idempotent: one result line
-    assert text.count("result:") == 1 and rm.path.read_text().count("result:") == 1
+    assert text.count("result:") == 1 and rm.path.read_text(encoding="utf-8").count("result:") == 1
     assert "Волна 1 — 1/3 готово" in rm.render_markdown()
 
 
 def test_hypothesis_carries_donor_sources_and_license(tmp_path):
     donor = tmp_path / "donor"
     donor.mkdir()
-    (donor / "README.md").write_text("donor")
-    (donor / "LICENSE").write_text("MIT License\n\nPermission is hereby granted, free of charge")
+    (donor / "README.md").write_text("donor", encoding="utf-8")
+    (donor / "LICENSE").write_text("MIT License\n\nPermission is hereby granted, free of charge", encoding="utf-8")
     rm = Roadmap(_toy(tmp_path, str(donor)))
     h = rm.to_hypothesis(rm.get("W1-a"), tmp_path / "sources")
     assert h.source == "roadmap:W1-a" and h.refs == [str(donor)] and h.files == ["artel/a.py"]
@@ -99,12 +99,12 @@ def test_roadmap_generation_merges_marks_done_and_reuses_baseline(tmp_path, monk
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
     donor = tmp_path / "donor"
     donor.mkdir()
-    (donor / "README.md").write_text("donor")
+    (donor / "README.md").write_text("donor", encoding="utf-8")
     repo = tmp_path / "selfrepo"
     (repo / "artel").mkdir(parents=True)
-    (repo / "artel" / "__init__.py").write_text("")
+    (repo / "artel" / "__init__.py").write_text("", encoding="utf-8")
     (repo / "tests").mkdir()
-    (repo / "tests" / "test_ok.py").write_text("def test_ok():\n    assert True\n")
+    (repo / "tests" / "test_ok.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
     _toy(repo, str(donor))
     for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "init"]):
         git(repo, *args)
@@ -123,9 +123,9 @@ def test_roadmap_generation_merges_marks_done_and_reuses_baseline(tmp_path, monk
         assert h.refs == [str(donor)]
         if "REPAIR" in h.plan:  # the team gets the failing checks back and tries again (here: fails to fix it)
             repairs.append(h.title)
-            (wt / "broken").write_text(f"attempt {len(repairs)}\n")
+            (wt / "broken").write_text(f"attempt {len(repairs)}\n", encoding="utf-8")
         else:
-            (wt / ("artel/a.py" if "W1-a" in h.title else "broken")).write_text("x = 1\n")
+            (wt / ("artel/a.py" if "W1-a" in h.title else "broken")).write_text("x = 1\n", encoding="utf-8")
         return {"cost_usd": 0.0}
 
     cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
@@ -138,7 +138,7 @@ def test_roadmap_generation_merges_marks_done_and_reuses_baseline(tmp_path, monk
     rm = Roadmap.of_repo(repo)
     assert rm.get("W1-a")["status"] == "done" and "evolve/gen-1" in rm.get("W1-a")["result"]
     assert "breaks tasks: b" in rm.get("W1-b")["result"] and "needs a design decision" in rm.get("W1-b")["result"]
-    assert "нужна помощь" in (repo / "docs" / "ROADMAP.md").read_text()
+    assert "нужна помощь" in (repo / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
     assert "roadmap: gen 1" in git(repo, "log", "-1", "--format=%s")
     assert (repo / "docs" / "ROADMAP.md").exists() and (repo / "artel" / "a.py").exists()
     assert git(repo, "rev-parse", "evolve/gen-1") == git(repo, "rev-parse", "HEAD")
@@ -156,9 +156,9 @@ def test_roadmap_generation_merges_marks_done_and_reuses_baseline(tmp_path, monk
 def _selfrepo(tmp_path, donor):
     repo = tmp_path / "selfrepo"
     (repo / "artel").mkdir(parents=True)
-    (repo / "artel" / "__init__.py").write_text("")
+    (repo / "artel" / "__init__.py").write_text("", encoding="utf-8")
     (repo / "tests").mkdir()
-    (repo / "tests" / "test_ok.py").write_text("def test_ok():\n    assert True\n")
+    (repo / "tests" / "test_ok.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
     _toy(repo, str(donor))
     for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "init"]):
         git(repo, *args)
@@ -171,18 +171,18 @@ def test_absorb_turns_findings_into_roadmap_items_and_cycle_follows_the_plan(tmp
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
     donor = tmp_path / "donor"
     donor.mkdir()
-    (donor / "README.md").write_text("donor")
+    (donor / "README.md").write_text("donor", encoding="utf-8")
     other = tmp_path / "otherharness"
     other.mkdir()
-    (other / "README.md").write_text("Other harness with a marker feature")
-    (other / "LICENSE").write_text("MIT License\n\nPermission is hereby granted, free of charge, ...")
+    (other / "README.md").write_text("Other harness with a marker feature", encoding="utf-8")
+    (other / "LICENSE").write_text("MIT License\n\nPermission is hereby granted, free of charge, ...", encoding="utf-8")
     repo = _selfrepo(tmp_path, donor)
     cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05})
     impls = []
 
     def impl(h, wt):
         impls.append(h.source)
-        (wt / "artel" / "a.py").write_text("x = 1\n")
+        (wt / "artel" / "a.py").write_text("x = 1\n", encoding="utf-8")
         return {"cost_usd": 0.0}
 
     def bench_fn(code, label, tasks=None):
@@ -197,10 +197,10 @@ def test_absorb_turns_findings_into_roadmap_items_and_cycle_follows_the_plan(tmp
     item = rm.get("A-otherharness-marker")
     assert item["wave"] == ABSORB_WAVE and item["mode"] == "evolve" and item["source"]["license"] == "MIT"
     assert item["source"]["paths"] == ["README.md"] and item["plan"] == "write ABSORBED.md"
-    assert "# toy roadmap — this comment must survive" in rm.path.read_text()
+    assert "# toy roadmap — this comment must survive" in rm.path.read_text(encoding="utf-8")
     assert load_studied(repo)[0]["added"] == ["A-otherharness-marker"]
     assert "roadmap: absorbed" in git(repo, "log", "-1", "--format=%s")
-    assert "Изученные проекты — 1" in (repo / "docs" / "ROADMAP.md").read_text()
+    assert "Изученные проекты — 1" in (repo / "docs" / "ROADMAP.md").read_text(encoding="utf-8")
     assert ev.absorb(str(other))["roadmap_added"] == []  # studying again adds no duplicates
 
     # registry: studied projects and roadmap donors are skipped; most relevant live harness first

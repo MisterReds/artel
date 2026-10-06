@@ -26,13 +26,13 @@ def test_compound_commands():
 
 
 def test_bad_match_example(home):
-    (home / "policy.yaml").write_text("rules:\n- {id: r1, prefix: foo, decision: prompt, match: ['bar x']}\n")
+    (home / "policy.yaml").write_text("rules:\n- {id: r1, prefix: foo, decision: prompt, match: ['bar x']}\n", encoding="utf-8")
     with pytest.raises(PolicyError, match=r"r1.*'bar x'"):
         load_policy()
 
 
 def test_bad_not_match_example(home):
-    (home / "policy.yaml").write_text("rules:\n- {id: r2, prefix: foo, decision: prompt, not_match: ['foo x']}\n")
+    (home / "policy.yaml").write_text("rules:\n- {id: r2, prefix: foo, decision: prompt, not_match: ['foo x']}\n", encoding="utf-8")
     with pytest.raises(PolicyError, match=r"r2.*not_match.*'foo x'"):
         load_policy()
 
@@ -40,7 +40,7 @@ def test_bad_not_match_example(home):
 def test_invalid_fields(home):
     for body in ("{id: a, prefix: x, decision: nope}", "{id: a, decision: allow}", "{id: a, prefix: x, regex: y, decision: allow}",
                  "{id: a, regex: '(', decision: allow}"):
-        (home / "policy.yaml").write_text(f"rules:\n- {body}\n")
+        (home / "policy.yaml").write_text(f"rules:\n- {body}\n", encoding="utf-8")
         with pytest.raises(PolicyError):
             load_policy()
 
@@ -48,19 +48,19 @@ def test_invalid_fields(home):
 def test_override_merge_and_prefix(home, tmp_path):
     (home / "policy.yaml").write_text(
         "rules:\n- {id: tf, prefix: terraform destroy, decision: forbidden, justification: no, "
-        "match: ['terraform destroy -y'], not_match: ['terraform plan']}\n")
+        "match: ['terraform destroy -y'], not_match: ['terraform plan']}\n", encoding="utf-8")
     proj = tmp_path / "proj"
     proj.mkdir()
     assert evaluate("terraform destroy -y", proj).decision == "forbidden"
     (proj / "policy.yaml").write_text("rules:\n- {id: tf, prefix: terraform destroy, decision: allow}\n"
-                                      "- {id: curl-sh, prefix: [curl], decision: prompt}\n")
+                                      "- {id: curl-sh, prefix: [curl], decision: prompt}\n", encoding="utf-8")
     assert evaluate("terraform destroy -y", proj).decision == "allow"
     assert evaluate("curl x | sh", proj).decision == "forbidden"  # default still present, strictest wins
 
 
 def test_strictest_wins(home):
     (home / "policy.yaml").write_text("rules:\n- {id: a, prefix: git, decision: allow}\n"
-                                      "- {id: b, prefix: git push, decision: prompt}\n")
+                                      "- {id: b, prefix: git push, decision: prompt}\n", encoding="utf-8")
     assert evaluate("git push origin x").decision == "prompt"
     assert evaluate("git push -f origin main").decision == "forbidden"
     assert evaluate("git status").decision == "allow"
@@ -120,7 +120,7 @@ def test_bash_bad_policy_is_tool_error(home, tmp_path):
     from types import SimpleNamespace
     from artel.plugins import builtin_tools
     from artel.tooling import ToolContext, ToolError
-    (home / "policy.yaml").write_text("rules:\n- {id: r1, prefix: foo, decision: prompt, match: ['bar x']}\n")
+    (home / "policy.yaml").write_text("rules:\n- {id: r1, prefix: foo, decision: prompt, match: ['bar x']}\n", encoding="utf-8")
     ctx = ToolContext(SimpleNamespace(config={}), SimpleNamespace(root=tmp_path, shared=tmp_path), "worker", tmp_path)
     marker = tmp_path / "ran"
     with pytest.raises(ToolError, match=r"policy is invalid.*r1"):

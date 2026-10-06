@@ -47,7 +47,7 @@ class Updater:
 
     # --- git ------------------------------------------------------------
     def _git(self, *args: str, check: bool = True, cwd: Optional[Path] = None) -> str:
-        p = subprocess.run(["git", *args], cwd=cwd or self.root, capture_output=True, text=True, timeout=600)
+        p = subprocess.run(["git", *args], cwd=cwd or self.root, capture_output=True, text=True, timeout=600, encoding="utf-8", errors="replace")
         if check and p.returncode != 0:
             raise UpdateError(f"git {' '.join(args)}: {(p.stderr or p.stdout).strip()[-400:]}")
         return p.stdout.strip()
@@ -127,7 +127,7 @@ class Updater:
             env = {**os.environ, "PYTHONPATH": str(wt), "PYTHONDONTWRITEBYTECODE": "1",
                    "ARTEL_HOME": str(tmp / "home")}
             p = subprocess.run([sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *target],
-                               cwd=wt, capture_output=True, text=True, timeout=1800, env=env)
+                               cwd=wt, capture_output=True, text=True, timeout=1800, env=env, encoding="utf-8", errors="replace")
             return {"ok": p.returncode == 0, "mode": mode, "output": (p.stdout + p.stderr)[-2000:]}
         finally:
             self._git("worktree", "remove", "--force", str(wt), check=False)
@@ -167,13 +167,13 @@ class Updater:
 
     def _reinstall_deps(self) -> dict:
         p = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-e", str(self.root)],
-                           capture_output=True, text=True, timeout=900)
+                           capture_output=True, text=True, timeout=900, encoding="utf-8", errors="replace")
         return {"ok": p.returncode == 0, "output": (p.stdout + p.stderr)[-500:]}
 
     # --- history --------------------------------------------------------
     def history(self) -> list[dict]:
         try:
-            return json.loads(self.history_path.read_text())
+            return json.loads(self.history_path.read_text(encoding="utf-8"))
         except (FileNotFoundError, ValueError):
             return []
 
@@ -181,10 +181,16 @@ class Updater:
         entry = {"ts": time.time(), **entry}
         hist = self.history() + [entry]
         self.history_path.parent.mkdir(parents=True, exist_ok=True)
-        self.history_path.write_text(json.dumps(hist[-200:], ensure_ascii=False, indent=1))
+        self.history_path.write_text(json.dumps(hist[-200:], ensure_ascii=False, indent=1), encoding="utf-8")
         return entry
 
 
 def restart_process() -> None:
     """Replace the current process with a fresh one running the same command (new code is loaded)."""
-    os.execv(sys.executable, [sys.executable, "-m", "artel.cli", *sys.argv[1:]])
+    argv = [sys.executable, "-m", "artel.cli", *sys.argv[1:]]
+    if sys.platform == "win32":
+        # Windows has no exec: os.execv starts a new process without quoting its arguments (a path with spaces
+        # splits) and returns the console early. Start the successor properly and leave.
+        subprocess.Popen(argv)
+        os._exit(0)
+    os.execv(sys.executable, argv)

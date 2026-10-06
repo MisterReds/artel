@@ -30,6 +30,7 @@ from . import prompts
 from .agent import Outcome
 from .runtimes import run_agent
 from .snapshot import Snapshot
+from .tools import shell_run
 from .project import Persona, Project, persona_from_dict
 from .tooling import ToolContext, window_text
 from .tz import fmt_ts, zone_name
@@ -237,8 +238,8 @@ class Manager:
                "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()}
         for cmd in task["checks"]:
             try:
-                p = subprocess.run(cmd, shell=True, cwd=self.project.shared, capture_output=True, text=True,
-                                   timeout=int(self.cfg.get("gate_timeout_s", 900)), env=env)
+                p = shell_run(cmd, cwd=self.project.shared, capture_output=True,
+                              timeout=int(self.cfg.get("gate_timeout_s", 900)), env=env)
                 res = {"command": cmd, "exit": p.returncode, "output": window_text(p.stdout + p.stderr, 3000)}
             except subprocess.TimeoutExpired:
                 res = {"command": cmd, "exit": -1, "output": "timed out"}

@@ -22,7 +22,7 @@ from typing import Optional
 import yaml
 
 from .runtimes.codex import codex_env, codex_settings
-from .tools import installed_by_artel, resolve
+from .tools import installed_by_artel, resolve, terminate_tree
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 ROLES = ["manager", "planner", "worker", "tester", "reviewer", "auditor", "librarian", "refiner", "evolver", "absorber"]
@@ -33,7 +33,7 @@ KEY_VARS = {"ANTHROPIC_API_KEY": "Anthropic API", "OPENAI_API_KEY": "OpenAI API"
 
 def _run(args: list, env: Optional[dict] = None, timeout: int = 20) -> tuple[int, str]:
     try:
-        p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, env=env)
+        p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, env=env, encoding="utf-8", errors="replace")
         return p.returncode, ANSI.sub("", (p.stdout + p.stderr)).strip()
     except (FileNotFoundError, subprocess.TimeoutExpired) as e:
         return -1, str(e)
@@ -58,7 +58,7 @@ class CodexLogin:
                 self.state = {"phase": "error", "error": "Codex CLI не установлен — сначала «Установить»"}
                 return self.state
             self.proc = subprocess.Popen([binary, "login", "--device-auth"], stdout=subprocess.PIPE,
-                                         stderr=subprocess.STDOUT, text=True, env=codex_env(cfg), bufsize=1)
+                                         stderr=subprocess.STDOUT, text=True, env=codex_env(cfg), bufsize=1, encoding="utf-8", errors="replace")
             self.state = {"phase": "starting", "since": time.time()}
         found = threading.Event()
 
@@ -88,7 +88,7 @@ class CodexLogin:
         with self.lock:
             if self.proc and self.proc.poll() is None:
                 self.state = {"phase": "cancelled"}
-                self.proc.terminate()
+                terminate_tree(self.proc)
         return self.state
 
 
@@ -179,13 +179,13 @@ def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
         if isinstance(m, str):
             upd[rt] = {"model": m.strip() or None}
     path = path or artel_home() / "artel.yaml"
-    current = yaml.safe_load(path.read_text()) if path.exists() else {}
+    current = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
     current = current or {}
     if "runtime_by_role" in upd:
         current.pop("runtime_by_role", None)  # replace, not merge: removing a role override must stick
     merged = deep_merge(current, upd)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(merged, allow_unicode=True, sort_keys=False))
+    path.write_text(yaml.safe_dump(merged, allow_unicode=True, sort_keys=False), encoding="utf-8")
     if "runtime_by_role" in upd:
         config["runtime_by_role"] = upd.pop("runtime_by_role")
     for k, v in upd.items():
@@ -204,7 +204,7 @@ def save_timezone(config: dict, name, path: Optional[Path] = None) -> dict:
     if name is not None and not isinstance(name, str):
         raise ValueError("timezone must be a string")
     path = path or artel_home() / "artel.yaml"
-    current = (yaml.safe_load(path.read_text()) if path.exists() else {}) or {}
+    current = (yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}) or {}
     ui = dict(current.get("ui") or {})
     if name:
         ui["timezone"] = name
@@ -212,7 +212,7 @@ def save_timezone(config: dict, name, path: Optional[Path] = None) -> dict:
         ui.pop("timezone", None)
     current["ui"] = ui
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(yaml.safe_dump(current, allow_unicode=True, sort_keys=False))
+    path.write_text(yaml.safe_dump(current, allow_unicode=True, sort_keys=False), encoding="utf-8")
     config["ui"] = {**(config.get("ui") or {}), **ui}
     if not name:
         config["ui"].pop("timezone", None)

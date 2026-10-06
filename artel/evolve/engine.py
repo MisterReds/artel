@@ -73,7 +73,7 @@ def check_suite(suite: dict) -> dict:
 
 
 def git(repo: Path, *args: str, check: bool = True) -> str:
-    p = subprocess.run(["git", *GIT_ID, *args], cwd=repo, capture_output=True, text=True)
+    p = subprocess.run(["git", *GIT_ID, *args], cwd=repo, capture_output=True, text=True, encoding="utf-8", errors="replace")
     if check and p.returncode != 0:
         raise RuntimeError(f"git {' '.join(args)} failed: {p.stderr.strip()[:500]}")
     return p.stdout.strip()
@@ -177,7 +177,7 @@ class Evolution:
         if not self.ledger_path.exists():
             self.restore_journal()
         if state.exists():
-            self.state = json.loads(state.read_text())
+            self.state = json.loads(state.read_text(encoding="utf-8"))
         else:
             self.state = {"main": git(self.repo, "rev-parse", "--abbrev-ref", "HEAD"), "generation": 0}
         self.state["repo"] = str(self.repo)
@@ -185,7 +185,7 @@ class Evolution:
 
     # --- persistence ----------------------------------------------------
     def _save(self) -> None:
-        (self.home / "state.json").write_text(json.dumps(self.state, indent=1))
+        (self.home / "state.json").write_text(json.dumps(self.state, indent=1), encoding="utf-8")
 
     @property
     def ledger_path(self) -> Path:
@@ -193,11 +193,11 @@ class Evolution:
 
     def ledger(self) -> list[dict]:
         p = self.ledger_path
-        return [json.loads(ln) for ln in p.read_text().splitlines() if ln.strip()] if p.exists() else []
+        return [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()] if p.exists() else []
 
     def record(self, **entry) -> dict:
         entry = {"id": uuid.uuid4().hex[:10], "ts": time.time(), **entry}
-        with self.ledger_path.open("a") as fh:
+        with self.ledger_path.open("a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False, default=str) + "\n")
         if entry.get("kind") in self.JOURNAL_KINDS:
             self.sync_journal(f"{entry['kind']}: {entry.get('branch') or entry.get('source') or entry.get('generation', '')}")
@@ -240,7 +240,7 @@ class Evolution:
         for attempt in range(4):
             p = subprocess.run(["git", "push", "--quiet", "origin",
                                 *[f"{'+' if force else ''}refs/heads/{r}:refs/heads/{r}" for r in refs]],
-                               cwd=self.repo, capture_output=True, text=True, timeout=600)
+                               cwd=self.repo, capture_output=True, text=True, timeout=600, encoding="utf-8", errors="replace")
             if p.returncode == 0:
                 return True
             time.sleep(2 ** (attempt + 1))
@@ -254,12 +254,12 @@ class Evolution:
         out = {}
         for pat in ("ledger.jsonl", "state.json", "baseline/*.json", "*-diagnosis.md", "absorb/*.json"):
             for f in self.home.glob(pat):
-                out[str(f.relative_to(self.home))] = f.read_bytes()
+                out[f.relative_to(self.home).as_posix()] = f.read_bytes()
         for f in list(self.home.glob("projects/*/events.jsonl")) + list(self.home.glob("bench/**/events.jsonl")):
             if f.stat().st_size < 50_000_000:
-                out[str(f.relative_to(self.home)) + ".gz"] = gzip.compress(f.read_bytes(), mtime=0)
+                out[f.relative_to(self.home).as_posix() + ".gz"] = gzip.compress(f.read_bytes(), mtime=0)
         for f in self.home.glob("bench/**/suite.json"):
-            out[str(f.relative_to(self.home))] = f.read_bytes()
+            out[f.relative_to(self.home).as_posix()] = f.read_bytes()
         return out
 
     def sync_journal(self, message: str = "journal") -> Optional[str]:
@@ -301,19 +301,19 @@ class Evolution:
     def baseline(self, sha: str) -> dict:
         cache = self.home / "baseline" / f"{sha}.json"
         if cache.exists():
-            return json.loads(cache.read_text())
+            return json.loads(cache.read_text(encoding="utf-8"))
         reuse = self._equivalent_baseline(sha)
         if reuse:
             cache.parent.mkdir(parents=True, exist_ok=True)
-            cache.write_text(reuse.read_text())
-            return json.loads(cache.read_text())
+            cache.write_text(reuse.read_text(encoding="utf-8"), encoding="utf-8")
+            return json.loads(cache.read_text(encoding="utf-8"))
         wt = self._worktree(f"baseline-{sha[:10]}", sha, new_branch=False)
         try:
             suite = self._bench_call(wt, f"base-{sha[:8]}")
         finally:
             self._remove_worktree(wt)
         cache.parent.mkdir(parents=True, exist_ok=True)
-        cache.write_text(json.dumps(suite, ensure_ascii=False))
+        cache.write_text(json.dumps(suite, ensure_ascii=False), encoding="utf-8")
         self.record(kind="baseline", commit=sha, summary=suite["summary"])
         return suite
 
@@ -322,7 +322,7 @@ class Evolution:
     def _equivalent_baseline(self, sha: str) -> Optional[Path]:
         """A cached baseline of a commit that differs from ``sha`` only in non-code files (roadmap, docs)."""
         for f in sorted((self.home / "baseline").glob("*.json"), key=lambda p: -p.stat().st_mtime):
-            d = subprocess.run(["git", "diff", "--name-only", f.stem, sha], cwd=self.repo, capture_output=True, text=True)
+            d = subprocess.run(["git", "diff", "--name-only", f.stem, sha], cwd=self.repo, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if d.returncode == 0 and all(c.startswith(self.NON_CODE) for c in d.stdout.splitlines() if c):
                 return f
         return None
@@ -384,10 +384,10 @@ class Evolution:
     def code_map(self) -> str:
         lines = []
         for p in sorted((self.repo / "artel").rglob("*.py")):
-            text = p.read_text(errors="replace")
+            text = p.read_text(errors="replace", encoding="utf-8")
             m = re.match(r'\s*(?:"""|\'\'\')(.*?)(?:\n|""")', text, re.S)
             doc = (m.group(1).strip() if m else "")[:140]
-            lines.append(f"- {p.relative_to(self.repo)} ({len(text.splitlines())} lines): {doc}")
+            lines.append(f"- {p.relative_to(self.repo).as_posix()} ({len(text.splitlines())} lines): {doc}")
         return "\n".join(lines)
 
     def history_text(self, limit: int = 30) -> str:
@@ -446,7 +446,7 @@ class Evolution:
 
         for meta_path in sorted((artel_home() / "projects").glob("*/project.json"), key=lambda p: -p.stat().st_mtime):
             try:
-                meta = json.loads(meta_path.read_text())
+                meta = json.loads(meta_path.read_text(encoding="utf-8"))
             except ValueError:
                 continue
             if meta.get("workdir") == str(wt) and meta.get("status") != "done":
@@ -635,7 +635,7 @@ class Evolution:
         if hypotheses is None:
             report = diag_mod.doctor(None, [Path(r["project"]) for r in base["results"] if r.get("project")],
                                      bench=base, run_tests=False)
-            (self.home / f"gen{gen}-diagnosis.md").write_text(diag_mod.render_markdown(report))
+            (self.home / f"gen{gen}-diagnosis.md").write_text(diag_mod.render_markdown(report), encoding="utf-8")
             self._phase("proposing")
             hypotheses = self.propose(report, candidates)
         self.state["running"]["plan"]["hypotheses"] = [h.__dict__ for h in hypotheses]
@@ -847,7 +847,7 @@ class Evolution:
                             f"evolve gen {gen}: adopt {len(included)} roadmap items\n\n" +
                             "\n".join(f"- {e['hypothesis']['title']}" for e in adopted if e["branch"] in included) +
                             f"\n\n{stack_entry['reason'] if stack_entry else ''}", f"evolve/g{gen}-adopt"],
-                           cwd=self.repo, capture_output=True, text=True)
+                           cwd=self.repo, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if m.returncode != 0:
             # main moved during the generation (a hand-made change) and conflicts: never leave main half-merged
             git(self.repo, "merge", "--abort", check=False)
@@ -875,7 +875,7 @@ class Evolution:
         for e in entries:
             git(wt, "clean", "-fdq", check=False)  # test debris from the previous merge must not block the next
             m = subprocess.run(["git", *GIT_ID, "merge", "--no-ff", "-q", "-m", f"adopt: {e['hypothesis']['title']}",
-                                e["branch"]], cwd=wt, capture_output=True, text=True)
+                                e["branch"]], cwd=wt, capture_output=True, text=True, encoding="utf-8", errors="replace")
             if m.returncode != 0:
                 git(wt, "merge", "--abort", check=False)
                 excluded[e["branch"]] = ("conflicts with another item; retried next generation on the new main: "
@@ -969,7 +969,7 @@ class Evolution:
         try:
             for w in winners:
                 m = subprocess.run(["git", *GIT_ID, "merge", "--no-ff", "-q", "-m", f"stack: {w['hypothesis']['title']}",
-                                    w["branch"]], cwd=wt, capture_output=True, text=True)
+                                    w["branch"]], cwd=wt, capture_output=True, text=True, encoding="utf-8", errors="replace")
                 if m.returncode != 0:
                     git(wt, "merge", "--abort", check=False)
                     entry["excluded"][w["branch"]] = "merge conflict"
@@ -997,11 +997,11 @@ class Evolution:
         if not git(self.repo, "remote", check=False):
             return {"pushed": False, "reason": "no remote"}
         p = subprocess.run(["git", "push", "--quiet", "origin", self.state["main"]], cwd=self.repo, capture_output=True,
-                           text=True, timeout=600)
+                           text=True, timeout=600, encoding="utf-8", errors="replace")
         for b in git(self.repo, "branch", "--list", "evolve/*", "--format=%(refname:short)").split():
             self._push(b, force=b.endswith("-adopt"))
         tags = subprocess.run(["git", "push", "--quiet", "origin", "--tags"], cwd=self.repo, capture_output=True,
-                              text=True, timeout=300)
+                              text=True, timeout=300, encoding="utf-8", errors="replace")
         return {"pushed": p.returncode == 0, "tags_pushed": tags.returncode == 0,
                 "detail": (p.stderr or p.stdout).strip()[-300:]}
 
@@ -1118,7 +1118,7 @@ class Evolution:
 
         with self._git_lock:
             (self.repo / "docs").mkdir(exist_ok=True)
-            (self.repo / "docs" / "ROADMAP.md").write_text(Roadmap.of_repo(self.repo).render_markdown())
+            (self.repo / "docs" / "ROADMAP.md").write_text(Roadmap.of_repo(self.repo).render_markdown(), encoding="utf-8")
             paths = [p for p in ("roadmap.yaml", "studied.yaml", "docs/ROADMAP.md") if (self.repo / p).exists()]
             git(self.repo, "add", *paths)
             if not git(self.repo, "diff", "--cached", "--name-only", check=False):
@@ -1174,7 +1174,7 @@ class Evolution:
                "features": feats, "roadmap_added": []}
         adir = self.home / "absorb"
         adir.mkdir(exist_ok=True)
-        (adir / f"{name}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1))
+        (adir / f"{name}.json").write_text(json.dumps(out, ensure_ascii=False, indent=1), encoding="utf-8")
         if rm:
             items = []
             for f in feats:
@@ -1224,7 +1224,7 @@ def detect_license(src: Path) -> str:
     for name in ("LICENSE", "LICENSE.md", "LICENSE.txt", "COPYING"):
         p = src / name
         if p.exists():
-            t = p.read_text(errors="replace")[:3000]
+            t = p.read_text(errors="replace", encoding="utf-8")[:3000]
             if "MIT License" in t or "Permission is hereby granted, free of charge" in t:
                 return "MIT"
             if "Apache License" in t:
@@ -1241,6 +1241,6 @@ def adopted_table(repo: Path) -> str:
     p = repo / "docs" / "HARNESS_REGISTRY.md"
     if not p.exists():
         return "(none)"
-    text = p.read_text()
+    text = p.read_text(encoding="utf-8")
     m = re.search(r"## Что взято и что ещё нужно взять(.*?)\n## ", text, re.S)
     return (m.group(1) if m else text[:4000]).strip()[:6000]

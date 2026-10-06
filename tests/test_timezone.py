@@ -35,13 +35,13 @@ def test_persistence_round_trip(tmp_path):
     p = tmp_path / "artel.yaml"
     cfg = {}
     assert save_timezone(cfg, "Asia/Sakhalin", p) == {"configured": "Asia/Sakhalin", "effective": "Asia/Sakhalin"}
-    assert yaml.safe_load(p.read_text())["ui"]["timezone"] == "Asia/Sakhalin"
+    assert yaml.safe_load(p.read_text(encoding="utf-8"))["ui"]["timezone"] == "Asia/Sakhalin"
     assert tz.fmt_ts(0, "%H:%M", cfg) == "11:00"
     with pytest.raises(ValueError):
         save_timezone(cfg, "Nope/Zone", p)
-    assert yaml.safe_load(p.read_text())["ui"]["timezone"] == "Asia/Sakhalin"
+    assert yaml.safe_load(p.read_text(encoding="utf-8"))["ui"]["timezone"] == "Asia/Sakhalin"
     assert save_timezone(cfg, "", p)["configured"] == ""
-    assert "timezone" not in yaml.safe_load(p.read_text())["ui"]
+    assert "timezone" not in yaml.safe_load(p.read_text(encoding="utf-8"))["ui"]
 
 
 def test_overview_has_timezone(monkeypatch):
@@ -63,7 +63,7 @@ def test_dashboard_timezone_wiring():
     import re
     from pathlib import Path
 
-    html = (Path(__file__).resolve().parent.parent / "artel" / "web" / "index.html").read_text()
+    html = (Path(__file__).resolve().parent.parent / "artel" / "web" / "index.html").read_text(encoding="utf-8")
     assert "const fmtTime=(ts,withDate)" in html and "Intl.DateTimeFormat" in html
     assert "/api/providers/timezone" in html and 'id="tz"' in html
     assert "Intl.supportedValuesOf('timeZone')" in html and 'id="tzl"' in html
@@ -97,7 +97,7 @@ def test_post_timezone_endpoint(tmp_path, monkeypatch):
         with pytest.raises(urllib.error.HTTPError) as e:
             post("Mars/Olympus")
         assert e.value.code == 400
-        assert yaml.safe_load((tmp_path / "artel.yaml").read_text())["ui"]["timezone"] == "Asia/Sakhalin"
+        assert yaml.safe_load((tmp_path / "artel.yaml").read_text(encoding="utf-8"))["ui"]["timezone"] == "Asia/Sakhalin"
     finally:
         httpd.shutdown()
         httpd.server_close()
