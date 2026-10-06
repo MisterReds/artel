@@ -594,7 +594,18 @@ class Manager:
             self.project.log.append("skills/curated", actions=curated)
         self.recover()
         if not self.root_id:
-            self.plan()
+            try:
+                self.plan()
+            except Exception as exc:  # noqa: BLE001 - a project that cannot start must say why, not crash
+                from .failures import classify
+
+                reason = str(exc)
+                kind = classify(reason)
+                status = "waiting_human" if kind in ("setup", "limit") else "error"
+                self.project.set_meta(status=status, blocked_reason=reason[:1000])
+                self.note("escalated", rationale=f"planning: {reason[:500]}")
+                self.project.log.append("project/status", status=status)
+                return status
         self.project.set_meta(status="running")
         final = "running"
         while True:
@@ -675,9 +686,24 @@ def run_goal(goal: str, config: dict, name: Optional[str] = None, stop_event: Op
     return project, Manager(kernel, project, stop_event).run()
 
 
+def continue_after_human(project: Project) -> list:
+    """A person pressed "continue": tasks waiting for them get another chance (fresh attempts)."""
+    reopened = []
+    for t in project.board.list(status=["blocked"]):
+        if t["needs_human"]:
+            project.board.update(t["id"], status="ready", needs_human=0, attempts=0, no_progress=0, backoff_until=0,
+                                 actor="human")
+            project.board.comment(t["id"], "human", "Продолжено человеком.")
+            reopened.append(t["id"])
+    if project.meta.get("blocked_reason"):
+        project.set_meta(blocked_reason="")
+    return reopened
+
+
 def resume(slug: str, config: dict, stop_event: Optional[threading.Event] = None, kernel=None) -> tuple[Project, str]:
     kernel = kernel or new_kernel(config)
     project = Project.open(slug, config)
+    continue_after_human(project)
     return project, Manager(kernel, project, stop_event).run()
 
 

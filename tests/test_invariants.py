@@ -347,3 +347,18 @@ def test_setup_errors_go_to_a_person_at_once_and_limits_wait(cfg):
     m._failed(project.board.get(task["id"]), "error: You've hit your usage limit · resets 4:20pm (UTC)")
     t = project.board.get(task["id"])
     assert t["status"] == "ready" and t["attempts"] == 1 and t["backoff_until"] > time.time() + 60
+
+
+def test_first_run_without_any_executor_explains_instead_of_crashing(cfg, monkeypatch):
+    import artel.runtimes as rt
+
+    monkeypatch.setattr(rt, "detect_runtime", lambda config, ttl=120.0: "none")
+    real = deep_merge(cfg, {"provider": "anthropic", "runtime": "auto"})
+    project, status = run_goal("first run, nothing connected", real)
+    assert status == "waiting_human" and "Провайдеры" in project.meta["blocked_reason"]
+    # after connecting something, "continue" plans and finishes the goal
+    monkeypatch.setattr(rt, "detect_runtime", lambda config, ttl=120.0: "native")
+    from artel.manager import resume
+
+    project, status = resume(project.slug, cfg)
+    assert status == "done" and not project.meta.get("blocked_reason")

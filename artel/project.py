@@ -72,7 +72,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "points": {"skill_review": False, "refine": False, "replan_shortcut": False, "difficulty": False},
         "thresholds": {"skip_learning_below": 0.25, "shortcut_min": 0.8},
     },
-    "runtime": "native",                 # native | claude_code (Claude Code CLI as the agent)
+    "runtime": "auto",                   # auto | native | claude_code | codex (auto: whatever is connected)
     "runtime_by_role": {},               # e.g. {reviewer: native}
     "claude_code": {"model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
                     "timeout_s": 2400},

@@ -180,15 +180,17 @@ window.addEventListener('hashchange',route);
 
 /* ---------- Портфель ---------- */
 async function portfolio(){
-  const draw=async()=>{const ps=await api('/api/portfolio');state.ps=ps;renderPortfolio()};
+  const draw=async()=>{const [ps,r]=await Promise.all([api('/api/portfolio'),api('/api/ready')]);state.ps=ps;state.ready=r;renderPortfolio()};
   $('#view').innerHTML='<div class="wrap" id="pf"><div class="empty">Загрузка…</div></div>';state.pfilter=state.pfilter||'all';state.pq=state.pq||'';
   await draw();timer=setInterval(draw,3000)}
+function readyBanner(){const r=state.ready;if(!r||r.runtime!=='none')return '';
+  return `<div class="alert" onclick="location.hash='#/providers'"><b>Нет подключённого исполнителя.</b> Цели не начнутся, пока не подключён Codex или Claude Code (или ключ API). Открыть «Провайдеры» →</div>`}
 function renderPortfolio(){const ps=state.ps;const att=ps.flatMap(p=>(p.attention||[]).map(a=>({...a,p})));
   const live=ps.filter(p=>p.live).length,done=ps.reduce((s,p)=>s+(p.tasks_done||0),0),tot=ps.reduce((s,p)=>s+(p.tasks_total||0),0);
   const cost=ps.reduce((s,p)=>s+(p.cost_usd||0),0),agents=ps.reduce((s,p)=>s+(p.active_workers||0),0);
   const stages=['all',...new Set(ps.map(p=>p.stage))];
   const shown=ps.filter(p=>(state.pfilter==='all'||p.stage===state.pfilter)&&(!state.pq||(p.name+' '+p.goal).toLowerCase().includes(state.pq)));
-  $('#pf').innerHTML=`<div class="kpis">
+  $('#pf').innerHTML=`${readyBanner()}<div class="kpis">
     <div class="kpi"><b>${ps.length}</b><span>проектов</span></div><div class="kpi"><b>${live}</b><span>работают сейчас</span></div>
     <div class="kpi"><b>${agents}</b><span>агентов в работе</span></div><div class="kpi"><b>${done}/${tot}</b><span>задач выполнено</span></div>
     <div class="kpi"><b style="color:${att.length?'var(--bad)':'inherit'}">${att.length}</b><span>требуют внимания</span></div><div class="kpi"><b>${money(cost)}</b><span>оценка стоимости</span></div></div>
@@ -222,6 +224,7 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
   state.v=v;const m=v.meta,st=v.stats,u=m.usage;const tasks=v.board.tasks.filter(t=>t.kind!=='goal'),root=v.board.tasks.find(t=>t.kind==='goal');
   const by=s=>tasks.filter(t=>t.status===s);const si=STEPS.indexOf(st.stage);
   $('#pm').innerHTML=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><a href="#/portfolio">← Портфель</a></div>
+  ${m.blocked_reason?`<div class="alert"><b>Проект не может продолжить:</b> ${esc(m.blocked_reason)} <a href="#/providers">Провайдеры →</a> · после исправления нажмите «Продолжить».</div>`:''}
   <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px"><div style="font-size:20px;font-weight:600;flex:1;min-width:200px">${esc(m.name)}</div>
     <span class="badge ${st.stage}">${esc(STAGE[st.stage]||st.stage)}</span>
     ${v.live?'<button id="stop">Стоп</button>':m.status==='done'?'':'<button id="resume">Продолжить</button>'}<button class="feedbtn" id="openfeed">Лента</button></div>
@@ -299,7 +302,7 @@ function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter
 
 /* ---------- Провайдеры ---------- */
 async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div class="empty">Загрузка…</div></div>';
-  const RT={native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)'};
+  const RT={auto:'Автоматически — что подключено (рекомендуется)',native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)'};
   const draw=async()=>{const o=await api('/api/providers');const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
    const st=(ok,on,off)=>`<span class="st ${ok?'on':'off'}">${ok?on:off}</span>`;
    const I=o.installs||{};

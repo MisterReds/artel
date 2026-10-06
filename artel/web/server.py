@@ -101,8 +101,11 @@ class Runner:
     def resume(self, slug: str) -> None:
         if slug in self.active:
             return
+        from ..manager import continue_after_human
+
         stop = threading.Event()
         project = Project.open(slug, self.config)
+        continue_after_human(project)
         self._spawn(slug, stop, lambda: self._drive(project, stop))
 
     def _spawn(self, slug: str, stop: threading.Event, fn) -> None:
@@ -218,6 +221,10 @@ def make_handler(runner: Runner):
                     self._static("/".join(parts[1:]))
                 elif parts == ["favicon.ico"] or parts == ["favicon.svg"]:
                     self._static("favicon.svg")
+                elif parts == ["api", "ready"]:
+                    from ..runtimes import detect_runtime
+
+                    self._json({"runtime": detect_runtime(runner.config)})
                 elif parts == ["api", "providers"]:
                     from ..providers import overview
 

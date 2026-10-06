@@ -27,7 +27,7 @@ from .tools import installed_by_artel, resolve
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 ROLES = ["manager", "planner", "worker", "tester", "reviewer", "auditor", "librarian", "refiner", "evolver", "absorber"]
-RUNTIMES = ["native", "claude_code", "codex"]
+RUNTIMES = ["auto", "native", "claude_code", "codex"]
 KEY_VARS = {"ANTHROPIC_API_KEY": "Anthropic API", "OPENAI_API_KEY": "OpenAI API", "OPENROUTER_API_KEY": "OpenRouter",
             "DEEPSEEK_API_KEY": "DeepSeek"}
 
@@ -168,7 +168,9 @@ def local_status(config: dict) -> dict:
 
 
 def routing(config: dict) -> dict:
-    return {"runtime": config.get("runtime", "native"), "runtime_by_role": config.get("runtime_by_role") or {},
+    from .runtimes import detect_runtime
+
+    return {"runtime": config.get("runtime", "auto"), "auto_resolves_to": detect_runtime(config, ttl=0), "runtime_by_role": config.get("runtime_by_role") or {},
             "roles": ROLES, "runtimes": RUNTIMES,
             "models": {"claude_code": (config.get("claude_code") or {}).get("model", "sonnet"),
                        "codex": (config.get("codex") or {}).get("model") or ""}}

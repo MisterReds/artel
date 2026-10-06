@@ -68,6 +68,9 @@ class AnthropicProvider:
             raise LLMError(f"API error {exc.status_code}: {exc}") from exc
         except a.APIConnectionError as exc:
             raise LLMError(f"connection error: {exc}") from exc
+        except TypeError as exc:  # the SDK found no credentials at all
+            raise LLMError("API key not set: ANTHROPIC_API_KEY is empty — set it in the environment, or connect a "
+                           "subscription on the «Провайдеры» page") from exc
 
         blocks = []
         for b in resp.content:
