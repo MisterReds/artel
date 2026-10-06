@@ -2,9 +2,16 @@
 <html lang="ru">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Artel</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
+<meta name="theme-color" content="#B5522B">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Artel">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="/static/fonts/fonts.css">
 <style>
 :root{
@@ -111,10 +118,15 @@ button:disabled{opacity:.45;cursor:default}
 .devcode{font:600 28px/1.2 var(--mono);letter-spacing:.12em;color:var(--brand);background:var(--brand-soft);border-radius:10px;
   padding:10px 14px;text-align:center;user-select:all}
 .pvroles{max-width:760px}.pvroles select{width:auto;min-width:300px}
+@media (max-width:720px){.pvroles select{min-width:0;width:100%;max-width:100%}.pvroles td:first-child{white-space:nowrap}}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}.kv span:nth-child(odd){color:var(--muted)}
 .ri{display:inline-flex;width:15px;height:15px;vertical-align:-2px;margin-right:4px;color:var(--muted)}.ri svg{width:100%;height:100%}
 .worker .role{display:flex;align-items:center;gap:2px}.worker .ri{color:var(--brand)}
 .empty .mark{width:56px;height:56px;color:var(--line);margin:0 auto 12px;display:block}
+.netwarn{display:none;border-left:3px solid var(--warn);background:var(--panel);padding:8px 16px;font-size:13px;border-bottom:1px solid var(--line)}
+.netwarn.show{display:block}
+#logout{display:none}
+@supports(padding:env(safe-area-inset-top)){header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}}
 </style>
 </head>
 <body>
@@ -131,7 +143,10 @@ button:disabled{opacity:.45;cursor:default}
   <button id="updbtn" style="display:none" title="Доступно обновление Artel"></button>
   <button class="primary" id="newbtn">+ Новая цель</button>
   <button id="theme" title="Тема">◐</button>
+  <button id="logout" title="Выйти на этом устройстве">Выйти</button>
 </header>
+<div class="netwarn" id="netwarn" role="alert"><b>Соединение без HTTPS.</b> Токен и сессия идут по сети открытым текстом —
+  подключите HTTPS (Caddy или Tailscale, см. docs/REMOTE.md).</div>
 <div id="view"></div>
 <dialog id="dlg"><div class="dlg" id="dlgbody"></div></dialog>
 <script>
@@ -153,7 +168,14 @@ function roleKey(r){r=(r||'').toLowerCase();for(const [k,re] of [['reviewer',/re
   ['absorber',/absorb/],['human',/human|user|человек/]])if(re.test(r))return k;return 'worker'}
 function ri(role){return `<span class="ri" title="${esc(role||'')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${RI[roleKey(role)]}</svg></span>`}
 const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
-const api=(p,o)=>fetch(p,o).then(r=>r.json());
+// remote mode: a lost session (expired, token rotated) sends the app back to the login page
+const authed=r=>{if(r.status===401){location.replace('/login');throw new Error('login required')}return r};
+const api=(p,o)=>fetch(p,o).then(authed).then(r=>r.json());
+fetch('/api/auth/status').then(r=>r.json()).then(s=>{
+  if(s.insecure&&location.protocol!=='https:'&&!/^(localhost|127\.|\[::1\])/.test(location.hostname))$('#netwarn').classList.add('show');
+  if(s.remote){$('#logout').style.display='inline-block';$('#logout').onclick=async()=>{await fetch('/api/auth/logout',{method:'POST'});location.replace('/login')}}
+}).catch(()=>{});
+if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
 const COLS=[['todo','Ожидают'],['ready','Готовы'],['running','В работе'],['review','Ревью'],['done','Готово'],['blocked','Блок']];
 const STAGE={planning:'планирование',execution:'исполнение',review:'ревью',audit:'аудит цели',done:'цель достигнута',waiting_human:'ждёт человека',stopped:'остановлен',paused_budget:'бюджет исчерпан',needs_review:'нужна проверка',error:'ошибка',running:'в работе'};
@@ -309,7 +331,7 @@ function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter
 /* ---------- Провайдеры ---------- */
 async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div class="empty">Загрузка…</div></div>';
   const RT={auto:'Автоматически — что подключено (рекомендуется)',native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)'};
-  const draw=async()=>{const o=await api('/api/providers');const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
+  const draw=async()=>{const [o,tg]=await Promise.all([api('/api/providers'),api('/api/telegram')]);const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
    const st=(ok,on,off)=>`<span class="st ${ok?'on':'off'}">${ok?on:off}</span>`;
    const I=o.installs||{};
    const inst=(name,s,label)=>{const j=I[name]||{};
@@ -343,6 +365,9 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       <div class="kv"><span>что это</span><span>быстрые решения в узких местах (сложность задачи, нужен ли библиотекарь, разбор застрявшей задачи)</span>
       ${o.system_one.connected?`<span>источник</span><span><code>${esc(o.system_one.name)}</code></span><span>точки</span><span>${esc(o.system_one.points.join(', ')||'не включены')}</span>`:''}</div>
       ${o.system_one.connected?'':'<p class="stat">Своя модель пока не подключена — без неё Artel работает как обычно. Подключение: docs/SYSTEM_ONE.md.</p>'}</div>
+    <div class="pvc"><h3>${ri('human')}Telegram${st(tg.paired>0,'чатов: '+tg.paired,tg.token_set?'не привязан':'не настроен')}</h3>
+      <div class="kv"><span>что даёт</span><span>цели, статус, ответы проектам и уведомления с телефона</span><span>токен</span><span>${tg.token_set?'задан':'не задан'} · <code>${esc(tg.token_env)}</code></span></div>
+      ${tg.token_set?(tg.code?`<p>Отправьте боту в Telegram:</p><div class="devcode">/pair ${esc(tg.code)}</div><p class="stat">Код одноразовый, действует 15 минут.</p>`:'<button id="tg-pair">Показать код привязки</button>'):'<p class="stat">Создайте бота у @BotFather (/newbot) и задайте его токен в переменной окружения ARTEL_TELEGRAM_TOKEN, затем перезапустите <code>artel web</code>. Токен не вводится здесь и нигде не сохраняется.</p>'}</div>
    </div>
    <h2>Кто какую роль выполняет</h2>
    <div class="tablewrap pvroles"><table><tr><th>роль</th><th>рантайм</th></tr>
@@ -358,6 +383,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    const on=(id,fn)=>{const el=$('#'+id);if(el)el.onclick=fn};
    document.querySelectorAll('[data-inst]').forEach(b=>b.onclick=async()=>{b.disabled=true;await api('/api/providers/install/'+b.dataset.inst,{method:'POST'});state.inst=true;draw()});
    document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!confirm('Удалить из папки Artel?'))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST'});draw()});
+   on('tg-pair',async()=>{await api('/api/telegram/pair',{method:'POST'});draw()});
    on('cx-login',async()=>{$('#cx-login').disabled=true;await api('/api/providers/codex/login',{method:'POST'});draw()});
    on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST'});draw()});
    on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST'});draw()});

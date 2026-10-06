@@ -226,10 +226,11 @@ items:
   - id: W2-remote-and-notify
     wave: 2
     mode: design
-    status: planned
+    status: done
+    result: "Telegram bot (control, answers, notifications, one-time pairing) and `artel web --remote`: token login (scrypt hash only, rotatable), server-side HttpOnly SameSite=Strict sessions, per-IP rate limit, HTTPS recipes (Caddy, Tailscale) with an insecure-connection banner; installable PWA (manifest, icons, shell-only service worker)"
     title: Use from the phone — authenticated remote dashboard and notifications (Telegram / webhook)
     source: {harness: Hermes Agent / OpenClaw, repo: NousResearch/hermes-agent, paths: [gateway/]}
-    target: [artel/web/server.py]
+    target: [artel/web/server.py, artel/web/auth.py, artel/web/static/sw.js]
     plan: >-
       Optional remote mode: the dashboard binds beyond localhost only with a login token (generated, shown once,
       stored hashed) and HTTPS via a reverse proxy recipe. Notifications on waiting_human, done, update available:
