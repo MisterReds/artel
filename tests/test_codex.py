@@ -107,3 +107,18 @@ def test_device_code_login_status_and_logout(env, tmp_path):
 def test_codex_runtime_is_a_plugin(env):
     cfg, _, _ = env
     assert new_kernel(cfg).get("runtime:codex")
+
+
+def test_codex_policy_stops_disallowed_commands(env, monkeypatch):
+    cfg, project, tmp = env
+    monkeypatch.setenv("FAKE_CODEX_CMD", "cat .env")
+    t0 = time.time()
+    out, ctx = _run(cfg, project)
+    assert time.time() - t0 < 4 and ctx.terminal[0] == "task_block" and ctx.terminal[1]["needs_human"]
+    assert "cat .env" in ctx.terminal[1]["reason"]
+    assert any(e["kind"] == "policy/blocked" and e["runtime"] == "codex" for e in project.log.read())
+    monkeypatch.setenv("FAKE_CODEX_CMD", "rm -rf /")
+    monkeypatch.setenv("FAKE_CODEX_LAZY", "1")
+    out, ctx = _run(cfg, project)
+    calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text().splitlines()]
+    assert ctx.terminal is None and calls[-1][-3:] == ["resume", "th-1", "-"]

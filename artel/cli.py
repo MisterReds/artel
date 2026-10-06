@@ -19,6 +19,7 @@ import threading
 import time
 
 from .manager import human_comment, new_kernel, resume, run_goal
+from .tz import fmt_ts
 from .project import Project, list_projects, load_config
 
 ICONS = {"todo": "·", "ready": "○", "running": "▶", "review": "◎", "done": "✓", "blocked": "✗", "cancelled": "–"}
@@ -56,9 +57,9 @@ def print_board(project: Project) -> None:
               f"{t['title']}{flag}  (attempts {t['attempts']})")
 
 
-def _event_line(e: dict) -> str:
+def _event_line(e: dict, cfg: dict | None = None) -> str:
     k = e["kind"]
-    t = time.strftime("%H:%M:%S", time.localtime(e["ts"]))
+    t = fmt_ts(e["ts"], "%H:%M:%S", cfg)
     who = e.get("actor") or e.get("worker") or ""
     if k == "tool/call":
         body = f"{e['tool']} {json.dumps(e['input'], ensure_ascii=False)[:160]}"
@@ -136,12 +137,13 @@ def cmd_status(args) -> int:
 
 
 def cmd_log(args) -> int:
-    project = Project.open(args.project, load_config())
+    cfg = load_config()
+    project = Project.open(args.project, cfg)
     kinds = set(args.kinds.split(",")) if args.kinds else None
     after = 0
     while True:
         for e in project.log.read(after=after, kinds=kinds):
-            print(_event_line(e))
+            print(_event_line(e, cfg))
             after = e["seq"]
         if not args.follow:
             return 0
@@ -164,7 +166,8 @@ def cmd_web(args) -> int:
 
 
 def cmd_skills(args) -> int:
-    store = new_kernel(load_config()).get("skills")
+    cfg = load_config()
+    store = new_kernel(cfg).get("skills")
     a = args.action
     if a == "list":
         for s in store.list(args.arg or ""):
@@ -184,7 +187,7 @@ def cmd_skills(args) -> int:
         print(f"{a}ned {args.arg}")
     elif a == "ledger":
         for e in store.ledger(args.arg):
-            print(f"{e['id']}  {time.strftime('%Y-%m-%d %H:%M', time.localtime(e['ts']))}  {e['skill']:<36} "
+            print(f"{e['id']}  {fmt_ts(e['ts'], '%Y-%m-%d %H:%M', cfg)}  {e['skill']:<36} "
                   f"{e['action']:<14} {e['actor']}  {e.get('reason', '')}")
     elif a == "rollback":
         print(store.rollback(args.arg))

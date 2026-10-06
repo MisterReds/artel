@@ -20,6 +20,7 @@ import uuid
 from pathlib import Path
 from typing import Optional
 
+from .. import policy
 from ..agent import LoopDetector, Outcome, _short
 from ..prompts import CONTINUATION
 from ..tooling import ToolContext
@@ -130,6 +131,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
             killer = threading.Timer(float(cc["timeout_s"]), proc.kill)
             killer.start()
             failure = ""
+            blocked = ""
             try:
                 for line in proc.stdout:
                     if stop_event is not None and stop_event.is_set():
@@ -151,6 +153,20 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                     elif typ in ("turn.failed", "error"):
                         err = ev.get("error") or {}
                         failure = (err.get("message") if isinstance(err, dict) else str(err)) or ev.get("message", "")
+                    elif typ == "item.started" and (ev.get("item") or {}).get("type") == "command_execution":
+                        # Codex has no pre-exec hook: stop the process as soon as a disallowed command starts
+                        cmd = (ev.get("item") or {}).get("command", "")
+                        verdict = policy.evaluate(cmd, project.root)
+                        if verdict.decision != "allow":
+                            project.log.append("policy/blocked", actor=actor, task_id=task_id, command=cmd,
+                                               decision=verdict.decision, rule=verdict.rule.id,
+                                               justification=verdict.justification, runtime="codex")
+                            if verdict.decision == "prompt":
+                                ctx.terminal = policy.prompt_terminal(verdict, cmd)
+                            else:
+                                blocked = (f"The command `{cmd}` was blocked by policy ({verdict.rule.id}): "
+                                           f"{verdict.justification or 'forbidden'}. It was not run; choose another way.")
+                            proc.terminate()
                     elif typ == "item.completed":
                         if _item(project, ctx, out, detector, ev.get("item") or {}, actor, task_id, model_label):
                             proc.terminate()
@@ -181,7 +197,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                 break
             project.log.append("agent/continuation", actor=actor, task_id=task_id, idle_turns=attempt + 1,
                                runtime="codex")
-            prompt = CONTINUATION
+            prompt = (blocked + "\n\n" if blocked else "") + CONTINUATION
         else:
             out.status, out.error = "stalled", f"no terminal tool after {cc['max_resumes']} resumes"
     finally:

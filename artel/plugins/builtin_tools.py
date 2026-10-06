@@ -8,6 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
+from .. import policy
 from ..kernel import ToolSpec
 from ..tooling import ToolContext, ToolError, window_text
 
@@ -58,6 +59,15 @@ def _bound(ctx: ToolContext, text: str, tool: str) -> str:
 
 
 def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
+    try:
+        verdict = policy.evaluate(command, ctx.project.root)
+    except policy.PolicyError as exc:
+        raise ToolError(f"command policy is invalid, bash disabled until fixed: {exc}")
+    if verdict.decision == "forbidden":
+        raise ToolError(f"command blocked by policy ({verdict.rule.id}): {verdict.justification or 'forbidden'}; command: {command}")
+    if verdict.decision == "prompt":
+        ctx.terminal = policy.prompt_terminal(verdict, command)
+        return f"command NOT run: policy requires human approval ({verdict.justification}); task sent to a person"
     timeout = int(timeout or ctx.kernel.config.get("tool_timeout_s", 300))
     env = {**os.environ, "ARTEL_SHARED": str(ctx.project.shared), "ARTEL_WORKSPACE": str(ctx.workspace)}
     try:

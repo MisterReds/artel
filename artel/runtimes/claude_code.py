@@ -16,6 +16,7 @@ from __future__ import annotations
 import json
 import os
 import secrets
+import shlex
 import subprocess
 import sys
 import threading
@@ -24,6 +25,7 @@ import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Optional
 
+from .. import policy
 from ..agent import LoopDetector, Outcome, _short, execute_tool
 from ..prompts import CONTINUATION
 from ..tooling import ToolContext
@@ -112,6 +114,26 @@ class ToolBridge:
         self.httpd.server_close()
 
 
+def policy_hook_settings(project_root) -> str:
+    """``--settings`` JSON: a PreToolUse hook that runs ``python -m artel.policy`` on every Bash command."""
+    cmd = f"{shlex.quote(sys.executable)} -m artel.policy {shlex.quote(str(project_root))}"
+    return json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": cmd}]}]}})
+
+
+def _policy_gate(project, ctx, actor: str, task_id, tool_input: dict, proc) -> bool:
+    """Log forbidden/prompt Bash commands; a prompt verdict ends the run as needs_human. True when not allowed."""
+    command = str(tool_input.get("command") or "")
+    verdict = policy.evaluate(command, project.root)
+    if verdict.decision == "allow":
+        return False
+    project.log.append("policy/blocked", actor=actor, task_id=task_id, command=command, decision=verdict.decision,
+                       rule=verdict.rule.id, justification=verdict.justification)
+    if verdict.decision == "prompt" and not ctx.terminal:
+        ctx.terminal = policy.prompt_terminal(verdict, command)
+        proc.terminate()
+    return True
+
+
 def _normalize(block: dict) -> Optional[dict]:
     t = block.get("type")
     if t == "text":
@@ -171,13 +193,15 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
             from ..tools import resolve
 
             args = [resolve(cc["binary"]) or cc["binary"], "-p", prompt, "--model", cc["model"], "--output-format", "stream-json", "--verbose",
-                    "--mcp-config", str(cfg_path), "--strict-mcp-config", "--append-system-prompt", system + note,
+                    "--mcp-config", str(cfg_path), "--strict-mcp-config",
+                    *([] if session_id else ["--append-system-prompt", system + note]),  # a resumed session keeps it
                     "--permission-mode", cc["permission_mode"], "--add-dir", str(project.shared),
                     *[x for r in getattr(project, "refs", []) for x in ("--add-dir", str(r))],
                     "--allowedTools", *[t for t in BUILTIN_TOOLS if role not in READONLY_ROLES or t not in WRITE_TOOLS],
                     "mcp__artel"]
             if role in READONLY_ROLES:
                 args += ["--disallowedTools", *WRITE_TOOLS]
+            args += ["--settings", policy_hook_settings(project.root)]
             eff = ctx.state.get("effort") or cc.get("effort")
             if eff:
                 args += ["--effort", eff]
@@ -225,6 +249,8 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                                     if verdict == "stop":
                                         out.status, out.error = "stalled", f"loop: repeated tool call {b['name']}"
                                         proc.terminate()
+                                if b["name"] == "Bash" and _policy_gate(project, ctx, actor, task_id, b["input"], proc):
+                                    out.digest.append(f"POLICY blocked: {_short(b['input'])}")
                                 out.tool_calls += 1
                                 pending[b["id"]] = (b["name"], b["input"])
                                 project.log.append("tool/call", actor=actor, task_id=task_id, tool=b["name"],

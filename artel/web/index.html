@@ -160,6 +160,12 @@ const STAGE={planning:'планирование',execution:'исполнение
 const STEPS=['planning','execution','review','audit','done'];
 const ago=ts=>{const s=Math.max(0,Date.now()/1000-ts);return s<60?`${s|0} с назад`:s<3600?`${s/60|0} мин назад`:s<86400?`${s/3600|0} ч назад`:`${s/86400|0} дн назад`};
 const money=v=>v==null?'—':'$'+(v<1?v.toFixed(3):v.toFixed(2));
+let TZ='';
+const fmtTime=(ts,withDate)=>{const o=withDate?{dateStyle:'short',timeStyle:'medium'}:{timeStyle:'medium'};
+  try{return new Intl.DateTimeFormat(undefined,TZ?{...o,timeZone:TZ}:o).format(new Date(ts*1000))}
+  catch(e){return new Intl.DateTimeFormat(undefined,o).format(new Date(ts*1000))}};
+const fmtT=ts=>fmtTime(ts,false), fmtDT=ts=>fmtTime(ts,true);
+fetch('/api/providers').then(r=>r.json()).then(j=>{TZ=(j.timezone||{}).configured||''}).catch(()=>{});
 const num=v=>v==null?'—':Number(v).toLocaleString();
 const pct=v=>v==null?'—':Math.round(v*100)+'%';
 let timer=null, es=null, state={};
@@ -254,7 +260,7 @@ async function showFile(p){const r=await api(`/api/projects/${encodeURIComponent
 const MOVE={todo:'ожидает',ready:'готова к работе',running:'в работе',review:'на ревью',done:'принята',blocked:'заблокирована',cancelled:'отменена'};
 function showTask(id){const t=state.v.board.tasks.find(x=>x.id===id);if(!t)return;
   dlg(`<h3>${esc(t.title)} <span class="badge">${esc(MOVE[t.status]||t.status)}</span></h3><div class="stat">${t.id} · @${esc(t.assignee||'—')} · попыток ${t.attempts} · зависит от: ${t.depends_on.join(', ')||'—'}</div>
-  <h2>Путь задачи</h2><div class="tl">${(t.timeline||[]).map(s=>`<div><span class="ts">${new Date(s.ts*1000).toLocaleTimeString()}</span><span>${esc(MOVE[s.to]||s.to)}</span><span class="stat">${esc(s.actor||'')}</span></div>`).join('')}</div>
+  <h2>Путь задачи</h2><div class="tl">${(t.timeline||[]).map(s=>`<div><span class="ts">${fmtT(s.ts)}</span><span>${esc(MOVE[s.to]||s.to)}</span><span class="stat">${esc(s.actor||'')}</span></div>`).join('')}</div>
   <h2>Задача</h2><pre>${esc(t.body)}</pre><h2>Критерии приёмки</h2><pre>${esc(t.criteria.map(c=>'• '+c).join('\n'))}</pre>
   ${t.checks.length?`<h2>Гейты</h2><pre>${esc(t.checks.join('\n'))}</pre>`:''}
   ${t.result?`<h2>Результат</h2><pre>${esc(t.result)}</pre>`:''}${t.evidence?`<h2>Доказательства</h2><pre>${esc(t.evidence)}</pre>`:''}
@@ -297,7 +303,7 @@ function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter
   if(f&&!`${e.kind} ${who} ${h} ${b}`.toLowerCase().includes(f))return;
   const cls=(e.is_error||(e.kind==='review/verdict'&&!e.passed)||e.kind.endsWith('error'))?'err':(e.kind==='audit/verdict'&&e.complete)?'good':'';
   const d=document.createElement('div');d.className='ev '+cls;
-  d.innerHTML=`<div class="k">#${e.seq} ${new Date(e.ts*1000).toLocaleTimeString()} · ${esc(e.kind)}</div><span class="a">${who||e.role?ri(e.role||who):''}${esc(who)}</span> ${esc(h)} <span>${esc(b)}</span>`;
+  d.innerHTML=`<div class="k">#${e.seq} ${fmtT(e.ts)} · ${esc(e.kind)}</div><span class="a">${who||e.role?ri(e.role||who):''}${esc(who)}</span> ${esc(h)} <span>${esc(b)}</span>`;
   const stick=box.scrollTop+box.clientHeight>=box.scrollHeight-40;box.appendChild(d);if(stick)box.scrollTop=box.scrollHeight}
 
 /* ---------- Провайдеры ---------- */
@@ -315,7 +321,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    const cx=o.codex,cc=o.claude_code,r=o.routing;
    const login=L.phase==='waiting'?`<p>Откройте ссылку, войдите в аккаунт ChatGPT и введите код:</p>
       <a href="${esc(L.url)}" target="_blank" rel="noopener">${esc(L.url)}</a><div class="devcode">${esc(L.code)}</div>
-      <p class="stat">Код действует до ${new Date(L.expires_at*1000).toLocaleTimeString()}. Страница обновится сама после входа.</p>
+      <p class="stat">Код действует до ${fmtT(L.expires_at)}. Страница обновится сама после входа.</p>
       <button id="cx-cancel">Отменить</button>`
      :L.phase==='starting'?'<p class="stat">Запрашиваю код…</p>'
      :L.phase==='error'?`<pre>${esc(L.error||'')}</pre>`:L.phase==='done'?'<p style="color:var(--ok)">Вход выполнен.</p>':'';
@@ -345,6 +351,8 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    </table></div>
    <div class="kv" style="margin-top:10px;max-width:520px"><span>модель Claude Code</span><input id="m-cc" value="${esc(r.models.claude_code||'')}" placeholder="sonnet">
      <span>модель Codex</span><input id="m-cx" value="${esc(r.models.codex||'')}" placeholder="по умолчанию аккаунта"></div>
+   <div class="kv" style="margin-top:10px;max-width:520px"><span>часовой пояс</span><input id="tz" value="${esc((o.timezone||{}).configured||'')}" placeholder="${esc((o.timezone||{}).effective||'Europe/Moscow')}" list="tzl"><datalist id="tzl">${(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]).map(z=>`<option value="${z}">`).join('')}</datalist></div>
+   <p class="stat">IANA-имя, например Asia/Sakhalin; пусто — часовой пояс системы (сейчас ${esc((o.timezone||{}).effective||'')}). Время в панели, CLI и уведомлениях показывается в нём.</p>
    <p><button class="primary" id="rt-save">Сохранить</button> <span class="stat" id="rt-msg"></span></p>
    <p class="stat">Сохраняется в ARTEL_HOME/artel.yaml и действует для новых запусков. Разные подписки на разных ролях разносят нагрузку по лимитам.</p>`;
    const on=(id,fn)=>{const el=$('#'+id);if(el)el.onclick=fn};
@@ -355,6 +363,9 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST'});draw()});
    on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});
      const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value}};
+     const tzr=await fetch('/api/providers/timezone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timezone:$('#tz').value})});
+     if(!tzr.ok){const j=await tzr.json().catch(()=>({}));$('#rt-msg').textContent='Часовой пояс не сохранён: '+(j.error||tzr.status);return}
+     TZ=(await tzr.json()).configured||'';
      await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
      const used=new Set([body.runtime,...Object.values(byRole)]);const miss=[];
      if(used.has('codex')&&!cx.installed)miss.push('Codex CLI');if(used.has('claude_code')&&!cc.installed)miss.push('Claude Code CLI');
@@ -431,7 +442,7 @@ async function skills(){const sk=await api('/api/skills');
   $('#view').innerHTML=`<div class="wrap"><p class="stat">Общая библиотека всех проектов. Агенты создают и правят только свои скиллы; каждая правка в журнале и откатывается.</p><div class="tablewrap"><table><tr><th>скилл</th><th>категория</th><th>источник</th><th>состояние</th><th class="n">использований</th><th>описание</th></tr>
   ${sk.map(s=>`<tr><td><a data-k="${esc(s.name)}" style="cursor:pointer">${esc(s.name)}</a>${s.pinned?' 📌':''}</td><td>${esc(s.category)}</td><td>${esc(s.origin)}</td><td>${esc(s.state)}</td><td class="n">${s.use_count}</td><td>${esc(s.description.slice(0,200))}</td></tr>`).join('')||'<tr><td colspan="6" class="stat">пусто</td></tr>'}</table></div></div>`;
   document.querySelectorAll('[data-k]').forEach(a=>a.onclick=async()=>{const r=await api(`/api/skills/${encodeURIComponent(a.dataset.k)}`);
-    dlg(`<h3>${esc(a.dataset.k)}</h3><pre>${esc(r.text)}</pre><h2>История изменений</h2>${r.ledger.map(e=>`<div class="ev">${new Date(e.ts*1000).toLocaleString()} · ${esc(e.action)} · ${esc(e.actor)} · ${esc(e.reason||'')}</div>`).join('')}`)})}
+    dlg(`<h3>${esc(a.dataset.k)}</h3><pre>${esc(r.text)}</pre><h2>История изменений</h2>${r.ledger.map(e=>`<div class="ev">${fmtDT(e.ts)} · ${esc(e.action)} · ${esc(e.actor)} · ${esc(e.reason||'')}</div>`).join('')}`)})}
 route();
 
 // --- self-update -----------------------------------------------------------------------------------
@@ -439,7 +450,7 @@ async function checkUpdate(force){const u=await api('/api/update'+(force?'?check
   const busy=u.state&&u.state.phase==='restart_pending';
   if(u.available||busy){b.style.display='';b.className='primary';b.textContent=busy?'Перезапуск…':`Обновление (${u.behind})`}else{b.style.display='none'}
   return u}
-function updDialog(u){const st=u.state||{};const when=t=>new Date(t*1000).toLocaleString();
+function updDialog(u){const st=u.state||{};const when=t=>fmtDT(t);
   const rows=(u.commits||[]).map(c=>`<tr><td class="stat">${esc(c.date.slice(0,16).replace('T',' '))}</td><td>${esc(c.subject)}</td></tr>`).join('');
   const done=(u.roadmap_done||[]).map(r=>`<li><b>${esc(r.id)}</b> — ${esc(r.title)} <span class="stat">из ${esc(r.from)}</span></li>`).join('');
   const hist=(u.history||[]).slice().reverse().map(h=>`<li class="stat">${when(h.ts)} · ${esc(h.action)} ${esc((h.from||'').slice(0,8))} → ${esc((h.to||'').slice(0,8))}</li>`).join('');

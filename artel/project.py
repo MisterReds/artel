@@ -39,9 +39,16 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "default": "claude-opus-5-5",
     },
     "effort": {
-        "planner": "high", "manager": "high", "auditor": "high", "worker": "high",
-        "reviewer": "medium", "librarian": "low", "refiner": "medium",
+        "planner": "high", "manager": "high", "auditor": "medium", "worker": "high",
+        "reviewer": "medium", "librarian": "low", "refiner": "low",
     },
+    "roles": {                           # cost control for coordination roles (all overridable)
+        "cheap_model": "claude-sonnet-5-5",   # used for cheap_roles on the anthropic provider when
+        "cheap_roles": ["librarian", "refiner", "auditor"],  # `models` has no explicit entry for the role
+        "skip_on_easy": True,            # skip the goal audit when the whole run was small and clean
+        "easy_max_tasks": 2,             # easy run: at most this many tasks...
+        "easy_max_tool_calls": 15,       # ...at most this many worker tool calls in total...
+    },                                   # ...every task accepted on its first attempt, no failures at all
     "fallbacks": True,                   # server-side refusal fallbacks on Claude
     "max_tokens": 16000,
     "budgets": {
@@ -267,6 +274,10 @@ class Project:
         if persona and persona.model:
             return persona.model
         models = self.config["models"]
+        roles = self.config.get("roles") or {}
+        if role not in models and role in roles.get("cheap_roles", ()) and roles.get("cheap_model") \
+                and self.config.get("provider", "anthropic") == "anthropic":
+            return roles["cheap_model"]  # only where the model name is valid: other providers keep their default
         return models.get(role, models["default"])
 
     def effort_for(self, role: str, persona: Optional[Persona] = None) -> str:

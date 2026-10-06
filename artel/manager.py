@@ -32,6 +32,14 @@ from .runtimes import run_agent
 from .snapshot import Snapshot
 from .project import Persona, Project, persona_from_dict
 from .tooling import ToolContext, window_text
+from .tz import fmt_ts, zone_name
+
+# Size bounds for context handed to the reviewer / auditor (head+tail windows keep the verifying lines)
+REVIEW_SUMMARY_CHARS = 3000
+REVIEW_EVIDENCE_CHARS = 4000
+GATE_OUTPUT_CHARS = 1500
+REVIEW_GATES_CHARS = 5000
+AUDIT_RESULT_CHARS = 1200
 
 TICK_S = 0.5
 BACKOFF_BASE_S = 10
@@ -67,6 +75,7 @@ class Manager:
         self.review_retries: dict[str, int] = {}
         self.failures_since_refine = 0
         self.run_failures = 0  # never reset; gates the final refine
+        self.tool_calls = 0    # worker tool calls over the whole run; with run_failures it defines an "easy" run
         self.snapshots: dict[str, str] = {}  # task id -> tree hash of shared/ before the pending attempt
         self.snapper = Snapshot(project.root / "snapshot.git", project.shared)
         self.last_refine = 0.0
@@ -239,10 +248,10 @@ class Manager:
 
     def job_review(self, task: dict) -> tuple[list, Outcome]:
         gates = self.run_gates(task)
-        gate_text = "\n".join(f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], 1500)}" for g in gates) \
-            or "(no automated gates)"
-        user = (f"{self.task_card(task)}\n\n<submission by=\"{task['assignee']}\">\n<summary>\n{task['result']}\n"
-                f"</summary>\n<evidence>\n{task['evidence']}\n</evidence>\n</submission>\n\n"
+        gate_text = window_text("\n".join(f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], GATE_OUTPUT_CHARS)}"
+                                         for g in gates) or "(no automated gates)", REVIEW_GATES_CHARS)
+        user = (f"{self.task_card(task)}\n\n<submission by=\"{task['assignee']}\">\n<summary>\n{window_text(task['result'] or '', REVIEW_SUMMARY_CHARS)}\n"
+                f"</summary>\n<evidence>\n{window_text(task['evidence'] or '', REVIEW_EVIDENCE_CHARS)}\n</evidence>\n</submission>\n\n"
                 f"<gate_results>\n{gate_text}\n</gate_results>\n\nReview it now.")
         ctx = ToolContext(self.kernel, self.project, role="reviewer", workspace=self.project.shared, task=task)
         out = run_agent(self.kernel, self.project, role="reviewer", system=prompts.REVIEWER, first_user=user, ctx=ctx,
@@ -294,7 +303,7 @@ class Manager:
         roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster())
         user = (f"<goal>\n{self.project.goal}\n</goal>\n\n<completed_tasks>\n" +
                 "\n\n".join(f"## {t['title']} ({t['assignee']})\nCriteria:\n{_fmt_list(t['criteria'])}\n"
-                            f"Result: {window_text(t['result'] or '', 2000)}" for t in done) +
+                            f"Result: {window_text(t['result'] or '', AUDIT_RESULT_CHARS)}" for t in done) +
                 f"\n</completed_tasks>\n\n<roster>\n{roster}\n</roster>\n\nAudit round "
                 f"{self.project.meta.get('audit_rounds', 0) + 1}. Inspect shared/ and audit now.")
         ctx = ToolContext(self.kernel, self.project, role="auditor", workspace=self.project.shared)
@@ -366,6 +375,7 @@ class Manager:
         out, _ctx = result
         task = self.board.get(task_id)
         self.run_failures += sum(1 for line in out.digest if " -> ERROR " in line)
+        self.tool_calls += out.tool_calls
         if out.name == "task_submit":
             p = out.payload
             artifacts = "\n".join(p.get("artifacts", []))
@@ -399,7 +409,7 @@ class Manager:
             until = retry_at(reason) or time.time() + 900
             self.board.update(task["id"], status="ready", backoff_until=until, actor="manager")
             self.board.comment(task["id"], "manager", f"Лимит провайдера ({reason}); повтор после "
-                                                       f"{time.strftime('%H:%M UTC', time.gmtime(until))}.")
+                                                       f"{fmt_ts(until, '%H:%M', self.cfg)} ({zone_name(self.cfg)}).")
             self.note("provider_limit", task_id=task["id"], until=until, reason=reason)
             return
         self._retry_later(task, reason)
@@ -497,6 +507,19 @@ class Manager:
             self.board.update(task_id, status="blocked", needs_human=1)
             self.note("escalated", task_id=task_id, rationale=d["rationale"])
 
+    def is_easy_run(self) -> bool:
+        """Gating rule for the goal audit: only a small run with no trouble at all is "easy".
+
+        Deterministic (counts only). Any failure, retry, rejection, tool error, second attempt, more tasks or more
+        tool calls than the `roles` limits keeps the full audit, so hard goals are always audited.
+        """
+        roles = self.cfg.get("roles") or {}
+        if not roles.get("skip_on_easy") or self.run_failures or self.project.meta.get("audit_rounds", 0):
+            return False
+        tasks = [t for t in self.board.list() if t["kind"] != "goal"]
+        return (0 < len(tasks) <= int(roles.get("easy_max_tasks", 2)) and self.tool_calls <= int(roles.get("easy_max_tool_calls", 15))
+                and all(t["status"] == "done" and t["attempts"] == 0 for t in tasks))
+
     def on_audit(self, out: Outcome) -> None:
         rounds = self.project.meta.get("audit_rounds", 0) + 1
         self.project.set_meta(audit_rounds=rounds)
@@ -570,7 +593,13 @@ class Manager:
         open_work = [t for t in self.board.list(status=["todo", "ready", "running", "review", "blocked"])
                      if t["kind"] != "goal"]
         if not open_work and not self.jobs and self.root_id and self.board.get(self.root_id)["status"] != "done":
-            self._submit("audit", self.job_audit)
+            if self.is_easy_run():
+                self.project.log.append("audit/skipped", reason="easy run: small, clean, accepted first time",
+                                        tool_calls=self.tool_calls)
+                self.board.update(self.root_id, status="done", result="Skipped goal audit: easy, clean run",
+                                  actor="manager")
+            else:
+                self._submit("audit", self.job_audit)
         if (self.failures_since_refine >= REFINE_EVERY_FAILURES and now - self.last_refine > 300):
             self.failures_since_refine = 0
             self.last_refine = now
