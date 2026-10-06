@@ -16,6 +16,18 @@
 | P6-kanban | Kanban DAG with compare-and-swap claims | Hermes Agent | готово |
 | P7-measured-evolution | Evolution through branches, tests, hidden-check benchmark, population screening and stacking | auto-harness / Gear / Ouroboros | готово |
 
+## Волна 0 — 7/7 готово
+
+| Пункт | Что | Откуда | Режим | Статус |
+|---|---|---|---|---|
+| D-self-update | Self-update from the dashboard and CLI, verified by the pillar tests before switching, rollback | Artel (`MisterReds/artel`) | design | готово |
+| D-brand | Brand identity: A-frame mark, copper palette, bundled fonts, role icons, terminal colours | Artel (`MisterReds/artel`) | design | готово |
+| D-codex-runtime | Codex runtime (ChatGPT subscription) with device-code login | Codex / Hermes Agent (`openai/codex`) | design | готово |
+| D-providers | Провайдеры page: subscriptions, keys (set/unset only), local model, per-role routing, CLIs installed on demand without Node.js | Artel (`MisterReds/artel`) | design | готово |
+| D-installers | Installers for Linux/macOS and Windows that install only what Artel needs | Artel (`MisterReds/artel`) | design | готово |
+| D-failure-classes | No crash, no endless loop: auto executor, setup errors to a person, limits wait, replan cap | Artel (`MisterReds/artel`) | design | готово |
+| D-evolution-ops | Evolution operations: adopt mode for roadmap items, resume after restart, pause on provider limits, journal on GitHub | Artel (`MisterReds/artel`) | design | готово |
+
 ## Волна 1 — 8/8 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
@@ -29,7 +41,7 @@
 | W1-compaction | Context compaction for the native runtime — clear old tool outputs, then summarize | Claude Code / OpenCode (`anomalyco/opencode`) | evolve | готово — evolve/gen-3 (evolve/g3-4-w1-compaction-context-compaction) |
 | W1-snapshots | Shadow-git snapshot per run; rejected attempt can be reverted | OpenCode (`anomalyco/opencode`) | evolve | готово — evolve/gen-3 (evolve/g3-5-w1-snapshots-shadow-git-snapshot) |
 
-## Волна 2 — 0/5 готово
+## Волна 2 — 0/10 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
@@ -38,6 +50,11 @@
 | W2-guardian | Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review | Codex (`openai/codex`) | evolve | план |
 | W2-sandbox | bubblewrap sandbox for worker bash | Codex (`openai/codex`) | design | план |
 | W2-fs-grants | Explicit read/write grants per path | OpenScience (`synthetic-sciences/openscience`) | evolve | план |
+| W2-cost-down | Bring cost back down — wave 1 raised the benchmark cost from $4.57 to $5.99 (+31%) | Claude Code / Codex (`anthropics/claude-code`) | evolve | план |
+| W2-ci | CI on Linux, macOS and Windows — tests, installer and a scripted first run on every push | OpenHands / Codex (`openai/codex`) | design | план |
+| W2-remote-and-notify | Use from the phone — authenticated remote dashboard and notifications (Telegram / webhook) | Hermes Agent / OpenClaw (`NousResearch/hermes-agent`) | design | план |
+| W2-timezone | User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin | Artel (`MisterReds/artel`) | evolve | план |
+| W2-evolve-two-subscriptions | Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it | Artel (`MisterReds/artel`) | design | план |
 
 ## Волна 3 — 0/12 готово
 
@@ -56,4 +73,4 @@
 | W3-automations | Automations — schedule and event triggers | OpenHands / Qwen Code (`QwenLM/qwen-code`) | evolve | план |
 | W3-fast-system-one | Fast local System One decisions (Jev-Style kept loaded in memory) | Jev-Style v3 (`chaoliangUNSW/Jev-Style-2B-Decision-v3-GGUF`) | design | частично |
 
-Итого: 8/25 пунктов готово.
+Итого: 15/37 пунктов готово.

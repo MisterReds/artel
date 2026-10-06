@@ -44,6 +44,14 @@ pillars:
     where: [artel/evolve/]
 
 items:
+  # ---- built by hand outside the waves (product and reliability) ----
+  - {id: D-self-update, wave: 0, mode: design, status: done, title: "Self-update from the dashboard and CLI, verified by the pillar tests before switching, rollback", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/updater.py]}
+  - {id: D-brand, wave: 0, mode: design, status: done, title: "Brand identity: A-frame mark, copper palette, bundled fonts, role icons, terminal colours", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/web/, docs/BRAND.md]}
+  - {id: D-codex-runtime, wave: 0, mode: design, status: done, title: "Codex runtime (ChatGPT subscription) with device-code login", source: {harness: Codex / Hermes Agent, repo: openai/codex}, target: [artel/runtimes/codex.py, artel/providers.py]}
+  - {id: D-providers, wave: 0, mode: design, status: done, title: "Провайдеры page: subscriptions, keys (set/unset only), local model, per-role routing, CLIs installed on demand without Node.js", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/providers.py, artel/tools.py]}
+  - {id: D-installers, wave: 0, mode: design, status: done, title: "Installers for Linux/macOS and Windows that install only what Artel needs", source: {harness: Artel, repo: MisterReds/artel}, target: [install.sh, install.ps1]}
+  - {id: D-failure-classes, wave: 0, mode: design, status: done, title: "No crash, no endless loop: auto executor, setup errors to a person, limits wait, replan cap", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/failures.py, artel/manager.py, artel/runtimes/__init__.py]}
+  - {id: D-evolution-ops, wave: 0, mode: design, status: done, title: "Evolution operations: adopt mode for roadmap items, resume after restart, pause on provider limits, journal on GitHub", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/evolve/engine.py]}
   # ---- wave 1: loop reliability (cheap, directly moves pass rate and cost) ----
   - id: W1-loop-detector
     wave: 1
@@ -146,6 +154,13 @@ items:
     title: Command policy rules allow/prompt/forbidden with match/not_match examples validated at load
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/execpolicy/README.md]}
     target: [artel/plugins/builtin_tools.py]
+    plan: >-
+      Rules file (ARTEL_HOME/policy.yaml + project override): each rule has a command prefix or regex, a decision
+      allow | prompt | forbidden, a justification, and match / not_match examples that are checked when the policy loads
+      (a rule whose examples fail is an error). bash and the Codex / Claude Code runtimes consult it before running a
+      command: forbidden -> tool error with the justification; prompt -> the task goes to a person (needs_human) with the
+      command; allow -> run. Ship safe defaults (rm -rf /, curl | sh, git push --force on main, credential files).
+    acceptance: [policy examples validated at load (bad example = load error), forbidden command never executes (test), prompt sends the task to a person with the command, no benchmark regression]
   - id: W2-guardian
     wave: 2
     mode: evolve
@@ -153,6 +168,12 @@ items:
     title: Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/prompts/templates/guardian/classifier_instructions.md]}
     target: [artel/manager.py]
+    plan: >-
+      After each worker run, a cheap reviewer (System One or a small model) scores the trajectory's risk from the
+      event log: destructive commands, writes outside the workspace, network exfiltration, secrets in output. Low risk:
+      nothing. High risk: the task's later runs require a blocking review of every shell command by the guardian before
+      execution, and the dashboard shows a risk badge with the reason.
+    acceptance: [risk score logged for every run (guardian/assessed events), high-risk run switches the task to blocking review, a scripted destructive trajectory is flagged high, cost increase <= 5%]
   - id: W2-sandbox
     wave: 2
     mode: design
@@ -167,6 +188,71 @@ items:
     title: Explicit read/write grants per path
     source: {harness: OpenScience, repo: synthetic-sciences/openscience, paths: [ARCHITECTURE.md]}
     target: [artel/tooling.py]
+    plan: >-
+      Per-role and per-project grants: read paths, write paths (default: workspace + shared deliverables; read-only
+      refs). ToolContext.resolve enforces them for every file tool; the Codex runtime maps them to --add-dir / sandbox,
+      Claude Code to --add-dir and disallowed write tools. A denied access returns a tool error naming the grant.
+    acceptance: [writes outside granted paths are refused for every runtime (tests), refs stay read-only, grants visible on the project page, no benchmark regression]
+
+  - id: W2-cost-down
+    wave: 2
+    mode: evolve
+    status: planned
+    title: Bring cost back down — wave 1 raised the benchmark cost from $4.57 to $5.99 (+31%)
+    source: {harness: Claude Code / Codex, repo: anthropics/claude-code, paths: [README.md]}
+    target: [artel/agent.py, artel/prompts.py, artel/manager.py, artel/runtimes/claude_code.py]
+    plan: >-
+      Find where the tokens go (per role, per tool output) with the analytics already logged; then: prompt caching
+      for the native runtime's stable system prefix, trimming repeated context given to reviewer / auditor, cheaper
+      model or lower effort for librarian / refiner / auditor where pass rate holds, skipping roles that add
+      nothing on easy tasks. Each change measured separately.
+    acceptance: [benchmark cost <= $5.0 with 7/7 passing, no role quality drop on hidden checks]
+  - id: W2-ci
+    wave: 2
+    mode: design
+    status: planned
+    title: CI on Linux, macOS and Windows — tests, installer and a scripted first run on every push
+    source: {harness: OpenHands / Codex, repo: openai/codex, paths: [.github/workflows]}
+    target: [.github/workflows]
+    plan: >-
+      GitHub Actions matrix (ubuntu, macos, windows): full test suite; install.sh / install.ps1 into a clean home with
+      the local checkout as the repo; `artel run --provider scripted` end to end; dashboard starts and answers
+      /api/ready. Required before an evolution merge is published.
+    acceptance: [green on all three systems, installer failures block the merge]
+  - id: W2-remote-and-notify
+    wave: 2
+    mode: design
+    status: planned
+    title: Use from the phone — authenticated remote dashboard and notifications (Telegram / webhook)
+    source: {harness: Hermes Agent / OpenClaw, repo: NousResearch/hermes-agent, paths: [gateway/]}
+    target: [artel/web/server.py]
+    plan: >-
+      Optional remote mode: the dashboard binds beyond localhost only with a login token (generated, shown once,
+      stored hashed) and HTTPS via a reverse proxy recipe. Notifications on waiting_human, done, update available:
+      Telegram bot or a generic webhook, configured on the Провайдеры page; tokens only from the environment.
+    acceptance: [remote access refused without the token, notifications delivered in a test double, no secrets stored in plain text]
+  - id: W2-timezone
+    wave: 2
+    mode: evolve
+    status: planned
+    title: User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin
+    source: {harness: Artel, repo: MisterReds/artel, paths: [artel/web/index.html]}
+    target: [artel/web/index.html, artel/cli.py]
+    plan: >-
+      Setting ui.timezone (IANA name, default: the browser's / system zone) editable on the Провайдеры page; all
+      timestamps in the dashboard, CLI output and notifications rendered in it.
+    acceptance: [times rendered in the configured zone (test with Asia/Sakhalin), invalid zone rejected]
+  - id: W2-evolve-two-subscriptions
+    wave: 2
+    mode: design
+    status: planned
+    title: Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it
+    source: {harness: Artel, repo: MisterReds/artel, paths: [artel/evolve/engine.py]}
+    target: [artel/evolve/engine.py]
+    plan: >-
+      Implementation and benchmark can each run on Claude Code or Codex; when one provider pauses on a limit, the
+      generation continues the remaining work on the other. Baselines are per runtime so comparisons stay fair.
+    acceptance: [a limit on one provider moves work to the other (test), baselines keyed by runtime]
 
   # ---- wave 3: architecture and scale ----
   - id: W3-acp-runtime
@@ -204,6 +290,11 @@ items:
     title: Task as a state machine with executable transition gates
     source: {harness: StateM, repo: henryqin1997/statem, paths: [README.md]}
     target: [artel/manager.py]
+    plan: >-
+      Describe the task lifecycle (todo -> ready -> running -> review -> done / blocked) as a declarative table with an
+      executable gate per transition (e.g. running -> review requires evidence; review -> done requires a reviewer
+      verdict and green gates). The manager applies transitions only through the table; invalid transitions raise.
+    acceptance: [every board move goes through the table (test over a full run), pillar invariants still pass, no benchmark regression]
   - id: W3-fresh-context-steps
     wave: 3
     mode: evolve
@@ -211,6 +302,11 @@ items:
     title: Fresh context per step, verified state outside the context
     source: {harness: LongHorizon-Harness, repo: AMAP-ML/LongHorizon-Harness, paths: [README.md]}
     target: [artel/manager.py]
+    plan: >-
+      For long tasks, split execution into steps; each step starts a fresh agent context fed only with the verified
+      state (files, test results, a short progress file), not the previous transcript. The progress file is written by
+      the agent and checked by the manager.
+    acceptance: [tasks over N turns run in steps with a progress file, pass rate on long tasks does not drop, tokens per long task drop]
   - id: W3-plan-review
     wave: 3
     mode: evolve
@@ -218,6 +314,11 @@ items:
     title: Plan review before execution; built-in Explore / Plan / Verification subagents
     source: {harness: Fusion / Claude Code, repo: lintsinghua/claude-code-book, paths: [en/Part-3-Advanced-Patterns/09-Sub-Agents-and-the-Fork-Pattern.md]}
     target: [artel/manager.py]
+    plan: >-
+      Before execution, a reviewer checks the plan: missing tasks, untestable criteria, wrong dependencies, oversized
+      tasks. The planner revises once. Built-in subagent roles Explore (read-only search) and Verify (runs the checks)
+      are available to workers as tools.
+    acceptance: [plan review events for every project, fewer audit rounds and replans on the benchmark, no cost increase over 10%]
   - id: W3-two-phase-memory
     wave: 3
     mode: evolve
@@ -225,6 +326,11 @@ items:
     title: Two-phase memory — per-run extraction with secret redaction, then consolidation
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/memories/README.md]}
     target: [artel/manager.py]
+    plan: >-
+      Phase 1 after each run: extract durable facts (decisions, gotchas, commands that worked) with secrets redacted.
+      Phase 2 periodically: consolidate into the worker's MEMORY.md and the project notes, dropping duplicates and stale
+      facts. Memory is shown on the worker card.
+    acceptance: [no secret patterns ever reach MEMORY.md (test), memory stays under a size cap, no benchmark regression]
   - id: W3-tree-budget
     wave: 3
     mode: evolve
@@ -232,6 +338,10 @@ items:
     title: Budget for the whole agent tree with threshold reminders
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/core/src/rollout_budget.rs]}
     target: [artel/agent.py]
+    plan: >-
+      One budget for a project's whole agent tree (tokens and USD-equivalent): workers, reviewers, auditors, manager.
+      Reminders to the running agents at 50 / 80 / 95 %; at 100 % the project pauses (paused_budget) with a clear note.
+    acceptance: [budget events at thresholds, project pauses at 100 % and resumes with a raised budget, no benchmark regression]
   - id: W3-mailbox
     wave: 3
     mode: evolve
@@ -239,6 +349,10 @@ items:
     title: Agent mailbox and teams
     source: {harness: Claude Code / Gas Town, repo: lintsinghua/claude-code-book, paths: [en/Part-3-Advanced-Patterns/10-The-Coordinator-Pattern-Multi-Agent-Orchestration.md]}
     target: [artel/plugins/board_tools.py]
+    plan: >-
+      Workers can message each other through the board (mailbox per worker): ask a teammate a question, hand over a
+      finding. Messages are events, visible in the feed; a worker reads its mailbox at the start of each run.
+    acceptance: [messages delivered and logged, a two-worker scripted scenario uses the mailbox, no benchmark regression]
   - id: W3-automations
     wave: 3
     mode: evolve
@@ -246,6 +360,10 @@ items:
     title: Automations — schedule and event triggers
     source: {harness: OpenHands / Qwen Code, repo: QwenLM/qwen-code, paths: [packages/core/src/services/cronScheduler.ts]}
     target: [artel/web/server.py]
+    plan: >-
+      Schedules and event triggers for goals: run a goal every day at a time (in the user's time zone), or when a
+      project finishes, or on a webhook. Managed on a dashboard page; each firing creates a normal project.
+    acceptance: [cron and event triggers create projects (tests), time zone respected, triggers listed and editable in the dashboard]
   - id: W3-fast-system-one
     wave: 3
     mode: design
