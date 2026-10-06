@@ -34,7 +34,6 @@ import sys
 import tempfile
 import threading
 from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Optional
 
 MODES = ("off", "auto", "bwrap", "seatbelt")

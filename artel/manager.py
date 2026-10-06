@@ -275,9 +275,11 @@ class Manager:
             try:
                 conflicts = self.iso.integrate(task["id"])
             except IsolationError as exc:
-                return [], Outcome(status="conflict", error=str(exc), payload={"conflicts": []})
+                return [], Outcome(status="conflict", error=str(exc),
+                                   terminal=("merge_conflict", {"conflicts": []}))
             if conflicts:
-                return [], Outcome(status="conflict", error="merge conflict", payload={"conflicts": conflicts})
+                return [], Outcome(status="conflict", error="",
+                                   terminal=("merge_conflict", {"conflicts": conflicts}))
             wt = self.iso.path(task["id"])
             files = self.iso.changed_files(task["id"])
             changed = f"<changed_files vs shared>\n{_fmt_list(files[:200])}\n</changed_files>\n\n"
@@ -452,6 +454,10 @@ class Manager:
     def on_review(self, task_id: str, result: tuple[list, Outcome]) -> None:
         gates, out = result
         task = self.board.get(task_id)
+        if out.name == "merge_conflict":  # the updated shared deliverables do not merge into this task's work
+            self.review_retries.pop(task_id, None)
+            self._merge_conflict(task, out.payload.get("conflicts") or [], out.error, stage="before review")
+            return
         gates_ok = all(g["exit"] == 0 for g in gates)
         if out.name != "review_verdict":
             n = self.review_retries.get(task_id, 0) + 1
@@ -472,6 +478,17 @@ class Manager:
         snapshot = self.snapshots.pop(task_id, None)
         self.project.log.append("review/verdict", task_id=task_id, passed=passed, feedback=feedback,
                                 gates=[{"command": g["command"], "exit": g["exit"]} for g in gates])
+        if passed and self.iso is not None:
+            try:
+                merged, conflicts = self.iso.accept(task_id)
+                error = ""
+            except IsolationError as exc:
+                merged, conflicts, error = False, [], str(exc)
+            if not merged:  # never overwrite: the worker resolves on the updated base and the task is re-reviewed
+                self.board.comment(task_id, "reviewer", f"ACCEPTED (not merged yet): {feedback}")
+                self._merge_conflict(task, conflicts, error, stage="on acceptance")
+                return
+            self.note("merged", task_id=task_id)
         if passed:
             self.board.comment(task_id, "reviewer", f"ACCEPTED: {feedback}")
             self.board.update(task_id, status="done", no_progress=0, actor="reviewer")
@@ -482,7 +499,15 @@ class Manager:
                 self._bg(self.job_skill_review, self.board.get(task_id), digest)
         else:
             self.board.comment(task_id, "reviewer", f"REJECTED: {feedback}")
-            if snapshot and wants_start_over(feedback) and self.snapper.restore(snapshot):
+            if self.iso is not None and wants_start_over(feedback):
+                try:
+                    if self.iso.discard(task_id):
+                        self.board.comment(task_id, "manager", "manager: discarded the attempt; the task worktree "
+                                                               "is reset to the current shared deliverables")
+                        self.note("worktree_discard", task_id=task_id)
+                except IsolationError as exc:
+                    self.note("worktree_error", task_id=task_id, error=str(exc))
+            elif snapshot and wants_start_over(feedback) and self.snapper.restore(snapshot):
                 self.board.comment(task_id, "manager", "manager: restored deliverables to pre-attempt snapshot")
                 self.note("snapshot_restore", task_id=task_id, tree=snapshot)
             attempts = task["attempts"] + 1
@@ -493,6 +518,34 @@ class Manager:
                 self.board.comment(task_id, "manager", f"Circuit breaker after {attempts} rejected attempts. Replanning.")
             else:
                 self.board.update(task_id, status="ready", attempts=attempts, actor="reviewer")
+
+    def _merge_conflict(self, task: dict, conflicts: list, error: str, stage: str) -> None:
+        """Surface a merge conflict as a task comment and send the task back for a retry on the updated base."""
+        task_id = task["id"]
+        files = ", ".join(conflicts) if conflicts else "(none listed)"
+        self.note("merge_conflict", task_id=task_id, stage=stage, files=conflicts, error=error)
+        body = (f"MERGE CONFLICT {stage}: other accepted work changed the same shared deliverables. Conflicting "
+                f"files: {files}. " + (f"Details: {error}. " if error else "") +
+                "Your worktree now contains the updated base merged with your work; resolve the conflict markers "
+                "(<<<<<<< / >>>>>>>), keep both intents, re-run the checks and submit again. Nothing was "
+                "overwritten in the shared deliverables.")
+        self.board.comment(task_id, "manager", body)
+        attempts = task["attempts"] + 1
+        self.failures_since_refine += 1
+        self.run_failures += 1
+        if attempts >= int(self.b["max_attempts"]):
+            self.board.update(task_id, status="blocked", attempts=attempts, actor="manager")
+            self.board.comment(task_id, "manager", f"Circuit breaker after {attempts} attempts (merge conflicts). "
+                                                   "Replanning.")
+        else:
+            self.board.update(task_id, status="ready", attempts=attempts, actor="manager")
+
+    def _drop_worktree(self, task_id: str) -> None:
+        if self.iso is not None:
+            try:
+                self.iso.drop(task_id)
+            except IsolationError as exc:
+                self.note("worktree_error", task_id=task_id, error=str(exc))
 
     def _replans(self, task_id: str) -> int:
         return sum(1 for e in self.project.log.read() if e["kind"] == "manager/decision" and e.get("task_id") == task_id)
@@ -536,8 +589,10 @@ class Manager:
                     self.board.add_dep(dependent, new_id)
             self.board.update(task_id, status="cancelled")
             self.board.comment(task_id, "manager", f"Split into {', '.join(ids.values())}")
+            self._drop_worktree(task_id)
         elif action == "cancel":
             self.board.update(task_id, status="cancelled")
+            self._drop_worktree(task_id)
         elif action == "escalate":
             self.board.update(task_id, status="blocked", needs_human=1)
             self.note("escalated", task_id=task_id, rationale=d["rationale"])
