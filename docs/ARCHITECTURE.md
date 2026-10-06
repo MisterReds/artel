@@ -74,6 +74,26 @@ build_kernel(config)
 Производительность (замер на 4 ядрах): поиск сервиса — 0.1 мкс; вызов через ядро без перехватчиков — 0.4 мкс,
 с одним перехватчиком — 1.7 мкс.
 
+## Изоляция задач и песочница
+
+Не опора, а слой под опорой «Цикл до результата»: включается конфигом (`isolation.worktrees`, `sandbox.mode`),
+по умолчанию выключен, контракты опор не меняет (`done` по-прежнему ставит только ревьюер).
+
+```
+job_work    Isolation.ensure(task)   commit внешних правок shared/ в main → worktree task/<id> из main
+            ctx.deliverables = worktree   shared/…, $ARTEL_SHARED, --add-dir (Claude Code, Codex) → worktree
+job_review  Isolation.integrate      commit worktree, merge main → task; конфликт → merge_conflict без ревьюера
+            run_gates(cwd=worktree)  проверки на кандидате; reviewer видит worktree и список изменённых файлов
+on_review   принято → Isolation.accept: fast-forward main + read-tree -m -u в shared/, worktree удаляется
+            конфликт (база ушла во время ревью) → комментарий MERGE CONFLICT, задача ready, маркеры в worktree
+            отказ «START OVER» → Isolation.discard (reset к main); cancel/split → drop
+bash        sandbox.plan: bwrap --ro-bind / / + --bind (worktree, workspace, temp, writable) | sandbox-exec | заметка
+```
+
+Общий `shared/` меняется только через принятое слияние (или вне задач: люди, аудитор); слияние сериализовано
+замком, правки никогда не перезаписываются молча. Код: `artel/worktree.py`, `artel/sandbox.py`; тесты:
+`tests/test_isolation.py`, `tests/test_sandbox.py`.
+
 ## Как развивается Artel
 
 - **Структурные изменения опор** (режим `design` в `roadmap.yaml`) проектируются и реализуются вручную, с

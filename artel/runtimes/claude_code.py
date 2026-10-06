@@ -171,7 +171,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
             f"coordination tools are MCP tools named {MCP_PREFIX}<name>: "
             f"{', '.join(s.name for s in bridge.specs)}. The ONLY way to finish is calling "
             f"{' or '.join(MCP_PREFIX + n for n in terminal_names)}. Your working directory is your workspace; the "
-            f"team's shared deliverables directory is {project.shared}."
+            f"team's shared deliverables directory is {ctx.shared_dir}.{ctx.shared_note}"
             + (f" Read-only reference sources: {', '.join(map(str, project.refs))}." if project.refs else ""))
     model_seen = cc["model"]
     session_id: Optional[str] = None
@@ -195,7 +195,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
             args = [resolve(cc["binary"]) or cc["binary"], "-p", prompt, "--model", cc["model"], "--output-format", "stream-json", "--verbose",
                     "--mcp-config", str(cfg_path), "--strict-mcp-config",
                     *([] if session_id else ["--append-system-prompt", system + note]),  # a resumed session keeps it
-                    "--permission-mode", cc["permission_mode"], "--add-dir", str(project.shared),
+                    "--permission-mode", cc["permission_mode"], "--add-dir", str(ctx.shared_dir),
                     *[x for r in getattr(project, "refs", []) for x in ("--add-dir", str(r))],
                     "--allowedTools", *[t for t in BUILTIN_TOOLS if role not in READONLY_ROLES or t not in WRITE_TOOLS],
                     "mcp__artel"]

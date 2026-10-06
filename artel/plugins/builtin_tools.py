@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .. import policy
+from .. import policy, sandbox
 from ..kernel import ToolSpec
 from ..tooling import ToolContext, ToolError, window_text
 
@@ -69,14 +69,21 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
         ctx.terminal = policy.prompt_terminal(verdict, command)
         return f"command NOT run: policy requires human approval ({verdict.justification}); task sent to a person"
     timeout = int(timeout or ctx.kernel.config.get("tool_timeout_s", 300))
-    env = {**os.environ, "ARTEL_SHARED": str(ctx.project.shared), "ARTEL_WORKSPACE": str(ctx.workspace)}
+    env = {**os.environ, "ARTEL_SHARED": str(ctx.shared_dir), "ARTEL_WORKSPACE": str(ctx.workspace)}
+    # OS sandbox (W2-sandbox): writes only to the deliverables this agent works on, its workspace and temp
+    run = sandbox.plan(ctx.kernel.config, command, cwd=ctx.workspace, writable=[ctx.shared_dir, ctx.workspace])
+    if run.note and not ctx.state.get("sandbox_noted"):
+        ctx.state["sandbox_noted"] = True
+        ctx.project.log.append("sandbox/unavailable", actor=ctx.actor, note=run.note)
+    if run.note and sandbox.settings(ctx.kernel.config)["require"]:
+        raise ToolError(f"command NOT run: {run.note.split(';')[0]}, and sandbox.require is set")
     try:
-        proc = subprocess.run(command, shell=True, cwd=ctx.workspace, capture_output=True, text=True,
-                              timeout=timeout, env=env)
+        proc = subprocess.run(run.argv, cwd=ctx.workspace, capture_output=True, text=True, timeout=timeout, env=env)
     except subprocess.TimeoutExpired as exc:
         raise ToolError(f"timed out after {timeout}s; partial output:\n{_clip(str(exc.stdout or ''), 4000)}")
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
-    result = f"[exit {proc.returncode}]\n{_bound(ctx, out, 'bash')}"
+    note = f"[note: {run.note}]\n" if run.note else ""
+    result = f"[exit {proc.returncode}]\n{note}{_bound(ctx, out, 'bash')}"
     ctx.outputs.append(f"$ {command}\n{window_text(result, 3000)}")
     return result
 

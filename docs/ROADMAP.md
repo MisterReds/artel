@@ -41,14 +41,14 @@
 | W1-compaction | Context compaction for the native runtime — clear old tool outputs, then summarize | Claude Code / OpenCode (`anomalyco/opencode`) | evolve | готово — evolve/gen-3 (evolve/g3-4-w1-compaction-context-compaction) |
 | W1-snapshots | Shadow-git snapshot per run; rejected attempt can be reverted | OpenCode (`anomalyco/opencode`) | evolve | готово — evolve/gen-3 (evolve/g3-5-w1-snapshots-shadow-git-snapshot) |
 
-## Волна 2 — 4/10 готово
+## Волна 2 — 7/10 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
-| W2-worktree-isolation | Worker isolation — git worktree (or container) per task, merge on acceptance | Archon / Gas Town / Qwen Code (`QwenLM/qwen-code`) | design | план |
+| W2-worktree-isolation | Worker isolation — git worktree (or container) per task, merge on acceptance | Archon / Gas Town / Qwen Code (`QwenLM/qwen-code`) | design | готово — feat/isolation-sandbox: opt-in `isolation.worktrees` — a git worktree per task (artel/worktree.py), pre-review merge of the base, merge into shared/ on acceptance, discard on START OVER, conflicts go back to the worker as a task comment (never overwritten); containers not done |
 | W2-execpolicy | Command policy rules allow/prompt/forbidden with match/not_match examples validated at load | Codex (`openai/codex`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-guardian | Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review | Codex (`openai/codex`) | evolve | план — gen 4: conflicted in artel/plugins/builtin_tools.py with the adopted items; retried on the new main |
-| W2-sandbox | bubblewrap sandbox for worker bash | Codex (`openai/codex`) | design | план |
+| W2-sandbox | bubblewrap sandbox for worker bash | Codex (`openai/codex`) | design | готово — feat/isolation-sandbox: opt-in `sandbox.mode` (artel/sandbox.py) — bubblewrap on Linux (verified for real), sandbox-exec profile on macOS (built, not run on a Mac), unsandboxed fallback with a note or `require: true` refusal; gates sandboxed on `sandbox.gates` |
 | W2-fs-grants | Explicit read/write grants per path | OpenScience (`synthetic-sciences/openscience`) | evolve | план — gen 4: conflicted in artel/plugins/builtin_tools.py with the adopted items; retried on the new main |
 | W2-cost-down | Bring cost back down — wave 1 raised the benchmark cost from $4.57 to $5.99 (+31%) | Claude Code / Codex (`anthropics/claude-code`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-ci | CI on Linux, macOS and Windows — tests, installer and a scripted first run on every push | OpenHands / Codex (`openai/codex`) | design | план |
@@ -73,4 +73,4 @@
 | W3-automations | Automations — schedule and event triggers | OpenHands / Qwen Code (`QwenLM/qwen-code`) | evolve | план |
 | W3-system-one | Our own System One from the partner team, connected through the System One contract (docs/SYSTEM_ONE.md) | partner team (`pending`) | design | план |
 
-Итого: 19/37 пунктов готово.
+Итого: 23/37 пунктов готово.

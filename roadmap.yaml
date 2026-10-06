@@ -143,7 +143,8 @@ items:
   - id: W2-worktree-isolation
     wave: 2
     mode: design
-    status: planned
+    status: done
+    result: "feat/isolation-sandbox: opt-in `isolation.worktrees` — a git worktree per task (artel/worktree.py), pre-review merge of the base, merge into shared/ on acceptance, discard on START OVER, conflicts go back to the worker as a task comment (never overwritten); containers not done"
     title: Worker isolation — git worktree (or container) per task, merge on acceptance
     source: {harness: Archon / Gas Town / Qwen Code, repo: QwenLM/qwen-code, paths: [packages/core/src/services/gitWorktreeService.ts]}
     target: [artel/manager.py, artel/project.py]
@@ -179,7 +180,8 @@ items:
   - id: W2-sandbox
     wave: 2
     mode: design
-    status: planned
+    status: done
+    result: "feat/isolation-sandbox: opt-in `sandbox.mode` (artel/sandbox.py) — bubblewrap on Linux (verified for real), sandbox-exec profile on macOS (built, not run on a Mac), unsandboxed fallback with a note or `require: true` refusal; gates sandboxed on `sandbox.gates`"
     title: bubblewrap sandbox for worker bash
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/linux-sandbox/README.md]}
     target: [artel/plugins/builtin_tools.py]
