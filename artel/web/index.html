@@ -333,9 +333,10 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       ${inst('claude',cc,'Claude Code CLI')}</div>
     <div class="pvc"><h3>${ri('librarian')}Ключи API</h3><div class="kv">${o.keys.map(k=>`<span>${esc(k.label)}</span><span>${k.set?'<span style="color:var(--ok)">задан</span>':'не задан'} · <code>${esc(k.env)}</code></span>`).join('')}</div>
       <p class="stat">Задаются в настройках окружения, не в чате и не здесь.</p></div>
-    <div class="pvc"><h3>${ri('auditor')}System One (локально)${st(o.local.reachable,'отвечает','не запущена')}</h3>
-      <div class="kv"><span>режим</span><span>${esc(o.local.backend)}</span><span>адрес</span><span><code>${esc(o.local.url)}</code></span></div>
-      ${o.local.reachable?'':'<p class="stat">Запуск: <code>artel local serve</code></p>'}</div>
+    <div class="pvc"><h3>${ri('auditor')}System One${st(o.system_one.connected,'подключена','не подключена')}</h3>
+      <div class="kv"><span>что это</span><span>быстрые решения в узких местах (сложность задачи, нужен ли библиотекарь, разбор застрявшей задачи)</span>
+      ${o.system_one.connected?`<span>источник</span><span><code>${esc(o.system_one.name)}</code></span><span>точки</span><span>${esc(o.system_one.points.join(', ')||'не включены')}</span>`:''}</div>
+      ${o.system_one.connected?'':'<p class="stat">Своя модель пока не подключена — без неё Artel работает как обычно. Подключение: docs/SYSTEM_ONE.md.</p>'}</div>
    </div>
    <h2>Кто какую роль выполняет</h2>
    <div class="tablewrap pvroles"><table><tr><th>роль</th><th>рантайм</th></tr>

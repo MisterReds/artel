@@ -364,10 +364,15 @@ items:
       Schedules and event triggers for goals: run a goal every day at a time (in the user's time zone), or when a
       project finishes, or on a webhook. Managed on a dashboard page; each firing creates a normal project.
     acceptance: [cron and event triggers create projects (tests), time zone respected, triggers listed and editable in the dashboard]
-  - id: W3-fast-system-one
+  - id: W3-system-one
     wave: 3
     mode: design
-    status: partial
-    title: Fast local System One decisions (Jev-Style kept loaded in memory)
-    source: {harness: Jev-Style v3, repo: chaoliangUNSW/Jev-Style-2B-Decision-v3-GGUF, paths: [jev_style_decision_gguf.py]}
+    status: planned
+    title: Our own System One from the partner team, connected through the System One contract (docs/SYSTEM_ONE.md)
+    source: {harness: partner team, repo: pending, paths: [docs/SYSTEM_ONE.md]}
     target: [artel/decide.py]
+    plan: >-
+      The Jev model and the local llama.cpp runner were removed; Artel keeps the typed decision contract and four
+      decision points. When the partner repository is ready: connect it (plugin or HTTP), turn the points on one at a
+      time and keep only those that lower cost without lowering the pass rate on the benchmark.
+    acceptance: [each enabled point measured with and without System One, decision latency under 500 ms]

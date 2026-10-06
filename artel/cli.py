@@ -341,8 +341,9 @@ def cmd_providers(args) -> int:
         print(f"  {label:<14} {state:<34} {st.get('version', '')}")
     for k in o["keys"]:
         print(f"  {k['label']:<14} {'задан' if k['set'] else 'не задан':<34} ${k['env']}")
-    loc = o["local"]
-    print(f"  {'System One':<14} {'отвечает' if loc['reachable'] else 'не запущена':<34} {loc['url']}")
+    s1 = o["system_one"]
+    print(f"  {'System One':<14} {('подключена: ' + s1['name']) if s1['connected'] else 'не подключена':<34} "
+          f"{'точки: ' + ', '.join(s1['points']) if s1['points'] else ''}")
     r = o["routing"]
     print(f"  рантайм по умолчанию: {r['runtime']}" + "".join(f"; {k}: {v}" for k, v in r["runtime_by_role"].items()))
     return 0
@@ -452,9 +453,8 @@ def cmd_evolution(args) -> int:
 def main(argv=None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["local"]:
-        from . import local
-
-        return local.main(argv[1:])
+        print("the local System One model was removed; connect a System One as described in docs/SYSTEM_ONE.md")
+        return 2
     ap = argparse.ArgumentParser(prog="artel", description="Artel — a self-improving multi-agent harness")
     ap.add_argument("--config", help="extra YAML config merged over ~/.artel/artel.yaml")
     sub = ap.add_subparsers(dest="cmd", required=True)

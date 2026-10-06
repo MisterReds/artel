@@ -339,3 +339,21 @@ def test_gates_leave_no_python_debris(tmp_path, monkeypatch):
     m = Manager(new_kernel(cfg), project)
     res = m.run_gates({"id": "t", "checks": ["python3 -c 'import m'"]})
     assert res[0]["exit"] == 0 and not (project.shared / "__pycache__").exists()
+
+
+def test_unfinished_implementation_is_never_merged(repo, tmp_path):
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+
+    def impl(h, wt):
+        (wt / "half.txt").write_text("half a feature")
+        return {"status": "waiting_human", "cost_usd": 0.0}
+
+    def bench_fn(code, label, tasks=None):
+        rows = [{"id": "a", "pass": True, "partial": 1.0, "cost_usd": 0.1}]
+        return {"results": rows, "summary": bench.summarize(rows)}
+
+    ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    s = ev.generation(hypotheses=[Hypothesis("half", "r", "p")], plan_extra={"mode": "adopt"})
+    e = next(x for x in ev.ledger() if x["kind"] == "candidate")
+    assert s["accepted"] == [] and e["stage"] == "unfinished" and "waiting_human" in e["reason"]
+    assert not (repo / "half.txt").exists() and git(repo, "branch", "--list", "evolve/g1-1-half")

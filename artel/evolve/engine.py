@@ -553,11 +553,16 @@ class Evolution:
             return entry
         entry["worktree"] = str(wt)
         try:
-            if ahead:  # the commit happens only after the implementation finished
+            pending = self._continue_implementation(h, wt) if ahead else None
+            if ahead and pending:  # committed, but its team had not finished (e.g. it waited for a person)
+                impl = pending
+                ahead = False
+            elif ahead:  # the commit happens only after the implementation finished
                 impl = {"resumed": "implementation already committed"}
             else:
                 impl = self._continue_implementation(h, wt) if exists else None
                 impl = impl or self.implement_fn(h, wt)
+            unfinished = isinstance(impl, dict) and impl.get("status") not in (None, "done")
             commit = self._commit(wt, h) if not ahead else {"changed": False}
             if ahead:
                 commit = {"changed": True, "commit": git(wt, "rev-parse", "HEAD"),
@@ -565,6 +570,10 @@ class Evolution:
             entry.update(implementation=impl, commit=commit)
             if not commit["changed"]:
                 entry.update(accepted=False, reason="implementation produced no changes", stage="implement")
+                return entry
+            if unfinished:  # the team did not finish (e.g. waiting for a person): never merge half a feature
+                entry.update(accepted=False, stage="unfinished",
+                             reason=f"implementation ended as {impl.get('status')}; kept on its branch, not merged")
                 return entry
             tests = self.run_tests(wt)
             entry["tests"] = {k2: v for k2, v in tests.items() if k2 != "tail"}

@@ -63,15 +63,15 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "heartbeat_stale_s": 900,
     "plugins": [],
     "providers": {                       # named OpenAI-compatible endpoints usable as `provider` or per role
-        "local": {"base_url": "http://127.0.0.1:8090/v1", "api_key_env": "", "model": "local"},
     },
     "provider_by_role": {},              # e.g. {librarian: local}
-    "decide": {                          # System One decisions (TypeSafe Jev via OpenRouter, or a local model)
-        "backend": "none",               # none | jev | local
-        "model": "typesafe/jev-1.13", "api_key_env": "OPENROUTER_API_KEY",
+    "decide": {                          # System One (fast typed decisions); none is shipped — see docs/SYSTEM_ONE.md
+        "backend": "none",               # none | http (or a plugin providing the `system_one` service)
+        "url": "", "api_key_env": "",
         "points": {"skill_review": False, "refine": False, "replan_shortcut": False, "difficulty": False},
         "thresholds": {"skip_learning_below": 0.25, "shortcut_min": 0.8},
     },
+    "gate_timeout_s": 900,               # shell gates often run a whole test suite; tool calls keep tool_timeout_s
     "runtime": "auto",                   # auto | native | claude_code | codex (auto: whatever is connected)
     "runtime_by_role": {},               # e.g. {reviewer: native}
     "claude_code": {"model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,

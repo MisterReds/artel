@@ -35,7 +35,7 @@
 | Скрытые проверки, которых агенты не видят | Terminal-Bench / Harbor | `evals/tasks` | ✅ |
 | Ветки-кандидаты, отбор, теги поколений | Ouroboros (reviewed core evolution) | `evolve/engine.py` | ✅ |
 | Абсорбция чужого харнесса | — (своё) | `artel absorb` | ✅ |
-| System One решения в узких местах | TypeSafe Jev → so1 / Jev-Style v3 | `decide.py` | ✅ локально на Jev-Style 2B v3; ⏭ ускорить (сейчас 5 с/вызов на CPU) |
+| System One решения в узких местах | контракт TypeSafe Jev (типизированные вопросы noul / choice / score) | `decide.py`, `docs/SYSTEM_ONE.md` | ◐ контракт и 4 точки решения; модель Jev убрана — подключается своя System One команды-партнёра |
 | Петля суждений: исправления → правила | kagemusha | refine → RULES.md | ◐ |
 
 ## Следующее, по приоритету
