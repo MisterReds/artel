@@ -7,7 +7,7 @@
 
 | Опора | Источник | Контракт (что нельзя потерять) | Где | Инварианты |
 |---|---|---|---|---|
-| **Модульность** | DeepSeek Harness (Cordis) | Каждая способность — плагин с манифестом; регистрации — обратимые эффекты; выгрузка восстанавливает перекрытое; сбой `setup` откатывается; рантаймы, провайдеры, инструменты заменяемы конфигом; горячий путь — поиск в словаре | `kernel.py`, `plugins/` | `test_modularity_*` |
+| **Модульность** | DeepSeek Harness (Cordis), Pi | Каждая способность — плагин с манифестом; регистрации — обратимые эффекты; выгрузка восстанавливает перекрытое; сбой `setup` откатывается; сторонний плагин, который не загрузился, выключается с ошибкой и не роняет Artel; пакеты ставятся без запуска их кода; рантаймы, провайдеры, инструменты заменяемы конфигом; горячий путь — поиск в словаре | `kernel.py`, `plugins/`, `packages.py` | `test_modularity_*` |
 | **Скиллы** | Hermes Agent | Формат Agent Skills; библиотекарь после трудных задач; read-before-write; агент правит только своё; журнал правок и откат; lifecycle без удаления; guard по доверию | `skills.py`, `plugins/skill_tools.py`, `manager.py` | `test_skills_*` |
 | **Цикл до результата** | Prime Agent | Ход без терминального инструмента → продолжение; холостые ходы → stalled → backoff; сдача только с доказательствами; `done` ставит ревьюер, цель закрывает аудитор; ошибка настройки (нет CLI, нет входа) сразу идёт человеку, лимит провайдера ждёт сброса, а сбой, который не лечат ни повторы, ни `max_replans` перепланирований, передаётся человеку — бесконечного круга нет | `agent.py`, `plugins/board_tools.py`, `manager.py` | `test_loop_*`, `test_setup_errors_*` |
 | **Боты с душой** | OpenClaw | У исполнителя SOUL / IDENTITY / RULES / MEMORY и свой workspace; SOUL в системном промпте | `project.py`, `manager.py` | `test_workers_have_souls_and_workspaces` |
@@ -31,6 +31,45 @@ reload_plugin → unload + importlib.reload + load (горячая замена)
 
 Плагины по умолчанию: `llm_providers`, `runtimes` (native, claude_code), `builtin_tools`, `skill_tools`,
 `board_tools`, `evolve_tools`. Свои — через `plugins: [...]` в конфиге, отключение — `disable_plugins: [...]`.
+Ядро (`llm_providers`, `runtimes`, `builtin_tools`, `board_tools`) из менеджера плагинов не выключается.
+
+### Пакеты плагинов (`packages.py`)
+
+```
+build_kernel(config)
+  ├─ встроенные (сбой = ошибка Artel, исключение)
+  ├─ plugins: [...] из конфига  ─┐  load_plugin_safe: сбой импорта / requires / setup
+  └─ включённые пакеты           ─┘  → откат эффектов, kernel.failed[...] = ошибка, Artel продолжает
+       plugins.json → attach(): папка пакета в конец sys.path, точки входа "artel.plugins" → load_plugin
+       сбой любого плагина пакета → откат всего пакета, enabled=false + error в plugins.json
+```
+
+- Установка (`artel plugins install`, `POST /api/plugins/install`): git → `git clone --depth 1`, папка → копия,
+  затем `pip install --target ARTEL_HOME/plugins/<имя>`; pip-спецификация — сразу pip. Папка без сборки — по
+  `artel-plugin.toml`. Код пакета не импортируется: манифест `PLUGIN` читается через `ast.literal_eval`. Пакет
+  ставится выключенным.
+- Включение: показ манифеста (`provides`, `requires`, `permissions`) → подтверждение → пробная загрузка в
+  отдельном ядре (или прямо в живом ядре сервера). Выключение и удаление выгружают плагины (эффекты в обратном
+  порядке) и убирают папку из `sys.path` вместе с импортированными из неё модулями.
+- `update` переустанавливает из того же источника; новые `permissions` выключают пакет до подтверждения.
+- `permissions` — декларация для человека, а не песочница: плагин работает в процессе Artel.
+
+### События жизненного цикла
+
+Наблюдатели (`kernel.on`, вызов `emit`; ошибка наблюдателя → `plugin/error` в журнале проекта, вызывающий не
+ломается). Без подписчиков `emit` — один промах по словарю; `run_agent` без подписчиков идёт прежним путём.
+
+| Событие | Где | Данные |
+|---|---|---|
+| `project_start` | `Manager.run`, после восстановления | `project`, `resumed` |
+| `before_agent_start` | `runtimes.run_agent`, любая роль и рантайм | `project`, `role`, `purpose`, `task`, `persona`, `agent{system, first_user, tool_names}` — изменения применяются к запуску |
+| `agent_end` | `runtimes.run_agent` | `project`, `role`, `purpose`, `task`, `outcome` |
+| `task_done` | `Manager.on_review`, задача принята | `project`, `task`, `feedback` |
+| `project_end` | конец `Manager.run` (и сбой планирования) | `project`, `status`, `usage` |
+| `session_shutdown` | `Kernel.shutdown(reason)`: конец `run_goal`/`resume` со своим ядром, остановка `web` | `reason`; затем все плагины выгружаются |
+
+Сбои загрузки плагинов попадают в журнал проекта как `plugin/failed`. Контракт закреплён
+`test_modularity_failing_plugin_is_disabled_never_crashes`.
 
 Производительность (замер на 4 ядрах): поиск сервиса — 0.1 мкс; вызов через ядро без перехватчиков — 0.4 мкс,
 с одним перехватчиком — 1.7 мкс.

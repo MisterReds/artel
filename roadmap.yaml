@@ -284,10 +284,11 @@ items:
   - id: W3-plugin-packages
     wave: 3
     mode: design
-    status: planned
+    status: done
+    result: "feat/plugin-packages: artel plugins install|list|show|enable|disable|update|remove (git, pip, path; ARTEL_HOME/plugins + plugins.json; static manifest, installed disabled), lifecycle events project_start / before_agent_start / agent_end / task_done / project_end / session_shutdown, failing plugins disabled with the error, dashboard section, examples/artel-plugin-hello"
     title: Plugin packages (install from git/pip), lifecycle events before_agent_start / session_shutdown
     source: {harness: Pi, repo: badlogic/pi-mono, paths: [packages/coding-agent/docs/extensions.md, packages/coding-agent/docs/packages.md]}
-    target: [artel/kernel.py]
+    target: [artel/kernel.py, artel/packages.py, artel/manager.py, artel/runtimes/__init__.py, artel/web/]
   - id: W3-state-machine
     wave: 3
     mode: evolve

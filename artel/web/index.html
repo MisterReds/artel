@@ -114,6 +114,9 @@ button:disabled{opacity:.45;cursor:default}
 .kv{display:grid;grid-template-columns:auto 1fr;gap:4px 12px;font-size:13px}.kv span:nth-child(odd){color:var(--muted)}
 .ri{display:inline-flex;width:15px;height:15px;vertical-align:-2px;margin-right:4px;color:var(--muted)}.ri svg{width:100%;height:100%}
 .worker .role{display:flex;align-items:center;gap:2px}.worker .ri{color:var(--brand)}
+.plg .pvc .st.err{color:var(--bad);border-color:var(--bad)}.plg .perm{display:inline-block;font-size:12px;padding:1px 8px;border-radius:99px;background:var(--brand-soft);color:var(--brand);margin:1px}
+.plg .acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto}.plg .errbox{color:var(--bad);font-size:12.5px;white-space:pre-wrap;overflow-wrap:anywhere}
+.plg .inst{display:flex;gap:8px;max-width:760px}.plg .inst input{flex:1}
 .empty .mark{width:56px;height:56px;color:var(--line);margin:0 auto 12px;display:block}
 </style>
 </head>
@@ -126,6 +129,7 @@ button:disabled{opacity:.45;cursor:default}
     <a href="#/registry" data-v="registry">Реестр харнессов</a>
     <a href="#/evolution" data-v="evolution">Эволюция</a>
     <a href="#/skills" data-v="skills">Скиллы</a>
+    <a href="#/plugins" data-v="plugins">Плагины</a>
     <a href="#/providers" data-v="providers">Провайдеры</a>
   </nav>
   <button id="updbtn" style="display:none" title="Доступно обновление Artel"></button>
@@ -181,7 +185,7 @@ $('#newbtn').onclick=()=>{dlg(`<h3>Новая цель → новый проек
 function route(){clearInterval(timer);if(es){es.close();es=null}
   const h=location.hash.slice(2)||'portfolio';const [v,arg]=h.split('/');
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-  ({portfolio,agents,registry,skills,evolution,providers,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
+  ({portfolio,agents,registry,skills,evolution,providers,plugins,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
 window.addEventListener('hashchange',route);
 
 /* ---------- Портфель ---------- */
@@ -443,6 +447,43 @@ async function skills(){const sk=await api('/api/skills');
   ${sk.map(s=>`<tr><td><a data-k="${esc(s.name)}" style="cursor:pointer">${esc(s.name)}</a>${s.pinned?' 📌':''}</td><td>${esc(s.category)}</td><td>${esc(s.origin)}</td><td>${esc(s.state)}</td><td class="n">${s.use_count}</td><td>${esc(s.description.slice(0,200))}</td></tr>`).join('')||'<tr><td colspan="6" class="stat">пусто</td></tr>'}</table></div></div>`;
   document.querySelectorAll('[data-k]').forEach(a=>a.onclick=async()=>{const r=await api(`/api/skills/${encodeURIComponent(a.dataset.k)}`);
     dlg(`<h3>${esc(a.dataset.k)}</h3><pre>${esc(r.text)}</pre><h2>История изменений</h2>${r.ledger.map(e=>`<div class="ev">${fmtDT(e.ts)} · ${esc(e.action)} · ${esc(e.actor)} · ${esc(e.reason||'')}</div>`).join('')}`)})}
+/* ---------- Плагины ---------- */
+const PKIND={builtin:'встроенный',config:'из artel.yaml',package:'пакет'};
+function plgManifest(r,perms){return Object.entries(r.manifests||{}).map(([ep,m])=>`<div class="kv"><span>плагин</span><span><b>${esc(m.name||ep)}</b> ${esc(m.version||'')}${m.description?' — '+esc(m.description):''}</span>
+   <span>provides</span><span>${(m.provides||[]).map(x=>`<span class="ft">${esc(x)}</span>`).join('')||'—'}</span>
+   <span>requires</span><span>${(m.requires||[]).map(x=>`<span class="ft">${esc(x)}</span>`).join('')||'—'}</span>
+   ${m.note?`<span>примечание</span><span class="stat">${esc(m.note)}</span>`:''}</div>`).join('')+
+  `<div class="kv" style="margin-top:4px"><span>разрешения</span><span>${(r.permissions||[]).map(x=>`<span class="perm" title="${esc(perms[x]||'своё разрешение')}">${esc(x)}</span>`).join('')||'не просит'}</span></div>`}
+async function plugins(){$('#view').innerHTML='<div class="wrap plg" id="plg"><div class="empty">Загрузка…</div></div>';
+  const draw=async()=>{const o=await api('/api/plugins');const box=$('#plg');if(!box)return;const perms=o.permissions||{};state.plg=o.plugins;
+   const card=r=>{const st=r.error?'<span class="st err">ошибка</span>':r.enabled?'<span class="st on">включён</span>':'<span class="st off">выключен</span>';
+     const acts=r.kind==='config'?'<span class="stat">меняется в artel.yaml</span>':r.core?'<span class="stat">ядро Artel — не выключается</span>':
+       `${r.enabled?`<button data-pa="disable" data-id="${esc(r.id)}">Выключить</button>`:`<button class="primary" data-pa="enable" data-id="${esc(r.id)}">Включить…</button>`}
+        ${r.kind==='package'?`<button data-pa="update" data-id="${esc(r.id)}">Обновить</button><button data-pa="remove" data-id="${esc(r.id)}">Удалить</button>`:''}`;
+     return `<div class="pvc"><h3>${ri(r.kind==='package'?'absorber':'worker')}${esc(r.id)}${st}</h3>
+      <div class="kv"><span>тип</span><span>${PKIND[r.kind]||esc(r.kind)}${r.version?' · '+esc(r.version):''}</span>
+      ${r.kind==='package'?`<span>источник</span><span><code>${esc(r.source)}</code>${r.revision?' @ '+esc(r.revision):''}</span><span>обновлён</span><span>${fmtDT(r.updated_at)}</span>`:''}</div>
+      ${r.error?`<div class="errbox">${esc(r.error)}</div>`:''}
+      ${plgManifest(r,perms)}<div class="acts">${acts}</div></div>`};
+   const pk=o.plugins.filter(r=>r.kind==='package'),bi=o.plugins.filter(r=>r.kind!=='package');
+   box.innerHTML=`<p class="stat">Каждая способность Artel — плагин с манифестом. Пакеты ставятся в ARTEL_HOME/plugins выключенными: код пакета не запускается, пока вы не прочтёте манифест и не включите его. Плагин работает внутри Artel с его правами — ставьте только то, чему доверяете. Плагин, который не загрузился, выключается с ошибкой; Artel продолжает работу.</p>
+   <h2>Установить</h2><div class="inst"><input id="plg-src" placeholder="git URL (https://github.com/…), пакет pip (artel-plugin-x==1.0) или путь к папке"><button class="primary" id="plg-go">Установить</button></div>
+   <p class="stat" id="plg-msg"></p>
+   <h2>Пакеты</h2>${pk.length?`<div class="pv">${pk.map(card).join('')}</div>`:'<p class="stat">Пакетов нет. Пример: examples/artel-plugin-hello.</p>'}
+   <h2>Встроенные</h2><div class="pv">${bi.map(card).join('')}</div>
+   <h2>События жизненного цикла</h2><div class="tablewrap"><table><tr><th>событие</th><th>данные</th></tr>${Object.entries(o.events||{}).map(([k,v])=>`<tr><td><code>${esc(k)}</code></td><td>${esc(v)}</td></tr>`).join('')}</table></div>`;
+   $('#plg-go').onclick=async()=>{const src=$('#plg-src').value.trim();if(!src)return;$('#plg-go').disabled=true;$('#plg-msg').textContent='Устанавливаю… (pip / git, может занять минуту)';
+     const r=await post('/api/plugins/install',{source:src});$('#plg-go').disabled=false;
+     if(r.error){$('#plg-msg').innerHTML=`<span style="color:var(--bad)">${esc(r.error)}</span>`;return}
+     $('#plg-msg').textContent=`Установлен ${r.name} ${r.version||''} — выключен. Проверьте манифест и включите.`;await draw()};
+   document.querySelectorAll('[data-pa]').forEach(b=>b.onclick=async()=>{const id=b.dataset.id,a=b.dataset.pa,r=state.plg.find(x=>x.id===id);
+     if(a==='enable'){dlg(`<h3>Включить ${esc(id)}?</h3><p class="stat">Плагин запустит свой setup внутри Artel и получит его права. Проверьте, что он просит.</p>${plgManifest(r,perms)}
+        <div style="margin-top:12px"><button class="primary" id="plg-yes">Включить</button></div>`);
+       $('#plg-yes').onclick=async()=>{$('#plg-yes').disabled=true;const x=await post(`/api/plugins/${encodeURIComponent(id)}/enable`);dlgEl.close();
+         if(x.error)alert((r.kind==='package'?'Не загрузился, оставлен выключенным: ':'')+x.error);await draw()};return}
+     if(a==='remove'&&!confirm(`Удалить ${id}?`))return;
+     b.disabled=true;const x=await post(`/api/plugins/${encodeURIComponent(id)}/${a}`);if(x.error)alert(x.error);await draw()})};
+  await draw()}
 route();
 
 // --- self-update -----------------------------------------------------------------------------------
