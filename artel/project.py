@@ -83,6 +83,11 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "runtime_by_role": {},               # e.g. {reviewer: native}
     "claude_code": {"model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
                     "timeout_s": 2400},
+    "web": {                             # dashboard; remote mode = beyond localhost, login required (docs/REMOTE.md)
+        "remote": False,
+        "host": "0.0.0.0",               # bind address in remote mode (local mode always binds 127.0.0.1)
+        "session_days": 30,              # login session lifetime; rotating the token revokes all sessions
+    },
 }
 
 

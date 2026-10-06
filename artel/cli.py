@@ -5,7 +5,8 @@
     artel status [<project>]                                projects, or one board
     artel log <project> [--follow] [--kinds a,b]            the event trajectory
     artel comment <project> <task> "<text>"                 message a task as the human (unblocks escalations)
-    artel web [--port 8765]                                 live dashboard
+    artel web [--port 8765] [--remote [--host H]]           live dashboard (remote: login, docs/REMOTE.md)
+    artel web token [--new]                                 remote-mode access token (--new rotates it)
     artel skills list|view|import|curate|pin|unpin|ledger|rollback|restore
     artel refine history|rollback <project> [<edit>]
 """
@@ -159,9 +160,21 @@ def cmd_comment(args) -> int:
 
 
 def cmd_web(args) -> int:
+    if args.action == "token":
+        from .web.auth import Auth
+
+        cfg = load_config()
+        auth = Auth(session_days=(cfg.get("web") or {}).get("session_days", 30))
+        if not args.new:
+            print(("Токен выпущен; хранится только его хэш, показать его нельзя." if auth.has_token()
+                   else "Токена ещё нет.") + " Новый токен (все сессии закроются): artel web token --new")
+            return 0
+        print("Новый токен доступа (показывается один раз; все прежние сессии закрыты):")
+        print(f"  {auth.rotate()}")
+        return 0
     from .web.server import serve
 
-    serve(port=args.port, config=_cfg(args))
+    serve(port=args.port, config=_cfg(args), host=args.host, remote=True if args.remote else None)
     return 0
 
 
@@ -523,7 +536,11 @@ def main(argv=None) -> int:
     cm.set_defaults(fn=cmd_comment)
 
     w = sub.add_parser("web")
+    w.add_argument("action", nargs="?", choices=["token"], help="token: about the remote-mode access token")
+    w.add_argument("--new", action="store_true", help="with `token`: issue a new token, revoke all sessions")
     w.add_argument("--port", type=int, default=8765)
+    w.add_argument("--remote", action="store_true", help="bind beyond localhost; login with an access token")
+    w.add_argument("--host", help="bind address in remote mode (default: config web.host, 0.0.0.0)")
     w.add_argument("--provider", choices=["anthropic", "openai_compat", "scripted"])
     w.set_defaults(fn=cmd_web)
 

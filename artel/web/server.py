@@ -1,11 +1,13 @@
 """Dashboard server (stdlib only). Read APIs + SSE event stream + a few control actions.
 
 Binds to 127.0.0.1 by default: the control endpoints start agents that execute
-shell commands, so do not expose this server to untrusted networks.
+shell commands. Remote mode (`artel web --remote`, docs/REMOTE.md) binds beyond localhost and then every page,
+/api/* call and event stream needs a login session (see auth.py); put it behind HTTPS.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import threading
 import time
@@ -18,6 +20,12 @@ from ..manager import human_comment, new_kernel, resume, run_goal
 from ..project import Project, list_projects
 
 STATIC = Path(__file__).parent / "index.html"
+LOGIN = Path(__file__).parent / "login.html"
+STATIC_DIR = Path(__file__).parent / "static"
+MAX_BODY = 1_000_000
+# Reachable without a session in remote mode: the login page, its assets and the PWA shell files.
+PUBLIC_GET = {"login", "sw.js", "manifest.webmanifest", "favicon.ico", "favicon.svg", "api/auth/status"}
+PUBLIC_POST = {"api/auth/login", "api/auth/logout"}
 REGISTRY = Path(__file__).parent.parent / "data" / "harnesses.json"
 
 
@@ -170,24 +178,113 @@ def evolution_view() -> list[dict]:
     return out
 
 
-def make_handler(runner: Runner):
+def _loopback(addr: str) -> bool:
+    try:
+        return ipaddress.ip_address(addr.strip()).is_loopback
+    except ValueError:
+        return addr.strip() == "localhost"
+
+
+def make_handler(runner: Runner, auth=None):
+    """`auth` (an auth.Auth) switches on remote mode: everything but PUBLIC_* needs a valid session cookie."""
+    from .auth import COOKIE, RateLimited, cookie_value
+
     class Handler(BaseHTTPRequestHandler):
         server_version = "artel/0.1"
 
-        def log_message(self, *args):  # quiet
+        def log_message(self, *args):  # quiet (and never logs request bodies, so never the token)
             pass
 
-        def _json(self, obj, code: int = 200) -> None:
+        def _json(self, obj, code: int = 200, headers: dict | None = None) -> None:
             body = json.dumps(obj, ensure_ascii=False, default=str).encode()
             self.send_response(code)
             self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            for k, v in (headers or {}).items():
+                self.send_header(k, v)
             self.end_headers()
             self.wfile.write(body)
 
         def _body(self) -> dict:
             n = int(self.headers.get("Content-Length") or 0)
+            if n > MAX_BODY:
+                raise ValueError("request body too large")
             return json.loads(self.rfile.read(n) or b"{}") if n else {}
+
+        # --- remote mode: who is asking, over what, and are they logged in ---------------------------
+        def _forwarded_for(self) -> str | None:
+            """The client behind a reverse proxy on this host; ignored when the peer is not loopback."""
+            xff = self.headers.get("X-Forwarded-For")
+            if xff and _loopback(self.client_address[0]):
+                return xff.split(",")[0].strip() or None
+            return None
+
+        def _client_ip(self) -> str:
+            return self._forwarded_for() or self.client_address[0]
+
+        def _secure(self) -> bool:
+            return (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower() == "https"
+
+        def _local_client(self) -> bool:
+            return _loopback(self._client_ip())
+
+        def _sid(self) -> str | None:
+            return cookie_value(self.headers.get("Cookie"))
+
+        def _authed(self) -> bool:
+            return auth is None or auth.valid(self._sid())
+
+        def _auth_status(self) -> dict:
+            return {"remote": auth is not None, "authed": self._authed(), "secure": self._secure(),
+                    "insecure": auth is not None and not self._secure() and not self._local_client(),
+                    **({"session_days": round(auth.ttl / 86400, 2)} if auth is not None else {})}
+
+        def _redirect(self, where: str) -> None:
+            self.send_response(302)
+            self.send_header("Location", where)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
+
+        def _gate(self, key: str, public: set) -> bool:
+            """True when the request may proceed; otherwise the refusal has been sent."""
+            if auth is None or key in public or key.startswith("static/") or self._authed():
+                return True
+            if key.startswith("api/"):
+                self._json({"error": "login required"}, 401)
+            else:
+                self._redirect("/login")
+            return False
+
+        def _cookie(self, sid: str, max_age: int) -> str:
+            secure = "; Secure" if self._secure() else ""
+            return f"{COOKIE}={sid}; Path=/; HttpOnly; SameSite=Strict; Max-Age={max_age}{secure}"
+
+        def _html(self, path: Path) -> None:
+            body = path.read_bytes()
+            self.send_response(200)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-cache")
+            self.send_header("X-Frame-Options", "DENY")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Referrer-Policy", "no-referrer")
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _login(self) -> None:
+            try:
+                token = str(self._body().get("token") or "").strip()
+            except ValueError:
+                return self._json({"error": "bad request"}, 400)
+            try:
+                sid = auth.login(token, self._client_ip())
+            except RateLimited as e:
+                return self._json({"error": "too many attempts", "retry_after": e.retry_after}, 429,
+                                  {"Retry-After": str(e.retry_after)})
+            if not sid:
+                return self._json({"error": "wrong token"}, 401)
+            return self._json({"ok": True}, 200, {"Set-Cookie": self._cookie(sid, int(auth.ttl))})
 
         def _project(self, slug: str) -> Project:
             return Project.open(slug, runner.config)
@@ -196,14 +293,23 @@ def make_handler(runner: Runner):
             url = urlparse(self.path)
             parts = [unquote(p) for p in url.path.strip("/").split("/") if p]
             q = parse_qs(url.query)
+            if not self._gate("/".join(parts), PUBLIC_GET):
+                return
             try:
                 if not parts:
-                    body = STATIC.read_bytes()
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/html; charset=utf-8")
-                    self.send_header("Content-Length", str(len(body)))
-                    self.end_headers()
-                    self.wfile.write(body)
+                    self._html(STATIC)
+                elif parts == ["login"]:
+                    if auth is None or self._authed():
+                        self._redirect("/")
+                    else:
+                        self._html(LOGIN)
+                elif parts == ["api", "auth", "status"]:
+                    self._json(self._auth_status())
+                elif parts == ["sw.js"]:
+                    # served from the root so its scope is the whole app; never cached by the HTTP cache
+                    self._static("sw.js", {"Cache-Control": "no-cache", "Service-Worker-Allowed": "/"})
+                elif parts == ["manifest.webmanifest"]:
+                    self._static("manifest.webmanifest", {"Cache-Control": "no-cache"})
                 elif parts == ["api", "projects"]:
                     self._json([{**p, "live": p["slug"] in runner.active} for p in list_projects()])
                 elif parts == ["api", "portfolio"]:
@@ -262,17 +368,20 @@ def make_handler(runner: Runner):
             except (BrokenPipeError, ConnectionResetError):
                 pass
 
-        def _static(self, rel: str) -> None:
-            root = (Path(__file__).parent / "static").resolve()
+        def _static(self, rel: str, headers: dict | None = None) -> None:
+            root = STATIC_DIR.resolve()
             f = (root / rel).resolve()
             if root not in f.parents or not f.is_file():
                 return self._json({"error": "not found"}, 404)
             types = {".svg": "image/svg+xml", ".css": "text/css; charset=utf-8", ".woff2": "font/woff2",
-                     ".png": "image/png"}
+                     ".png": "image/png", ".js": "text/javascript; charset=utf-8",
+                     ".webmanifest": "application/manifest+json"}
             body = f.read_bytes()
             self.send_response(200)
             self.send_header("Content-Type", types.get(f.suffix, "application/octet-stream"))
-            self.send_header("Cache-Control", "public, max-age=86400")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            for k, v in ({"Cache-Control": "public, max-age=86400"} | (headers or {})).items():
+                self.send_header(k, v)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -307,6 +416,8 @@ def make_handler(runner: Runner):
                 if events:
                     self.wfile.flush()
                     continue
+                if not self._authed():  # session expired or revoked (token rotated): end the stream
+                    return
                 if time.time() - last_ping > 15:
                     self.wfile.write(b": ping\n\n")
                     self.wfile.flush()
@@ -316,6 +427,14 @@ def make_handler(runner: Runner):
 
         def do_POST(self):  # noqa: N802
             parts = [unquote(p) for p in urlparse(self.path).path.strip("/").split("/") if p]
+            if not self._gate("/".join(parts), PUBLIC_POST):
+                return
+            if parts == ["api", "auth", "login"]:
+                return self._login() if auth is not None else self._json({"ok": True, "remote": False})
+            if parts == ["api", "auth", "logout"]:
+                if auth is not None:
+                    auth.logout(self._sid())
+                return self._json({"ok": True}, 200, {"Set-Cookie": self._cookie("", 0)})
             try:
                 data = self._body()
                 if parts == ["api", "projects"]:
@@ -370,14 +489,34 @@ def make_handler(runner: Runner):
                 return self._json({"error": "not found"}, 404)
             except (KeyError, FileNotFoundError) as exc:
                 return self._json({"error": str(exc)}, 404)
+            except ValueError as exc:
+                return self._json({"error": str(exc)}, 400)
 
     return Handler
 
 
-def serve(port: int = 8765, config: dict | None = None, host: str = "127.0.0.1") -> None:
+def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
+          remote: bool | None = None) -> None:
+    """Local mode binds 127.0.0.1 with no login. Remote mode (flag or config `web.remote`) binds `host`
+    (default config `web.host`, 0.0.0.0) and requires a session created with the access token."""
     from ..project import load_config
 
-    runner = Runner(config or load_config())
+    config = config or load_config()
+    web = config.get("web") or {}
+    remote = bool(web.get("remote")) if remote is None else remote
+    auth = token = None
+    if remote:
+        from .auth import Auth
+
+        host = host or web.get("host") or "0.0.0.0"
+        auth = Auth(session_days=web.get("session_days", 30))
+        token = auth.ensure_token()
+    else:
+        host = host or "127.0.0.1"
+        if not _loopback(host):
+            raise SystemExit(f"artel web: {host} is beyond localhost; that needs login - use `artel web --remote`"
+                             " (see docs/REMOTE.md)")
+    runner = Runner(config)
     runner.start_update_loop()
     from ..telegram import TelegramBot, token
 
@@ -386,11 +525,20 @@ def serve(port: int = 8765, config: dict | None = None, host: str = "127.0.0.1")
         code = (runner.telegram.store.data.get("pair") or {}).get("code")
         if code:
             print(f"Telegram: отправьте боту /pair {code} (код действует 15 минут)", flush=True)
-    httpd = ThreadingHTTPServer((host, port), make_handler(runner))
+    httpd = ThreadingHTTPServer((host, port), make_handler(runner, auth))
     httpd.daemon_threads = True
     from ..brand import banner
 
-    print(banner(f"дашборд http://{host}:{port}"), flush=True)
+    print(banner(f"дашборд http://{host}:{port}" + (" (удалённый режим, вход по токену)" if remote else "")),
+          flush=True)
+    if remote:
+        if token:  # printed to the terminal once; never written to a file or a log
+            print("Токен доступа (показывается один раз, сохраните его; хранится только хэш):\n"
+                  f"  {token}", flush=True)
+        else:
+            print("Вход по ранее выпущенному токену. Новый токен (старые сессии закроются): "
+                  "artel web token --new", flush=True)
+        print("Без HTTPS токен и сессия идут по сети открытым текстом - см. docs/REMOTE.md", flush=True)
     httpd.serve_forever()
 
 
