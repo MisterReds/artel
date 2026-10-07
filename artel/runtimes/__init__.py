@@ -20,28 +20,48 @@ NO_EXECUTOR = ("Нет подключённого исполнителя (not in
 _auto_cache: dict = {}
 
 
-def detect_runtime(config: dict, ttl: float = 120.0) -> str:
-    """The runtime ``auto`` resolves to on this machine right now ('none' when nothing is connected)."""
-    if config.get("provider") == "scripted":
-        return "native"
+AUTO_ORDER = ("claude_code", "codex", "dsh", "native")
+
+
+def connected_runtimes(config: dict, ttl: float = 120.0) -> list[str]:
+    """Executors that are connected right now, in auto's order (signed-in CLIs, then API keys); cached for ``ttl``."""
     key = (config.get("provider"), (config.get("openai_compat") or {}).get("api_key_env"))
     hit = _auto_cache.get(key)
     if hit and time.time() - hit[1] < ttl:
-        return hit[0]
+        return list(hit[0])
     from ..providers import claude_code_status, codex_status
 
-    if claude_code_status(config).get("logged_in"):
-        name = "claude_code"
-    elif codex_status(config).get("logged_in"):
-        name = "codex"
-    elif dsh_ready(config):
-        name = "dsh"
-    elif native_ready(config):
-        name = "native"
-    else:
-        name = "none"
-    _auto_cache[key] = (name, time.time())
-    return name
+    checks = {"claude_code": lambda: claude_code_status(config).get("logged_in"),
+              "codex": lambda: codex_status(config).get("logged_in"),
+              "dsh": lambda: dsh_ready(config), "native": lambda: native_ready(config)}
+    found = []
+    for name in AUTO_ORDER:
+        try:
+            if checks[name]():
+                found.append(name)
+        except Exception:  # noqa: BLE001 - a broken status check means "not connected", never a crash
+            pass
+    _auto_cache[key] = (found, time.time())
+    return found
+
+
+def detect_runtime(config: dict, ttl: float = 120.0) -> str:
+    """The runtime ``auto`` resolves to right now ('none' when nothing is connected).
+
+    Skips executors the person switched off (``disabled_runtimes``) and those out on a provider limit until their
+    reset (artel/limits.py) — so when Claude Code hits its limit, work moves to Codex. If every connected executor is
+    limited, the one that resets first is returned (its runs then wait for the reset)."""
+    if config.get("provider") == "scripted":
+        return "native"
+    from .. import limits
+
+    disabled = set(config.get("disabled_runtimes") or [])
+    usable = [r for r in connected_runtimes(config, ttl) if r not in disabled]
+    if not usable:
+        return "none"
+    out = limits.load()
+    free = [r for r in usable if r not in out]
+    return free[0] if free else min(usable, key=lambda r: out[r])
 
 
 def dsh_ready(config: dict) -> bool:
@@ -60,8 +80,20 @@ def native_ready(config: dict) -> bool:
 
 
 def runtime_for(config: dict, role: str) -> str:
+    """The runtime a role runs on. An explicit choice is a preference: while it is out on a provider limit (or
+    switched off) and another connected executor is free, work goes there (``failover: false`` keeps it waiting)."""
     name = (config.get("runtime_by_role") or {}).get(role) or config.get("runtime", "auto")
-    return detect_runtime(config) if name == "auto" else name
+    if name == "auto":
+        return detect_runtime(config)
+    base = name.split(":")[0]
+    if config.get("failover", True) and config.get("provider") != "scripted":
+        from .. import limits
+
+        if base in limits.load() or base in (config.get("disabled_runtimes") or []):
+            alt = detect_runtime(config)
+            if alt != "none" and alt not in limits.load():
+                return alt
+    return name
 
 
 def run_agent(kernel, project, *, role: str, **kw):
@@ -80,13 +112,17 @@ def run_agent(kernel, project, *, role: str, **kw):
         base, variant = name.split(":", 1)
         fn = kernel.get(f"runtime:{base}")
         if fn is not None:
-            return fn(kernel, project, role=role, variant=variant, **kw)
+            out = fn(kernel, project, role=role, variant=variant, **kw)
+            _note_limit(name, out, project)
+            return out
     if fn is None:
         raise RuntimeError(f"no runtime plugin registered as {name!r}; loaded: "
                            f"{sorted(k[8:] for k in kernel.services if k.startswith('runtime:'))}")
     hooks = kernel.hooks
     if not (hooks.get("before_agent_start") or hooks.get("agent_end")):  # fast path: no lifecycle observers
-        return fn(kernel, project, role=role, **kw)
+        out = fn(kernel, project, role=role, **kw)
+        _note_limit(name, out, project)
+        return out
     ctx = kw.get("ctx")
     info = {"project": project, "role": role, "purpose": kw.get("purpose"), "task": getattr(ctx, "task", None),
             "persona": kw.get("persona")}
@@ -99,5 +135,20 @@ def run_agent(kernel, project, *, role: str, **kw):
         if agent["tool_names"] is not None or kw.get("tool_names") is not None:
             kw["tool_names"] = agent["tool_names"]
     out = fn(kernel, project, role=role, **kw)
+    _note_limit(name, out, project)
     kernel.emit("agent_end", outcome=out, **info)
     return out
+
+
+def _note_limit(name: str, out, project) -> None:
+    """A run that ended on a provider limit marks its runtime as out until the reset, so ``auto`` moves on."""
+    err = getattr(out, "error", "") or ""
+    if getattr(out, "status", "") != "error" or not err:
+        return
+    from ..failures import classify, retry_at
+
+    if classify(err) == "limit":
+        from .. import limits
+
+        until = limits.mark(name.split(":")[0], retry_at(err), err)
+        project.log.append("provider/limited", runtime=name, until=until, reason=err[:300])

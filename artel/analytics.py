@@ -64,6 +64,35 @@ def stage_of(project: Project, tasks: list[dict]) -> str:
     return "audit"
 
 
+RUNTIME_OF = (("claude-code", "claude_code"), ("codex", "codex"), ("dsh", "dsh"), ("acp", "acp"))
+
+
+def active_agents(events: list[dict], live: bool = True) -> list[dict]:
+    """Agents running right now: an ``agent/start`` with no matching ``agent/end`` yet — who (actor, role), on which
+    runtime and model, for which task and purpose, since when, and the last thing it did. Empty when the project's
+    process is not running (an interrupted run leaves starts without ends)."""
+    if not live:
+        return []
+    open_: dict = {}
+    for e in events:
+        k = e["kind"]
+        if k == "agent/start":
+            model = str(e.get("model") or "")
+            rt = e.get("runtime") or next((r for p, r in RUNTIME_OF if model.startswith(p)), "native")
+            open_[(e.get("actor"), e.get("task_id"), e.get("purpose"))] = {
+                "actor": e.get("actor"), "role": e.get("role"), "task_id": e.get("task_id"), "purpose": e.get("purpose"),
+                "runtime": rt, "model": model, "since": e["ts"], "last": "", "last_ts": e["ts"]}
+        elif k == "agent/end":
+            open_.pop((e.get("actor"), e.get("task_id"), e.get("purpose")), None)
+        elif k in ("tool/call", "llm/error", "provider/limited"):
+            for a in open_.values():
+                if a["actor"] == e.get("actor") and (not e.get("task_id") or a["task_id"] == e.get("task_id")):
+                    a["last"] = (e.get("tool") or e.get("name") or "") if k == "tool/call" else \
+                        f"ошибка: {str(e.get('error', ''))[:160]}"
+                    a["last_ts"] = e["ts"]
+    return sorted(open_.values(), key=lambda a: a["since"])
+
+
 def task_timelines(events: list[dict]) -> dict[str, list]:
     tl: dict[str, list] = defaultdict(list)
     for e in events:

@@ -109,8 +109,8 @@ def test_device_code_login_status_and_logout(env, tmp_path):
     # routing is saved to ARTEL_HOME/artel.yaml and applied live; key values are never exposed
     live = dict(cfg)
     r = save_routing(live, {"runtime_by_role": {"worker": "codex", "reviewer": "claude_code", "bogus": "codex"},
-                            "models": {"codex": "gpt-5-codex"}}, path=tmp_path / "artel.yaml")
-    assert r["runtime_by_role"] == {"worker": "codex", "reviewer": "claude_code"} and live["codex"]["model"] == "gpt-5-codex"
+                            "models": {"codex": "gpt-fake-sol"}}, path=tmp_path / "artel.yaml")
+    assert r["runtime_by_role"] == {"worker": "codex", "reviewer": "claude_code"} and live["codex"]["model"] == "gpt-fake-sol"
     o = overview(live)
     assert all(set(k) == {"env", "label", "set"} for k in o["keys"])
 

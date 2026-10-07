@@ -145,11 +145,17 @@ def project_view(project: Project, runner: Runner) -> dict:
         done = sum(1 for t in snap["tasks"] if t["assignee"] == p.name and t["status"] == "done")
         workers.append({"name": p.name, "role": p.role, "files": files, "current": running.get(p.name),
                         "done": done, "skills": p.skills})
-    timelines = analytics.task_timelines(analytics._events(project))
+    events = analytics._events(project)
+    timelines = analytics.task_timelines(events)
     for t in snap["tasks"]:
         t["timeline"] = timelines.get(t["id"], [])
     stats = analytics.project_stats(project, live=project.slug in runner.active)
+    live = project.slug in runner.active
+    errors = [e for e in events if e["kind"] in ("llm/error", "manager/escalated", "manager/provider_switch",
+                                                "manager/provider_limit", "provider/limited")][-5:]
     return {"slug": project.slug, "meta": project.meta, "board": snap, "workers": workers, "stats": stats,
+            "active": analytics.active_agents(events, live), "stage": analytics.stage_of(project, snap["tasks"]),
+            "recent_problems": errors,
             "notes": project.prompt_notes(), "live": project.slug in runner.active, "seq": project.log.seq}
 
 
@@ -374,6 +380,10 @@ def make_handler(runner: Runner, auth=None):
 
                     self._json({**overview(runner.config), "codex_login": runner.codex_login.state,
                                 "installs": runner.installer.state})
+                elif parts == ["api", "providers", "models"]:
+                    from ..providers import model_catalog
+
+                    self._json({"models": model_catalog(runner.config, q.get("runtime", [""])[0])})
                 elif parts == ["api", "timezone"]:
                     from ..tz import info
 
@@ -492,6 +502,11 @@ def make_handler(runner: Runner, auth=None):
                     return self._json(runner.codex_login.start())
                 if parts == ["api", "providers", "codex", "cancel"]:
                     return self._json(runner.codex_login.cancel())
+                if len(parts) == 4 and parts[:3] == ["api", "providers", "unlimit"]:
+                    from .. import limits
+
+                    limits.clear(parts[3])
+                    return self._json({"ok": True})
                 if parts == ["api", "providers", "codex", "logout"]:
                     from ..providers import logout_codex
 
@@ -506,7 +521,10 @@ def make_handler(runner: Runner, auth=None):
                 if parts == ["api", "providers", "routing"]:
                     from ..providers import save_routing
 
-                    return self._json(save_routing(runner.config, data))
+                    try:
+                        return self._json(save_routing(runner.config, data))
+                    except ValueError as e:
+                        return self._json({"error": str(e)}, 400)
                 if parts == ["api", "providers", "timezone"]:
                     from ..providers import save_timezone
 
