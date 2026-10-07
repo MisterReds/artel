@@ -22,6 +22,12 @@ def _http(url: str, token: str, path: str, body: dict | None = None) -> dict:
 
 def main() -> None:
     url, token = sys.argv[1], sys.argv[2]
+    # MCP stdio is UTF-8 JSON lines whatever the platform's locale encoding and line ending are
+    for stream, extra in ((sys.stdin, {}), (sys.stdout, {"newline": "\n"})):
+        try:
+            stream.reconfigure(encoding="utf-8", errors="replace", **extra)
+        except (AttributeError, ValueError, OSError):
+            pass
     for line in sys.stdin:
         line = line.strip()
         if not line:

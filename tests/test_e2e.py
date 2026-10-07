@@ -24,7 +24,7 @@ def test_goal_to_done(cfg):
     snap = project.board.snapshot()
     work = [t for t in snap["tasks"] if t["kind"] == "work"]
     assert len(work) == 3 and all(t["status"] == "done" for t in work)
-    assert (project.shared / "report.md").read_text().count("VERIFIED") == 1
+    assert (project.shared / "report.md").read_text(encoding="utf-8").count("VERIFIED") == 1
     # personas with souls and private workspaces
     names = [p.name for p in project.personas()]
     assert names == ["Ada", "Linus"]

@@ -21,10 +21,10 @@ def code_health(code: Path, timeout: int = 900) -> dict:
     env = {**os.environ, "PYTHONPATH": str(code)}
     env.pop("ARTEL_HOME", None)
     comp = subprocess.run([sys.executable, "-m", "compileall", "-q", "artel"], cwd=code, capture_output=True,
-                          text=True, env=env)
+                          text=True, env=env, encoding="utf-8", errors="replace")
     try:
         t = subprocess.run([sys.executable, "-m", "pytest", "-q", "-x", "--no-header", "-p", "no:cacheprovider"],
-                           cwd=code, capture_output=True, text=True, env=env, timeout=timeout)
+                           cwd=code, capture_output=True, text=True, env=env, timeout=timeout, encoding="utf-8", errors="replace")
         tail = (t.stdout + t.stderr)[-2500:]
         m_pass = re.search(r"(\d+) passed", tail)
         m_fail = re.search(r"(\d+) failed", tail)
@@ -34,14 +34,14 @@ def code_health(code: Path, timeout: int = 900) -> dict:
                  "tail": tail}
     except subprocess.TimeoutExpired:
         tests = {"exit": -1, "passed": 0, "failed": 0, "errors": 1, "tail": "pytest timed out"}
-    loc = sum(len(p.read_text(errors="replace").splitlines()) for p in (code / "artel").rglob("*.py"))
+    loc = sum(len(p.read_text(errors="replace", encoding="utf-8").splitlines()) for p in (code / "artel").rglob("*.py"))
     return {"compile_ok": comp.returncode == 0, "compile_errors": comp.stdout[-1500:], "tests": tests,
             "python_loc": loc, "ok": comp.returncode == 0 and tests["exit"] == 0}
 
 
 def _events(pdir: Path) -> list[dict]:
     p = pdir / "events.jsonl"
-    return [json.loads(ln) for ln in p.read_text().splitlines() if ln.strip()] if p.exists() else []
+    return [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()] if p.exists() else []
 
 
 def trajectory_profile(project_dirs: Iterable[Path]) -> dict:
@@ -63,7 +63,7 @@ def trajectory_profile(project_dirs: Iterable[Path]) -> dict:
         if not (pdir / "project.json").exists():
             continue
         projects += 1
-        status[json.loads((pdir / "project.json").read_text())["status"]] += 1
+        status[json.loads((pdir / "project.json").read_text(encoding="utf-8"))["status"]] += 1
         for e in _events(pdir):
             k = e["kind"]
             if k == "agent/end":

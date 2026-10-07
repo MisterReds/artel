@@ -28,6 +28,7 @@ from typing import Optional
 from .. import policy
 from ..agent import LoopDetector, Outcome, _short, execute_tool
 from ..prompts import CONTINUATION
+from ..tools import terminate_tree
 from ..tooling import ToolContext
 
 # Claude Code ships better versions of these; do not expose Artel's duplicates.
@@ -53,6 +54,8 @@ def child_env() -> dict:
 
     env = env_with_tools({k: v for k, v in os.environ.items() if k not in SESSION_ENV})
     env["ARTEL_CHILD"] = "1"
+    if sys.platform == "win32":
+        env.setdefault("PYTHONUTF8", "1")  # Python children (the MCP proxy, policy hook) speak UTF-8 like the CLIs
     return env
 
 
@@ -131,7 +134,7 @@ def _policy_gate(project, ctx, actor: str, task_id, tool_input: dict, proc) -> b
                        rule=verdict.rule.id, justification=verdict.justification)
     if verdict.decision == "prompt" and not ctx.terminal:
         ctx.terminal = policy.prompt_terminal(verdict, command)
-        proc.terminate()
+        terminate_tree(proc)
     return True
 
 
@@ -166,7 +169,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
     cfg_dir.mkdir(exist_ok=True)
     cfg_path = cfg_dir / f"mcp-{uuid.uuid4().hex[:8]}.json"
     cfg_path.write_text(json.dumps({"mcpServers": {"artel": {
-        "command": sys.executable, "args": ["-m", "artel.runtimes.mcp_proxy", bridge.url, bridge.token]}}}))
+        "command": sys.executable, "args": ["-m", "artel.runtimes.mcp_proxy", bridge.url, bridge.token]}}}), encoding="utf-8")
     terminal_names = [s.name for s in bridge.specs if s.terminal]
     note = (f"\n\n## Runtime\nYou run inside Claude Code. Use your built-in tools for files and shell. Artel "
             f"coordination tools are MCP tools named {MCP_PREFIX}<name>: "
@@ -210,15 +213,15 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                 args += ["--resume", session_id]
             args += list(cc.get("extra_args") or [])
             proc = subprocess.Popen(args, cwd=ctx.workspace, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                    env=child_env(), bufsize=1)
-            killer = threading.Timer(float(cc["timeout_s"]), proc.kill)
+                                    env=child_env(), bufsize=1, encoding="utf-8", errors="replace")
+            killer = threading.Timer(float(cc["timeout_s"]), terminate_tree, (proc, True))
             killer.start()
             pending: dict[str, tuple] = {}
             result_ev: Optional[dict] = None
             try:
                 for line in proc.stdout:
                     if stop_event is not None and stop_event.is_set():
-                        proc.terminate()
+                        terminate_tree(proc)
                     try:
                         ev = json.loads(line)
                     except ValueError:
@@ -249,7 +252,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                                                                                "input": _short(b["input"])})
                                     if verdict == "stop":
                                         out.status, out.error = "stalled", f"loop: repeated tool call {b['name']}"
-                                        proc.terminate()
+                                        terminate_tree(proc)
                                 if b["name"] == "Bash" and _policy_gate(project, ctx, actor, task_id, b["input"], proc):
                                     out.digest.append(f"POLICY blocked: {_short(b['input'])}")
                                 out.tool_calls += 1
@@ -262,7 +265,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                             project.board.heartbeat(ctx.run_id, turns=out.turns, tool_calls=out.tool_calls + bridge.calls)
                         if out.turns >= max_turns:
                             out.status, out.error = "turn_limit", f"{max_turns} turns"
-                            proc.terminate()
+                            terminate_tree(proc)
                     elif typ == "user":
                         for b in (ev.get("message") or {}).get("content") or []:
                             if not isinstance(b, dict) or b.get("type") != "tool_result" or b.get("tool_use_id") not in pending:

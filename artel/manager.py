@@ -30,6 +30,7 @@ from . import prompts
 from .agent import Outcome
 from .runtimes import run_agent
 from .snapshot import Snapshot
+from .tools import shell_run
 from .project import Persona, Project, persona_from_dict
 from .tooling import ToolContext, window_text
 from .tz import fmt_ts, zone_name
@@ -259,7 +260,7 @@ class Manager:
             # gates run unsandboxed unless `sandbox.gates` asks for it (then writable: the gate cwd + temp)
             run = sandbox.plan(self.cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off")
             try:
-                p = subprocess.run(run.argv, cwd=cwd, capture_output=True, text=True,
+                p = subprocess.run(run.argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                    timeout=int(self.cfg.get("gate_timeout_s", 900)), env=env)
                 res = {"command": cmd, "exit": p.returncode, "output": window_text(p.stdout + p.stderr, 3000)}
             except subprocess.TimeoutExpired:

@@ -163,10 +163,10 @@ def evolution_view() -> list[dict]:
         sf = d / "state.json"
         if not sf.exists():
             continue
-        state = json.loads(sf.read_text())
+        state = json.loads(sf.read_text(encoding="utf-8"))
         lp = d / "ledger.jsonl"
-        ledger = [json.loads(ln) for ln in lp.read_text().splitlines() if ln.strip()] if lp.exists() else []
-        absorb = [json.loads(p.read_text()) for p in sorted((d / "absorb").glob("*.json"))] if (d / "absorb").exists() else []
+        ledger = [json.loads(ln) for ln in lp.read_text(encoding="utf-8").splitlines() if ln.strip()] if lp.exists() else []
+        absorb = [json.loads(p.read_text(encoding="utf-8")) for p in sorted((d / "absorb").glob("*.json"))] if (d / "absorb").exists() else []
         branches = []
         if state.get("repo"):
             raw = git(Path(state["repo"]), "for-each-ref", "--format=%(refname:short)|%(objectname:short)|%(subject)",
@@ -175,7 +175,7 @@ def evolution_view() -> list[dict]:
             state["champion"] = git(Path(state["repo"]), "rev-parse", "--short", state.get("main", "HEAD"), check=False)
         diag = sorted(d.glob("gen*-diagnosis.md"))
         out.append({"name": d.name, "state": state, "ledger": ledger, "absorb": absorb, "branches": branches,
-                    "diagnosis": diag[-1].read_text() if diag else ""})
+                    "diagnosis": diag[-1].read_text(encoding="utf-8") if diag else ""})
     return out
 
 
@@ -432,12 +432,12 @@ def make_handler(runner: Runner, auth=None):
             if target != base and base not in target.parents:
                 return self._json({"error": "outside project"}, 400)
             if target.is_dir():
-                items = [{"path": str(p.relative_to(base)), "dir": p.is_dir(), "size": p.stat().st_size}
+                items = [{"path": p.relative_to(base).as_posix(), "dir": p.is_dir(), "size": p.stat().st_size}
                          for p in sorted(target.iterdir()) if not p.name.startswith(".")]
-                return self._json({"dir": str(target.relative_to(base)), "items": items})
+                return self._json({"dir": target.relative_to(base).as_posix(), "items": items})
             if target.is_file():
                 text = target.read_bytes()[:400_000].decode("utf-8", errors="replace")
-                return self._json({"file": str(target.relative_to(base)), "text": text})
+                return self._json({"file": target.relative_to(base).as_posix(), "text": text})
             return self._json({"error": "not found"}, 404)
 
         def _sse(self, project: Project, after: int) -> None:

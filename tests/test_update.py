@@ -15,7 +15,7 @@ ROADMAP = """items:
 
 def g(cwd, *args):
     return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args], cwd=cwd, check=True,
-                          capture_output=True, text=True).stdout.strip()
+                          capture_output=True, text=True, encoding="utf-8", errors="replace").stdout.strip()
 
 
 @pytest.fixture
@@ -25,8 +25,8 @@ def repos(tmp_path):
     dev = tmp_path / "dev"
     subprocess.run(["git", "clone", "-q", str(up), str(dev)], check=True)
     (dev / "tests").mkdir()
-    (dev / "tests" / "test_invariants.py").write_text("def test_pillar():\n    assert True\n")
-    (dev / "roadmap.yaml").write_text(ROADMAP.replace("STATUS", "planned"))
+    (dev / "tests" / "test_invariants.py").write_text("def test_pillar():\n    assert True\n", encoding="utf-8")
+    (dev / "roadmap.yaml").write_text(ROADMAP.replace("STATUS", "planned"), encoding="utf-8")
     g(dev, "checkout", "-q", "-b", "master")
     g(dev, "add", "-A")
     g(dev, "commit", "-q", "-m", "v1")
@@ -38,7 +38,7 @@ def repos(tmp_path):
 
 def publish(dev, msg, files):
     for rel, text in files.items():
-        (dev / rel).write_text(text)
+        (dev / rel).write_text(text, encoding="utf-8")
     g(dev, "add", "-A")
     g(dev, "commit", "-q", "-m", msg)
     g(dev, "push", "-q", "origin", "master")
@@ -76,7 +76,7 @@ def test_broken_version_is_never_installed(repos):
 def test_local_edits_and_divergence_block_updates(repos):
     dev, inst, up = repos
     publish(dev, "v2", {"y.py": "Y = 1\n"})
-    (inst / "roadmap.yaml").write_text("local edit\n")
+    (inst / "roadmap.yaml").write_text("local edit\n", encoding="utf-8")
     st = up.status()
     assert st["available"] and not st["can_update"] and "local changes" in st["reason"]
     with pytest.raises(UpdateError, match="local changes"):

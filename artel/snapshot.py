@@ -26,7 +26,7 @@ class Snapshot:
                "-c", "user.name=artel", "-c", "user.email=artel@localhost",
                "-c", "core.autocrlf=false", "-c", "core.quotepath=false", "-c", "gc.auto=0", *args]
         try:
-            p = subprocess.run(cmd, cwd=self.work_tree, capture_output=True, text=True, timeout=120)
+            p = subprocess.run(cmd, cwd=self.work_tree, capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace")
         except (OSError, subprocess.SubprocessError, ValueError):
             return None
         if check and p.returncode != 0:
@@ -43,7 +43,7 @@ class Snapshot:
                     return False
             info = self.git_dir / "info"
             info.mkdir(parents=True, exist_ok=True)
-            (info / "exclude").write_text("\n".join(EXCLUDES) + "\n")
+            (info / "exclude").write_text("\n".join(EXCLUDES) + "\n", encoding="utf-8")
             return True
         except OSError:
             return False

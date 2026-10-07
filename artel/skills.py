@@ -125,11 +125,11 @@ def scan_skill_dir(path: Path) -> dict:
     for f in sorted(path.rglob("*")):
         if f.is_file() and f.stat().st_size < 2_000_000:
             try:
-                text = f.read_text(errors="replace")
+                text = f.read_text(errors="replace", encoding="utf-8")
             except OSError:
                 continue
             for fd in scan_text(text):
-                findings.append({**fd, "file": str(f.relative_to(path))})
+                findings.append({**fd, "file": f.relative_to(path).as_posix()})
     verdict = "safe"
     if any(f["severity"] == "caution" for f in findings):
         verdict = "caution"
@@ -153,11 +153,11 @@ class SkillStore:
 
     def usage(self) -> dict:
         p = self._usage_path
-        return json.loads(p.read_text()) if p.exists() else {}
+        return json.loads(p.read_text(encoding="utf-8")) if p.exists() else {}
 
     def _save_usage(self, data: dict) -> None:
         tmp = self._usage_path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1))
+        tmp.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
         tmp.replace(self._usage_path)
 
     def _touch(self, name: str, **updates: Any) -> dict:
@@ -195,7 +195,7 @@ class SkillStore:
             if p.parent.parent.name.startswith("."):
                 continue
             try:
-                meta, _ = parse_skill(p.read_text())
+                meta, _ = parse_skill(p.read_text(encoding="utf-8"))
             except SkillError:
                 continue
             name = p.parent.name
@@ -230,10 +230,10 @@ class SkillStore:
                 raise SkillError("file_path escapes the skill directory")
             if not target.is_file():
                 raise SkillError(f"{file_path} not found in {name}")
-            text = target.read_text(errors="replace")
+            text = target.read_text(errors="replace", encoding="utf-8")
         else:
-            text = (d / "SKILL.md").read_text()
-            extras = [str(f.relative_to(d)) for f in sorted(d.rglob("*")) if f.is_file() and f.name != "SKILL.md"]
+            text = (d / "SKILL.md").read_text(encoding="utf-8")
+            extras = [f.relative_to(d).as_posix() for f in sorted(d.rglob("*")) if f.is_file() and f.name != "SKILL.md"]
             if extras:
                 text += "\n\n<!-- support files (load with skill_view file_path=...) -->\n" + "\n".join(
                     f"- {e}" for e in extras)
@@ -251,7 +251,7 @@ class SkillStore:
     def _manifest(self, d: Optional[Path]) -> dict:
         if d is None or not d.exists():
             return {}
-        return {str(f.relative_to(d)): self._blob(f.read_bytes()) for f in sorted(d.rglob("*")) if f.is_file()}
+        return {f.relative_to(d).as_posix(): self._blob(f.read_bytes()) for f in sorted(d.rglob("*")) if f.is_file()}
 
     def _ledger(self, name: str, action: str, actor: str, before: dict, after: dict, location: str,
                 reason: str = "") -> str:
@@ -266,7 +266,7 @@ class SkillStore:
         p = self.root / ".ledger.jsonl"
         if not p.exists():
             return []
-        rows = [json.loads(ln) for ln in p.read_text().splitlines() if ln.strip()]
+        rows = [json.loads(ln) for ln in p.read_text(encoding="utf-8").splitlines() if ln.strip()]
         return [r for r in rows if name is None or r["skill"] == name]
 
     def rollback(self, entry_id: str, actor: str = "user") -> str:
@@ -310,10 +310,10 @@ class SkillStore:
             category = re.sub(r"[^a-z0-9-]", "-", category.lower()) or "general"
             d = self.root / category / name
             d.mkdir(parents=True)
-            (d / "SKILL.md").write_text(content)
+            (d / "SKILL.md").write_text(content, encoding="utf-8")
             self._touch(name, origin="agent" if actor != "user" else "user", trust="builtin", state="active",
                         created_by=actor, created_at=time.time())
-            entry = self._ledger(name, "create", actor, {}, self._manifest(d), str(d.relative_to(self.root)), reason)
+            entry = self._ledger(name, "create", actor, {}, self._manifest(d), d.relative_to(self.root).as_posix(), reason)
         return {"name": name, "path": str(d), "warnings": warnings, "ledger": entry}
 
     def patch(self, name: str, old: str, new: str, actor: str = "agent", file_path: str = "SKILL.md",
@@ -324,16 +324,16 @@ class SkillStore:
                 raise SkillError(f"skill {name!r} not found")
             self._check_writable(name, actor)
             target = d / file_path
-            text = target.read_text()
+            text = target.read_text(encoding="utf-8")
             count = text.count(old)
             if count != 1:
                 raise SkillError(f"old text must match exactly once (matched {count} times)")
             updated = text.replace(old, new)
             warnings = validate_skill(name, updated) if file_path == "SKILL.md" else []
             before = self._manifest(d)
-            target.write_text(updated)
+            target.write_text(updated, encoding="utf-8")
             self._touch(name, patch_count="+1", last_used=time.time())
-            entry = self._ledger(name, "patch", actor, before, self._manifest(d), str(d.relative_to(self.root)),
+            entry = self._ledger(name, "patch", actor, before, self._manifest(d), d.relative_to(self.root).as_posix(),
                                  reason)
         return {"name": name, "warnings": warnings, "ledger": entry}
 
@@ -353,9 +353,9 @@ class SkillStore:
                 validate_skill(name, content)
             before = self._manifest(d)
             target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_text(content)
+            target.write_text(content, encoding="utf-8")
             self._touch(name, patch_count="+1", last_used=time.time())
-            entry = self._ledger(name, "write_file", actor, before, self._manifest(d), str(d.relative_to(self.root)),
+            entry = self._ledger(name, "write_file", actor, before, self._manifest(d), d.relative_to(self.root).as_posix(),
                                  reason)
         return {"name": name, "file": str(rel), "ledger": entry}
 
@@ -371,7 +371,7 @@ class SkillStore:
                 shutil.rmtree(dest)
             shutil.move(str(d), str(dest))
             self._touch(name, state="archived")
-            entry = self._ledger(name, "archive", actor, {}, {}, str(dest.relative_to(self.root)), reason)
+            entry = self._ledger(name, "archive", actor, {}, {}, dest.relative_to(self.root).as_posix(), reason)
         return {"name": name, "archived_to": str(dest), "ledger": entry}
 
     def restore(self, name: str) -> dict:
@@ -429,7 +429,7 @@ class SkillStore:
                 if not fnmatch.fnmatch(name, include):
                     continue
                 try:
-                    meta, _ = parse_skill(skill_md.read_text())
+                    meta, _ = parse_skill(skill_md.read_text(encoding="utf-8"))
                 except SkillError as exc:
                     skipped.append({"skill": name, "reason": str(exc)})
                     continue
@@ -455,7 +455,7 @@ class SkillStore:
                 self._touch(name, origin=f"hub:{label}", trust=trust, state="active", scan=scan["verdict"],
                             installed_at=time.time())
                 self._ledger(name, "hub_install", "user", before, self._manifest(dest),
-                             str(dest.relative_to(self.root)), f"from {label}")
+                             dest.relative_to(self.root).as_posix(), f"from {label}")
                 installed.append(name)
         finally:
             if tmp:

@@ -26,7 +26,7 @@ STATUS_MARK = {"done": "готово", "partial": "частично", "in_progre
 class Roadmap:
     def __init__(self, path: Path):
         self.path = Path(path)
-        self.data = yaml.safe_load(self.path.read_text()) or {}
+        self.data = yaml.safe_load(self.path.read_text(encoding="utf-8")) or {}
         self.pillars: list[dict] = self.data.get("pillars", [])
         self.items: list[dict] = self.data.get("items", [])
 
@@ -54,7 +54,7 @@ class Roadmap:
 
     # --- updates (in place, comment preserving) -------------------------
     def set_status(self, item_id: str, status: str, note: str = "") -> None:
-        lines = self.path.read_text().splitlines(keepends=True)
+        lines = self.path.read_text(encoding="utf-8").splitlines(keepends=True)
         start = next((i for i, ln in enumerate(lines) if re.match(rf"\s*- id: {re.escape(item_id)}\s*$", ln)), None)
         if start is None:
             raise KeyError(item_id)
@@ -74,7 +74,7 @@ class Roadmap:
         if note:
             pos = next(i for i, ln in enumerate(block) if ln.startswith(indent + "status:")) + 1
             block.insert(pos, f"{indent}result: {yaml.safe_dump(note, default_style=chr(34), width=10_000).strip()}\n")
-        self.path.write_text("".join(lines[:start] + block + lines[end:]))
+        self.path.write_text("".join(lines[:start] + block + lines[end:]), encoding="utf-8")
         self.__init__(self.path)
 
     def add_items(self, items: list[dict], header: str = "") -> list[str]:
@@ -83,13 +83,13 @@ class Roadmap:
         new = [it for it in items if it["id"] not in known]
         if not new:
             return []
-        text = self.path.read_text().rstrip("\n") + "\n"
+        text = self.path.read_text(encoding="utf-8").rstrip("\n") + "\n"
         if header:
             text += f"\n  # ---- {header} ----\n"
         for it in new:
             dumped = yaml.safe_dump([it], sort_keys=False, allow_unicode=True, width=110)
             text += "".join("  " + ln + "\n" for ln in dumped.splitlines())
-        self.path.write_text(text)
+        self.path.write_text(text, encoding="utf-8")
         self.__init__(self.path)
         return [it["id"] for it in new]
 
@@ -113,7 +113,7 @@ class Roadmap:
             dest.parent.mkdir(parents=True, exist_ok=True)
             url = repo if "://" in repo else f"https://github.com/{repo}.git"
             p = subprocess.run(["git", "clone", "-q", "--depth", "1", url, str(dest)], capture_output=True,
-                               text=True, timeout=900)
+                               text=True, timeout=900, encoding="utf-8", errors="replace")
             if p.returncode != 0:
                 return None
         return dest
@@ -191,14 +191,14 @@ class Roadmap:
 
 def load_studied(repo: Path) -> list[dict]:
     p = Path(repo) / "studied.yaml"
-    return (yaml.safe_load(p.read_text()) or []) if p.exists() else []
+    return (yaml.safe_load(p.read_text(encoding="utf-8")) or []) if p.exists() else []
 
 
 def add_studied(repo: Path, row: dict) -> None:
     rows = [r for r in load_studied(repo) if r["repo"] != row["repo"]] + [row]
     (Path(repo) / "studied.yaml").write_text(
         "# Harnesses whose code Artel's absorber has read. Written by `artel absorb` / `artel evolve --cycle`.\n"
-        + yaml.safe_dump(rows, sort_keys=False, allow_unicode=True, width=110))
+        + yaml.safe_dump(rows, sort_keys=False, allow_unicode=True, width=110), encoding="utf-8")
 
 
 def next_to_study(repo: Path, registry: Optional[list] = None, n: int = 1) -> list[dict]:
@@ -208,7 +208,7 @@ def next_to_study(repo: Path, registry: Optional[list] = None, n: int = 1) -> li
     if registry is None:
         import json
 
-        registry = json.loads((Path(__file__).parent / "data" / "harnesses.json").read_text())
+        registry = json.loads((Path(__file__).parent / "data" / "harnesses.json").read_text(encoding="utf-8"))
     rm = Roadmap.of_repo(repo)
     seen = {r["repo"].lower() for r in load_studied(repo)}
     seen |= {str((it.get("source") or {}).get("repo", "")).lower() for it in rm.pillars + rm.items}

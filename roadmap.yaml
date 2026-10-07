@@ -217,7 +217,13 @@ items:
   - id: W2-ci
     wave: 2
     mode: design
-    status: planned
+    status: partial
+    result: >-
+      .github/workflows/ci.yml: ubuntu/macos/windows x Python 3.10/3.13 run the full suite, install.sh / install.ps1
+      into a temporary home cloning the checkout, then scripts/ci_smoke.py (scripted first run ends done, dashboard
+      answers /api/ready). Code made portable (UTF-8 I/O, POSIX shell via Git Bash on Windows, process-tree stop,
+      POSIX paths in journal keys, restart without execv on Windows). Open: a green run on macOS/Windows is not
+      yet observed; blocking merges on CI needs branch protection, and the evolution publish gate is not wired to it.
     title: CI on Linux, macOS and Windows — tests, installer and a scripted first run on every push
     source: {harness: OpenHands / Codex, repo: openai/codex, paths: [.github/workflows]}
     target: [.github/workflows]

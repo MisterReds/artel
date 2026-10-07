@@ -166,7 +166,7 @@ def parse_rule(raw, source: str = "policy") -> Rule:
 
 def _read(path: Path) -> list:
     try:
-        data = yaml.safe_load(path.read_text()) or {}
+        data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError) as exc:
         raise PolicyError(f"{path}: cannot load: {exc}")
     rules = data.get("rules", []) if isinstance(data, dict) else None

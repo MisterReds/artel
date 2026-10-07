@@ -112,7 +112,7 @@ def load_config(path: Optional[Path] = None) -> dict:
     cfg = DEFAULT_CONFIG
     for candidate in [artel_home() / "artel.yaml", path]:
         if candidate and Path(candidate).exists():
-            cfg = deep_merge(cfg, yaml.safe_load(Path(candidate).read_text()) or {})
+            cfg = deep_merge(cfg, yaml.safe_load(Path(candidate).read_text(encoding="utf-8")) or {})
     return cfg
 
 
@@ -143,7 +143,7 @@ class Project:
         self.slug = self.root.name
         self.log = EventLog(self.root / "events.jsonl")
         self.board = Board(self.root / "board.db", log=self.log)
-        meta = json.loads((self.root / "project.json").read_text()) if (self.root / "project.json").exists() else {}
+        meta = json.loads((self.root / "project.json").read_text(encoding="utf-8")) if (self.root / "project.json").exists() else {}
         # workdir: the team works directly in an external directory (e.g. a git worktree) instead of shared/
         self.shared = Path(meta["workdir"]) if meta.get("workdir") else self.root / "shared"
         self.shared.mkdir(parents=True, exist_ok=True)
@@ -172,7 +172,7 @@ class Project:
             meta["workdir"] = str(Path(workdir).resolve())
         if refs:
             meta["refs"] = [str(Path(r).resolve()) for r in refs]
-        (root / "project.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2))
+        (root / "project.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
         project = cls(root, config)
         if seed:
             import shutil
@@ -194,11 +194,11 @@ class Project:
     # --- metadata -------------------------------------------------------
     @property
     def meta(self) -> dict:
-        return json.loads((self.root / "project.json").read_text())
+        return json.loads((self.root / "project.json").read_text(encoding="utf-8"))
 
     def _write_meta(self, m: dict) -> None:
         tmp = self.root / f".project.json.{threading.get_ident()}.tmp"
-        tmp.write_text(json.dumps(m, ensure_ascii=False, indent=2))
+        tmp.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
         tmp.replace(self.root / "project.json")
 
     def set_meta(self, **fields: Any) -> dict:
@@ -238,14 +238,14 @@ class Project:
             "- Be genuinely useful, not performatively useful. Do the work, then show the evidence.\n"
             "- Be resourceful before declaring a blocker: read, search, try, measure.\n"
             "- Earn trust through competence: never claim what you did not verify.\n"
-            "- These files are your memory. Read them, keep MEMORY.md current.\n")
+            "- These files are your memory. Read them, keep MEMORY.md current.\n", encoding="utf-8")
         (d / "IDENTITY.md").write_text(yaml.safe_dump(
             {"name": persona.name, "role": persona.role, "model": persona.model, "effort": persona.effort,
-             "skills": persona.skills}, allow_unicode=True, sort_keys=False))
+             "skills": persona.skills}, allow_unicode=True, sort_keys=False), encoding="utf-8")
         rules = persona.rules or []
-        (d / "RULES.md").write_text("# RULES\n\n" + "".join(f"- {r}\n" for r in rules))
+        (d / "RULES.md").write_text("# RULES\n\n" + "".join(f"- {r}\n" for r in rules), encoding="utf-8")
         if not (d / "MEMORY.md").exists():
-            (d / "MEMORY.md").write_text("# MEMORY\n\n")
+            (d / "MEMORY.md").write_text("# MEMORY\n\n", encoding="utf-8")
         self.log.append("worker/hired", worker=persona.name, role=persona.role, soul=persona.soul,
                         rules=rules, skills=persona.skills, model=persona.model)
         return d
@@ -254,9 +254,9 @@ class Project:
         d = self.worker_dir(name)
         if not (d / "IDENTITY.md").exists():
             return None
-        ident = yaml.safe_load((d / "IDENTITY.md").read_text()) or {}
-        soul = (d / "SOUL.md").read_text()
-        rules = [ln[2:] for ln in (d / "RULES.md").read_text().splitlines() if ln.startswith("- ")]
+        ident = yaml.safe_load((d / "IDENTITY.md").read_text(encoding="utf-8")) or {}
+        soul = (d / "SOUL.md").read_text(encoding="utf-8")
+        rules = [ln[2:] for ln in (d / "RULES.md").read_text(encoding="utf-8").splitlines() if ln.startswith("- ")]
         return Persona(name=ident.get("name", name), role=ident.get("role", ""), soul=soul, rules=rules,
                        skills=ident.get("skills") or [], model=ident.get("model"), effort=ident.get("effort"))
 
@@ -270,7 +270,7 @@ class Project:
 
     def worker_files(self, name: str) -> dict[str, str]:
         d = self.worker_dir(name)
-        return {f: (d / f).read_text() for f in ("SOUL.md", "IDENTITY.md", "RULES.md", "MEMORY.md") if (d / f).exists()}
+        return {f: (d / f).read_text(encoding="utf-8") for f in ("SOUL.md", "IDENTITY.md", "RULES.md", "MEMORY.md") if (d / f).exists()}
 
     # --- harness notes (continual harness) ------------------------------
     @property
@@ -279,7 +279,7 @@ class Project:
 
     def prompt_notes(self) -> str:
         p = self.prompt_notes_path
-        return p.read_text() if p.exists() else ""
+        return p.read_text(encoding="utf-8") if p.exists() else ""
 
     def model_for(self, role: str, persona: Optional[Persona] = None) -> str:
         if persona and persona.model:
@@ -304,7 +304,7 @@ def list_projects(home: Optional[Path] = None) -> list[dict]:
         for d in sorted(base.iterdir(), key=lambda p: p.stat().st_mtime, reverse=True):
             mf = d / "project.json"
             if mf.exists():
-                m = json.loads(mf.read_text())
+                m = json.loads(mf.read_text(encoding="utf-8"))
                 out.append({"slug": d.name, **{k: m.get(k) for k in ("goal", "name", "status", "created_at", "usage")}})
     return out
 

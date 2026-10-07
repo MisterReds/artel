@@ -7,14 +7,15 @@
 # clone, so the built-in updater works), creates a virtual environment, puts `artel` on the user PATH and starts the
 # dashboard. Safe to run again: it updates in place. Agent CLIs (Codex, Claude Code) are installed only when needed:
 # dashboard "Провайдеры" → "Установить", or `artel providers install codex|claude` (into ~\.artel\tools).
+# Environment overrides: ARTEL_REPO (URL or local path to clone), ARTEL_DIR (the clone), ARTEL_VENV (the venv).
 param(
-  [string]$Dir = "$env:USERPROFILE\.artel\app",
+  [string]$Dir = $(if ($env:ARTEL_DIR) { $env:ARTEL_DIR } else { "$env:USERPROFILE\.artel\app" }),
   [switch]$WithCodex, [switch]$WithClaude, [switch]$Service, [switch]$NoStart
 )
 $ErrorActionPreference = "Stop"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 $Repo = if ($env:ARTEL_REPO) { $env:ARTEL_REPO } else { "https://github.com/MisterReds/artel.git" }
-$Venv = "$env:USERPROFILE\.artel\venv"
+$Venv = if ($env:ARTEL_VENV) { $env:ARTEL_VENV } else { "$env:USERPROFILE\.artel\venv" }
 
 function Step($t) { Write-Host "▲ " -ForegroundColor DarkYellow -NoNewline; Write-Host $t }
 function Note($t) { Write-Host "  $t" -ForegroundColor DarkGray }
@@ -36,6 +37,7 @@ function Find-Python {  # returns the command as an array: @("py", "-3.12") or @
   }
   return $null
 }
+function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" } }
 function Py { $rest = @($script:py | Select-Object -Skip 1); & $script:py[0] @rest @args }
 
 Step "Artel installer — Windows"
@@ -59,21 +61,21 @@ if ($LASTEXITCODE -ne 0) {
 Note "ok"
 
 Step "Artel → $Dir"
-if (Test-Path "$Dir\.git") { git -C $Dir pull --ff-only --quiet; Note ("updated to " + (git -C $Dir rev-parse --short HEAD)) }
-else { New-Item -ItemType Directory -Force -Path (Split-Path $Dir) | Out-Null; git clone --quiet $Repo $Dir; Note ("cloned " + (git -C $Dir rev-parse --short HEAD)) }
+if (Test-Path "$Dir\.git") { git -C $Dir pull --ff-only --quiet; Check "git pull"; Note ("updated to " + (git -C $Dir rev-parse --short HEAD)) }
+else { New-Item -ItemType Directory -Force -Path (Split-Path $Dir) | Out-Null; git clone --quiet $Repo $Dir; Check "git clone"; Note ("cloned " + (git -C $Dir rev-parse --short HEAD)) }
 
 Step "Python environment → $Venv"
-if (-not (Test-Path "$Venv\Scripts\python.exe")) { Py -m venv $Venv }
-& "$Venv\Scripts\python.exe" -m pip install --quiet --upgrade pip
-& "$Venv\Scripts\python.exe" -m pip install --quiet -e $Dir
+if (-not (Test-Path "$Venv\Scripts\python.exe")) { Py -m venv $Venv; Check "python -m venv" }
+& "$Venv\Scripts\python.exe" -m pip install --quiet --upgrade pip; Check "pip upgrade"
+& "$Venv\Scripts\python.exe" -m pip install --quiet -e $Dir; Check "pip install"
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$Venv\Scripts*") {
   [Environment]::SetEnvironmentVariable("Path", "$userPath;$Venv\Scripts", "User"); Refresh-Path
   Note "added $Venv\Scripts to the user PATH (new terminals pick it up)"
 }
 
-if ($WithCodex) { Step "Codex CLI (ChatGPT subscription)"; & "$Venv\Scripts\artel.exe" providers install codex }
-if ($WithClaude) { Step "Claude Code CLI (Claude subscription)"; & "$Venv\Scripts\artel.exe" providers install claude }
+if ($WithCodex) { Step "Codex CLI (ChatGPT subscription)"; & "$Venv\Scripts\artel.exe" providers install codex; Check "codex install" }
+if ($WithClaude) { Step "Claude Code CLI (Claude subscription)"; & "$Venv\Scripts\artel.exe" providers install claude; Check "claude install" }
 
 if ($Service) {
   Step "Dashboard at sign-in (Task Scheduler)"

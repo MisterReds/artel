@@ -117,8 +117,8 @@ class ToolContext:
         p = p.resolve()
         shared = self.shared_dir.resolve()
         if p == shared or shared in p.parents:
-            return "shared/" + str(p.relative_to(shared)) if p != shared else "shared/"
+            return "shared/" + p.relative_to(shared).as_posix() if p != shared else "shared/"
         try:
-            return str(p.relative_to(self.workspace.resolve()))
+            return p.relative_to(self.workspace.resolve()).as_posix()
         except ValueError:
             return str(p)

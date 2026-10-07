@@ -26,29 +26,29 @@ def _bump_mtime(p, seconds=5):
 
 def test_read_then_external_change_is_refused(env):
     t, ctx, root = env
-    (root / "a.txt").write_text("alpha beta")
+    (root / "a.txt").write_text("alpha beta", encoding="utf-8")
     t["read_file"].fn(ctx, path="a.txt")
-    (root / "a.txt").write_text("alpha gamma, longer")
+    (root / "a.txt").write_text("alpha gamma, longer", encoding="utf-8")
     _bump_mtime(root / "a.txt")
     with pytest.raises(ToolError, match="read_file"):
         t["edit_file"].fn(ctx, path="a.txt", old="alpha", new="one")
-    assert (root / "a.txt").read_text() == "alpha gamma, longer"
+    assert (root / "a.txt").read_text(encoding="utf-8") == "alpha gamma, longer"
 
 
 def test_same_size_edit_with_touched_mtime_is_refused(env):
     t, ctx, root = env
-    (root / "a.txt").write_text("alpha beta")
+    (root / "a.txt").write_text("alpha beta", encoding="utf-8")
     t["read_file"].fn(ctx, path="a.txt")
-    (root / "a.txt").write_text("alpha BETA")        # same size
+    (root / "a.txt").write_text("alpha BETA", encoding="utf-8")        # same size
     _bump_mtime(root / "a.txt")
     with pytest.raises(ToolError):
         t["edit_file"].fn(ctx, path="a.txt", old="alpha", new="one")
-    assert (root / "a.txt").read_text() == "alpha BETA"
+    assert (root / "a.txt").read_text(encoding="utf-8") == "alpha BETA"
 
 
 def test_touch_only_is_refused(env):
     t, ctx, root = env
-    (root / "a.txt").write_text("alpha beta")
+    (root / "a.txt").write_text("alpha beta", encoding="utf-8")
     t["read_file"].fn(ctx, path="a.txt")
     _bump_mtime(root / "a.txt")
     with pytest.raises(ToolError):
@@ -57,26 +57,26 @@ def test_touch_only_is_refused(env):
 
 def test_reread_then_edit_succeeds(env):
     t, ctx, root = env
-    (root / "a.txt").write_text("alpha beta")
+    (root / "a.txt").write_text("alpha beta", encoding="utf-8")
     t["read_file"].fn(ctx, path="a.txt")
-    (root / "a.txt").write_text("alpha gamma, longer")
+    (root / "a.txt").write_text("alpha gamma, longer", encoding="utf-8")
     _bump_mtime(root / "a.txt")
     t["read_file"].fn(ctx, path="a.txt")
     t["edit_file"].fn(ctx, path="a.txt", old="alpha", new="one")
-    assert (root / "a.txt").read_text() == "one gamma, longer"
+    assert (root / "a.txt").read_text(encoding="utf-8") == "one gamma, longer"
 
 
 def test_write_then_edit_succeeds(env):
     t, ctx, root = env
     t["write_file"].fn(ctx, path="w.txt", content="alpha beta")
     t["edit_file"].fn(ctx, path="w.txt", old="alpha", new="one")
-    assert (root / "w.txt").read_text() == "one beta"
+    assert (root / "w.txt").read_text(encoding="utf-8") == "one beta"
 
 
 def test_external_change_after_write_is_refused(env):
     t, ctx, root = env
     t["write_file"].fn(ctx, path="w.txt", content="alpha beta")
-    (root / "w.txt").write_text("alpha BETA")
+    (root / "w.txt").write_text("alpha BETA", encoding="utf-8")
     _bump_mtime(root / "w.txt")
     with pytest.raises(ToolError):
         t["edit_file"].fn(ctx, path="w.txt", old="alpha", new="one")
@@ -84,9 +84,9 @@ def test_external_change_after_write_is_refused(env):
 
 def test_never_read_file_edits_as_before(env):
     t, ctx, root = env
-    (root / "n.txt").write_text("abc")
+    (root / "n.txt").write_text("abc", encoding="utf-8")
     t["edit_file"].fn(ctx, path="n.txt", old="abc", new="d")
-    assert (root / "n.txt").read_text() == "d"
+    assert (root / "n.txt").read_text(encoding="utf-8") == "d"
 
 
 def test_consecutive_agent_edits_succeed(env):
@@ -94,4 +94,4 @@ def test_consecutive_agent_edits_succeed(env):
     t["write_file"].fn(ctx, path="c.txt", content="one two three")
     for old, new in (("one", "1"), ("two", "2"), ("three", "3")):
         t["edit_file"].fn(ctx, path="c.txt", old=old, new=new)
-    assert (root / "c.txt").read_text() == "1 2 3"
+    assert (root / "c.txt").read_text(encoding="utf-8") == "1 2 3"

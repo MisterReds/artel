@@ -1,5 +1,6 @@
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -8,6 +9,8 @@ from artel.evolve import bench
 from artel.evolve.diagnose import doctor, render_markdown, trajectory_profile
 from artel.evolve.engine import Evolution, Hypothesis, Policy, git, slug
 from artel.project import DEFAULT_CONFIG, deep_merge
+
+PY = Path(sys.executable).as_posix()  # `python3` is not a command on Windows; this interpreter is everywhere
 
 
 def _suite(pass_rate, cost, partial=None, results=None):
@@ -23,9 +26,9 @@ def repo(tmp_path, monkeypatch):
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
     r = tmp_path / "selfrepo"
     (r / "artel").mkdir(parents=True)
-    (r / "artel" / "__init__.py").write_text('"""toy artel"""\n')
+    (r / "artel" / "__init__.py").write_text('"""toy artel"""\n', encoding="utf-8")
     (r / "tests").mkdir()
-    (r / "tests" / "test_ok.py").write_text("def test_ok():\n    assert True\n")
+    (r / "tests" / "test_ok.py").write_text("def test_ok():\n    assert True\n", encoding="utf-8")
     for args in (["init", "-q", "-b", "main"], ["add", "-A"], ["commit", "-q", "-m", "init"]):
         git(r, *args)
     return r
@@ -75,7 +78,7 @@ def test_failing_tests_reject_candidate(repo, tmp_path):
     ev = make(repo, tmp_path, [_suite(0.5, 1.0), _suite(1.0, 1.0)])
 
     def breaking_impl(h, wt):
-        (wt / "tests" / "test_broken.py").write_text("def test_no():\n    assert False\n")
+        (wt / "tests" / "test_broken.py").write_text("def test_no():\n    assert False\n", encoding="utf-8")
         return {"status": "done"}
 
     ev.implement_fn = breaking_impl
@@ -88,8 +91,8 @@ def test_failing_tests_reject_candidate(repo, tmp_path):
 def test_proposals_and_absorb_via_agents(repo, tmp_path):
     src = tmp_path / "otherharness"
     src.mkdir()
-    (src / "README.md").write_text("Other harness with a marker feature")
-    (src / "LICENSE").write_text("MIT License\n\nPermission is hereby granted, free of charge, ...")
+    (src / "README.md").write_text("Other harness with a marker feature", encoding="utf-8")
+    (src / "LICENSE").write_text("MIT License\n\nPermission is hereby granted, free of charge, ...", encoding="utf-8")
     ev = make(repo, tmp_path, [_suite(0.5, 1.0), _suite(1.0, 1.0), _suite(1.0, 1.0)])
     out = ev.absorb(str(src), run=True, top=1)
     assert out["license"] == "MIT" and out["features"][0]["name"] == "marker"
@@ -103,13 +106,13 @@ def test_proposals_and_absorb_via_agents(repo, tmp_path):
 
 def test_bench_hidden_checks_and_doctor(tmp_path, monkeypatch):
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "h"))
-    task = {"id": "t", "dir": str(tmp_path / "task"), "hidden": ["python3 .artel_eval/c.py"]}
+    task = {"id": "t", "dir": str(tmp_path / "task"), "hidden": [f'"{PY}" .artel_eval/c.py']}
     (tmp_path / "task" / "hidden").mkdir(parents=True)
-    (tmp_path / "task" / "hidden" / "c.py").write_text("import os; assert os.path.exists('x.txt')")
+    (tmp_path / "task" / "hidden" / "c.py").write_text("import os; assert os.path.exists('x.txt')", encoding="utf-8")
     wd = tmp_path / "wd"
     wd.mkdir()
     assert bench.run_hidden(task, wd)["pass"] is False
-    (wd / "x.txt").write_text("1")
+    (wd / "x.txt").write_text("1", encoding="utf-8")
     res = bench.run_hidden(task, wd)
     assert res["pass"] is True and not (wd / ".artel_eval").exists()
     # doctor over a real scripted project with a rejection
@@ -143,7 +146,7 @@ POP = [("fix a", {"fix_a.txt": "1"}), ("fix b", {"fix_b.txt": "1"}), ("fix c one
 def _pop_suite(code, tasks=None):
     code = Path(code)
     ok = {"a": (code / "fix_a.txt").exists(), "b": (code / "fix_b.txt").exists(),
-          "c": "C =" in (code / "artel" / "__init__.py").read_text(), "d": not (code / "break_d.txt").exists()}
+          "c": "C =" in (code / "artel" / "__init__.py").read_text(encoding="utf-8"), "d": not (code / "break_d.txt").exists()}
     rows = [{"id": t, "pass": v, "partial": 1.0 if v else 0.0, "cost_usd": 0.5} for t, v in ok.items()
             if not tasks or t in tasks]
     return {"results": rows, "summary": bench.summarize(rows)}
@@ -160,7 +163,7 @@ def _population(repo, tmp_path):
     def impl(h, wt):
         for rel, text in dict(POP)[h.title].items():
             (wt / rel).parent.mkdir(parents=True, exist_ok=True)
-            (wt / rel).write_text(text)
+            (wt / rel).write_text(text, encoding="utf-8")
         return {"cost_usd": 0.1}
 
     ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
@@ -230,7 +233,7 @@ def test_interrupted_generation_resumes_without_redoing_finished_candidates(repo
 
     def impl(h, wt):
         calls.append(h.title)
-        (wt / f"{slug(h.title)}.txt").write_text("partial" if h.title == "two" else "done")
+        (wt / f"{slug(h.title)}.txt").write_text("partial" if h.title == "two" else "done", encoding="utf-8")
         if h.title == "two" and calls.count("two") == 1:
             raise _Crash()
         return {"cost_usd": 0.0}
@@ -272,7 +275,7 @@ def test_provider_limit_pauses_instead_of_rejecting(repo, tmp_path):
 
     impls = []
     ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn,
-                   implement_fn=lambda h, wt: impls.append(h.title) or (wt / "x.txt").write_text("1"))
+                   implement_fn=lambda h, wt: impls.append(h.title) or (wt / "x.txt").write_text("1", encoding="utf-8"))
     with pytest.raises(InfraError):
         ev.generation(hypotheses=[Hypothesis("cheaper", "r", "p")])
     assert not [x for x in ev.ledger() if x["kind"] == "candidate"]  # nobody was judged on a provider failure
@@ -287,7 +290,7 @@ def test_reopen_voids_decisions_and_remeasures_without_reimplementing(repo, tmp_
     impls = []
     cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
     ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=lambda code, label: next(scores),
-                   implement_fn=lambda h, wt: impls.append(h.title) or (wt / "y.txt").write_text("1") and {})
+                   implement_fn=lambda h, wt: impls.append(h.title) or (wt / "y.txt").write_text("1", encoding="utf-8") and {})
     assert ev.generation(hypotheses=[Hypothesis("good idea", "r", "p")])["accepted"] == []
     ev.reopen(1, "provider outage")
     s = ev.resume()
@@ -318,7 +321,7 @@ def test_adopt_combination_failure_is_incremental_not_all_or_nothing(repo, tmp_p
         return {"results": rows, "summary": bench.summarize(rows)}
 
     def impl(h, wt):
-        (wt / ("x.txt" if h.title == "x" else "y.txt")).write_text("1")
+        (wt / ("x.txt" if h.title == "x" else "y.txt")).write_text("1", encoding="utf-8")
         return {}
 
     ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
@@ -335,9 +338,9 @@ def test_gates_leave_no_python_debris(tmp_path, monkeypatch):
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
     cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05})
     project, _ = run_goal("gates", cfg)
-    (project.shared / "m.py").write_text("X = 1\n")
+    (project.shared / "m.py").write_text("X = 1\n", encoding="utf-8")
     m = Manager(new_kernel(cfg), project)
-    res = m.run_gates({"id": "t", "checks": ["python3 -c 'import m'"]})
+    res = m.run_gates({"id": "t", "checks": [f"\"{PY}\" -c 'import m'"]})
     assert res[0]["exit"] == 0 and not (project.shared / "__pycache__").exists()
 
 
@@ -345,7 +348,7 @@ def test_unfinished_implementation_is_never_merged(repo, tmp_path):
     cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
 
     def impl(h, wt):
-        (wt / "half.txt").write_text("half a feature")
+        (wt / "half.txt").write_text("half a feature", encoding="utf-8")
         return {"status": "waiting_human", "cost_usd": 0.0}
 
     def bench_fn(code, label, tasks=None):
@@ -363,9 +366,9 @@ def test_final_merge_conflict_with_a_moved_main_never_breaks_main(repo, tmp_path
     cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
 
     def impl(h, wt):
-        (wt / "artel" / "__init__.py").write_text('"""from the candidate"""\n')
+        (wt / "artel" / "__init__.py").write_text('"""from the candidate"""\n', encoding="utf-8")
         # a person changes the same file on main while the generation runs
-        (repo / "artel" / "__init__.py").write_text('"""by hand on main"""\n')
+        (repo / "artel" / "__init__.py").write_text('"""by hand on main"""\n', encoding="utf-8")
         git(repo, "commit", "-qam", "hand change")
         return {}
 
@@ -376,6 +379,6 @@ def test_final_merge_conflict_with_a_moved_main_never_breaks_main(repo, tmp_path
     ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
     s = ev.generation(hypotheses=[Hypothesis("clash", "r", "p")], plan_extra={"mode": "adopt"})
     assert s["accepted"] == [] and not git(repo, "status", "--porcelain", "--untracked-files=no")
-    assert "by hand on main" in (repo / "artel" / "__init__.py").read_text()
+    assert "by hand on main" in (repo / "artel" / "__init__.py").read_text(encoding="utf-8")
     e = next(x for x in ev.ledger() if x["kind"] == "candidate")
     assert e["stage"] == "deferred" and any(x["kind"] == "merge_conflict" for x in ev.ledger())

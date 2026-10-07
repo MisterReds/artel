@@ -26,6 +26,8 @@ from ..prompts import CONTINUATION
 from ..tooling import ToolContext
 from .claude_code import READONLY_ROLES, ToolBridge, child_env
 
+TERMINAL_GRACE_S = 0.5  # after a terminal tool: how long to wait for the turn's closing usage event
+
 DEFAULTS = {"binary": "codex", "model": None, "sandbox": "workspace-write", "max_resumes": 3, "timeout_s": 2400,
             "home": None, "reasoning_effort": None, "extra_args": []}
 EFFORT = {"low": "low", "medium": "medium", "high": "high"}
@@ -80,7 +82,7 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
 def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: ToolContext, max_turns: int,
               purpose: str, persona=None, stop_event: Optional[threading.Event] = None,
               tool_names: Optional[list] = None) -> Outcome:
-    from ..tools import resolve
+    from ..tools import resolve, terminate_tree
 
     cc = codex_settings(kernel.config)
     actor = persona.name if persona else role
@@ -125,19 +127,20 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                               bridge_url=bridge.url, bridge_token=bridge.token, effort=ctx.state.get("effort"),
                               thread_id=thread_id, last_message=last_msg)
             proc = subprocess.Popen(args, cwd=ctx.workspace, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True, env=codex_env(cc), bufsize=1)
+                                    stderr=subprocess.PIPE, text=True, env=codex_env(cc), bufsize=1,
+                                    encoding="utf-8", errors="replace")
             proc.stdin.write(prompt)
             proc.stdin.close()
-            killer = threading.Timer(float(cc["timeout_s"]), proc.kill)
+            killer = threading.Timer(float(cc["timeout_s"]), terminate_tree, (proc, True))
             killer.start()
             failure = ""
-            grace: Optional[threading.Timer] = None
             blocked = ""
-            closer: Optional[threading.Timer] = None
+            stopped_by_us = False
+            grace: Optional[threading.Timer] = None
             try:
                 for line in proc.stdout:
                     if stop_event is not None and stop_event.is_set():
-                        proc.terminate()
+                        stopped_by_us = stopped_by_us or terminate_tree(proc)
                     try:
                         ev = json.loads(line)
                     except ValueError:
@@ -168,27 +171,29 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                             else:
                                 blocked = (f"The command `{cmd}` was blocked by policy ({verdict.rule.id}): "
                                            f"{verdict.justification or 'forbidden'}. It was not run; choose another way.")
-                            proc.terminate()
+                            stopped_by_us = stopped_by_us or terminate_tree(proc)
                     elif typ == "item.completed":
                         if _item(project, ctx, out, detector, ev.get("item") or {}, actor, task_id, model_label):
-                            proc.terminate()
+                            stopped_by_us = stopped_by_us or terminate_tree(proc)
                         if ctx.run_id:
                             project.board.heartbeat(ctx.run_id, turns=out.turns, tool_calls=out.tool_calls + bridge.calls)
                         if out.turns >= max_turns:
                             out.status, out.error = "turn_limit", f"{max_turns} turns"
-                            proc.terminate()
-                    if ctx.terminal:
-                        # Artel accepted a terminal tool: the run is finished. Let Codex close the turn so its usage
-                        # is reported (turn.completed), but never longer than a short grace period.
-                        if typ == "turn.completed":
-                            proc.terminate()
+                            stopped_by_us = stopped_by_us or terminate_tree(proc)
+                    if ctx.terminal and not stopped_by_us:
+                        # the run is finished as soon as Artel accepted a terminal tool; do not let Codex continue.
+                        # Its closing turn.completed (the turn's token usage) normally follows within milliseconds:
+                        # wait for it briefly, but stop at once if Codex starts anything new.
+                        if typ in ("turn.completed", "item.started") or grace is not None and not grace.is_alive():
+                            stopped_by_us = terminate_tree(proc)
                         elif grace is None:
-                            grace = threading.Timer(float(cc.get("finish_grace_s", 5)), proc.terminate)
+                            grace = threading.Timer(TERMINAL_GRACE_S, terminate_tree, (proc,))
                             grace.start()
             finally:
                 killer.cancel()
                 if grace is not None:
                     grace.cancel()
+                    stopped_by_us = True
                 proc.wait()
             stderr = proc.stderr.read() if proc.stderr else ""
             if ctx.terminal:
@@ -196,7 +201,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                 break
             if out.status in ("turn_limit", "stopped") or out.error.startswith("loop"):
                 break
-            if failure or proc.returncode not in (0, None, -15):
+            if failure or (proc.returncode not in (0, None, -15) and not stopped_by_us):
                 detail = failure or stderr.strip()[-800:] or f"exit {proc.returncode}"
                 out.status, out.error = "error", f"codex failed: {detail}"
                 project.log.append("llm/error", actor=actor, task_id=task_id, error=out.error, runtime="codex")

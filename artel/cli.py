@@ -365,12 +365,12 @@ def cmd_doctor(args) -> int:
     code = Path(args.code) if args.code else _repo(args)
     home = Path(args.home) if args.home else artel_home()
     projects = sorted(home.rglob("project.json"))
-    bench_suite = json.loads(Path(args.bench).read_text()) if args.bench else None
+    bench_suite = json.loads(Path(args.bench).read_text(encoding="utf-8")) if args.bench else None
     rep = diagnose.doctor(code, [p.parent for p in projects], bench=bench_suite, run_tests=not args.no_tests)
     md = diagnose.render_markdown(rep)
     print(md)
     if args.json:
-        Path(args.json).write_text(json.dumps(rep, ensure_ascii=False, indent=1))
+        Path(args.json).write_text(json.dumps(rep, ensure_ascii=False, indent=1), encoding="utf-8")
     return 0 if not rep["health"] or rep["health"]["ok"] else 1
 
 
@@ -530,10 +530,10 @@ def cmd_roadmap(args) -> int:
         md = rm.render_markdown()
         target = repo / "docs" / "ROADMAP.md"
         if args.check:
-            ok = target.exists() and target.read_text() == md
+            ok = target.exists() and target.read_text(encoding="utf-8") == md
             print("docs/ROADMAP.md is up to date" if ok else "docs/ROADMAP.md is stale: run `artel roadmap render`")
             return 0 if ok else 1
-        target.write_text(md)
+        target.write_text(md, encoding="utf-8")
         print(f"wrote {target}")
     elif args.action == "study":
         from .roadmap import next_to_study
@@ -605,7 +605,18 @@ def cmd_evolution(args) -> int:
     return 0
 
 
+def _robust_console() -> None:
+    """Output never crashes on a console that cannot encode Cyrillic or ▲ (a Windows code page, a pipe, an ASCII
+    locale): such characters are replaced instead of raising UnicodeEncodeError."""
+    for stream in (sys.stdout, sys.stderr):
+        try:
+            stream.reconfigure(errors="replace")
+        except (AttributeError, ValueError, OSError):
+            pass
+
+
 def main(argv=None) -> int:
+    _robust_console()
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == ["local"]:
         print("the local System One model was removed; connect a System One as described in docs/SYSTEM_ONE.md")
