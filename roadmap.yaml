@@ -196,7 +196,7 @@ items:
     wave: 2
     mode: evolve
     status: planned
-    result: "gen 4: conflicted in artel/plugins/builtin_tools.py with the adopted items; retried on the new main"
+    result: "gen 5 implement: implementation produced no changes"
     note: "Study 2026-10: ECC ecc2/src/observability/mod.rs scores each tool call deterministically before any model (base tool risk + secret-file sensitivity + blast radius such as force-push or rm -rf + irreversibility, clamped to 0..1, thresholds review / confirm / block); use it as the cheap first pass and call the model reviewer only above the review threshold."
     title: Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/prompts/templates/guardian/classifier_instructions.md]}
@@ -219,7 +219,7 @@ items:
     wave: 2
     mode: evolve
     status: planned
-    result: "gen 4: conflicted in artel/plugins/builtin_tools.py with the adopted items; retried on the new main"
+    result: "gen 5 implement: implementation produced no changes"
     title: Explicit read/write grants per path
     source: {harness: OpenScience, repo: synthetic-sciences/openscience, paths: [ARCHITECTURE.md]}
     target: [artel/tooling.py]
