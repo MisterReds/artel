@@ -486,6 +486,20 @@ def cmd_providers(args) -> int:
         if not res.get("ok"):
             print(res.get("error", "failed"))
         return 0 if res.get("ok") else 1
+    if args.action in ("login", "logout") and rt == "claude_code":
+        from .providers import logout_claude
+        from .runtimes.claude_code import child_env
+        from .tools import resolve
+
+        if args.action == "logout":
+            res = logout_claude(cfg)
+            print(res["detail"])
+            return 0 if res["ok"] else 1
+        binary = resolve((cfg.get("claude_code") or {}).get("binary", "claude"))
+        if not binary:
+            print("Claude Code CLI не установлен: artel providers install claude")
+            return 1
+        return subprocess.call([binary, "auth", "login", "--claudeai"], env=child_env())  # link, then paste the code
     if args.action == "login" and args.name == "codex":
         c = codex_settings(cfg)  # the CLI prints the link and the one-time code, then waits for the browser
         return subprocess.call([c["binary"], "login", "--device-auth"], env=codex_env(c))

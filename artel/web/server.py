@@ -41,9 +41,10 @@ class Runner:
         from ..updater import Updater
 
         self.updater = Updater(config=config)
-        from ..providers import CodexLogin
+        from ..providers import ClaudeLogin, CodexLogin
 
         self.codex_login = CodexLogin(config)
+        self.claude_login = ClaudeLogin(config)
         from ..tools import Installer
 
         self.installer = Installer()
@@ -379,6 +380,7 @@ def make_handler(runner: Runner, auth=None):
                     from ..providers import overview
 
                     self._json({**overview(runner.config), "codex_login": runner.codex_login.state,
+                                "claude_login": runner.claude_login.state,
                                 "installs": runner.installer.state})
                 elif parts == ["api", "providers", "models"]:
                     from ..providers import model_catalog
@@ -390,6 +392,8 @@ def make_handler(runner: Runner, auth=None):
                     self._json(info(runner.config))
                 elif parts == ["api", "providers", "codex", "login"]:
                     self._json(runner.codex_login.state)
+                elif parts == ["api", "providers", "claude", "login"]:
+                    self._json(runner.claude_login.state)
                 elif parts == ["api", "update"]:
                     self._json(runner.update_status(fetch=q.get("check", ["0"])[0] == "1"))
                 elif parts == ["api", "evolution"]:
@@ -500,6 +504,16 @@ def make_handler(runner: Runner, auth=None):
                     return self._json(uninstall(parts[3]) if parts[3] in TOOLS else {"ok": False})
                 if parts == ["api", "providers", "codex", "login"]:
                     return self._json(runner.codex_login.start())
+                if parts == ["api", "providers", "claude", "login"]:
+                    return self._json(runner.claude_login.start())
+                if parts == ["api", "providers", "claude", "code"]:
+                    return self._json(runner.claude_login.submit(data.get("code", "")))
+                if parts == ["api", "providers", "claude", "cancel"]:
+                    return self._json(runner.claude_login.cancel())
+                if parts == ["api", "providers", "claude", "logout"]:
+                    from ..providers import logout_claude
+
+                    return self._json(logout_claude(runner.config))
                 if parts == ["api", "providers", "codex", "cancel"]:
                     return self._json(runner.codex_login.cancel())
                 if len(parts) == 4 and parts[:3] == ["api", "providers", "unlimit"]:

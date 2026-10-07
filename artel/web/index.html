@@ -356,10 +356,15 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
      if(s.by_artel)return `<button data-uninst="${name}">Удалить ${label}</button>`;
      return ''};
    const cx=o.codex,cc=o.claude_code,ds=o.dsh||{},r=o.routing;
-   const off=new Set(r.disabled_runtimes||[]),lim=r.limited||{};
+   const off=new Set(r.disabled_runtimes||[]),lim=r.limited||{},CL=o.claude_login||{};
+   const clogin=CL.phase==='waiting'?`<p>1. Откройте ссылку и войдите в аккаунт Claude:</p><a href="${esc(CL.url)}" target="_blank" rel="noopener">открыть страницу входа Claude</a>
+      <p>2. Скопируйте код, который покажет страница, и вставьте сюда:</p><input id="cl-code" autocomplete="off" placeholder="код со страницы входа">
+      <p><button class="primary" id="cl-send">Подтвердить</button> <button id="cl-cancel">Отменить</button></p>`
+     :CL.phase==='starting'||CL.phase==='checking'?'<p class="stat">Жду ответа Claude…</p>'
+     :CL.phase==='error'?`<pre>${esc(CL.error||'')}</pre>`:CL.phase==='done'?'<p style="color:var(--ok)">Вход выполнен.</p>':'';
    const use=(rt)=>`<label class="stat" style="display:block;margin:6px 0"><input type="checkbox" style="width:auto;display:inline;margin:0 6px 0 0;vertical-align:middle" data-use="${rt}" ${off.has(rt)?'':'checked'}> использовать в работе${off.has(rt)?' — <b>отключён</b>: Artel не будет его выбирать':''}</label>${lim[rt]?`<p class="stat" style="color:var(--warn,#b5522b)">Упёрся в лимит до ${fmtT(lim[rt])} — задачи идут на другой подключённый рантайм. <button data-unlim="${rt}">Снять отметку</button></p>`:''}`;
    const msel=(id,rt,val,ph)=>{const c=(r.catalogs||{})[rt]||[];if(!c.length)return `<input id="${id}" value="${esc(val||'')}" placeholder="${ph}">`;
-     const known=c.some(m=>m.id===val);return `<select id="${id}"><option value="">${ph}</option>${c.map(m=>`<option value="${esc(m.id)}" ${m.id===val?'selected':''}>${esc(m.name)}${m.name.toLowerCase()===String(m.id).toLowerCase()?'':' · '+esc(m.id)}</option>`).join('')}${val&&!known?`<option value="${esc(val)}" selected>${esc(val)} (нет в списке)</option>`:''}</select>`};
+     const known=c.some(m=>m.id===val);return `<select id="${id}"><option value="">${ph}</option>${c.map(m=>`<option value="${esc(m.id)}" ${m.id===val?'selected':''}>${esc(m.name)}${m.name.toLowerCase()===String(m.id).toLowerCase()?'':' · '+esc(m.id)}</option>`).join('')}${val&&!known?`<option value="${esc(val)}" selected>${esc(val)} (своя)</option>`:''}<option value="__other">другая модель…</option></select>`};
    const login=L.phase==='waiting'?`<p>Откройте ссылку, войдите в аккаунт ChatGPT и введите код:</p>
       <a href="${esc(L.url)}" target="_blank" rel="noopener">${esc(L.url)}</a><div class="devcode">${esc(L.code)}</div>
       <p class="stat">Код действует до ${fmtT(L.expires_at)}. Страница обновится сама после входа.</p>
@@ -379,7 +384,9 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
     <div class="pvc"><h3>${ri('worker')}Claude Code${st(cc.logged_in,'подключён',cc.installed?'не подключён':'не установлен')}</h3>
       <div class="kv"><span>вход</span><span>${cc.logged_in?esc(cc.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка Claude или ключ API</span>${cc.installed?`<span>CLI</span><span>${esc(cc.version)}${cc.by_artel?' · в папке Artel':''}</span><span>модель</span><span>${esc(cc.model)}</span>`:''}</div>
       ${use('claude_code')}
-      ${cc.installed&&!cc.logged_in?`<p class="stat">${esc(cc.detail)}</p>`:''}
+      ${clogin}
+      ${cc.installed&&!cc.logged_in&&!['waiting','starting','checking'].includes(CL.phase)?'<button class="primary" id="cl-login">Войти через подписку Claude</button>':''}
+      ${cc.logged_in?'<button id="cl-logout">Выйти</button>':''}
       ${inst('claude',cc,'Claude Code CLI')}</div>
     <div class="pvc"><h3>${ri('worker')}DeepSeek Harness${st(ds.logged_in,'подключён',ds.installed?'нет ключа':'не установлен')}</h3>
       <div class="kv"><span>доступ</span><span>ключ API DeepSeek · <code>${esc(ds.key_env||'DEEPSEEK_API_KEY')}</code> ${ds.key_set?'<span style="color:var(--ok)">задан</span>':'не задан'}</span>${ds.installed?`<span>SDK</span><span>${esc(ds.version||'')}${ds.by_artel?' · ставил Artel':''}</span><span>модель</span><span>${esc(ds.model||'по умолчанию dsh')}</span><span>профиль</span><span><code>${esc(ds.profile||'sdk')}</code></span><span>плагины dsh</span><span>${(ds.plugins||[]).length?ds.plugins.map(x=>`<code>${esc(x)}</code>`).join(' '):'нет (dsh.plugins в artel.yaml)'}</span>`:''}</div>
@@ -418,11 +425,18 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    const on=(id,fn)=>{const el=$('#'+id);if(el)el.onclick=fn};
    document.querySelectorAll('[data-inst]').forEach(b=>b.onclick=async()=>{b.disabled=true;await api('/api/providers/install/'+b.dataset.inst,{method:'POST'});state.inst=true;draw()});
    document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!confirm('Удалить из папки Artel?'))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST'});draw()});
+   ['m-cc','m-cx'].forEach(id=>{const el=$('#'+id);if(el&&el.tagName==='SELECT'){let prev=el.value;el.onchange=()=>{if(el.value!=='__other'){prev=el.value;return}
+     const v=(prompt('Полное имя модели:')||'').trim();if(!v){el.value=prev;return}const op=document.createElement('option');op.value=v;op.textContent=v+' (своя)';el.insertBefore(op,el.lastElementChild);el.value=prev=v}}});
    document.querySelectorAll('[data-use]').forEach(b=>b.onchange=async()=>{const d=[...document.querySelectorAll('[data-use]')].filter(x=>!x.checked).map(x=>x.dataset.use);
      await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({disabled_runtimes:d})});draw()});
    document.querySelectorAll('[data-unlim]').forEach(b=>b.onclick=async()=>{await api('/api/providers/unlimit/'+b.dataset.unlim,{method:'POST'});draw()});
    on('tg-pair',async()=>{await api('/api/telegram/pair',{method:'POST'});draw()});
    on('cx-login',async()=>{$('#cx-login').disabled=true;await api('/api/providers/codex/login',{method:'POST'});draw()});
+   on('cl-login',async()=>{$('#cl-login').disabled=true;await api('/api/providers/claude/login',{method:'POST'});draw()});
+   on('cl-cancel',async()=>{await api('/api/providers/claude/cancel',{method:'POST'});draw()});
+   on('cl-send',async()=>{$('#cl-send').disabled=true;const j=await api('/api/providers/claude/code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:$('#cl-code').value})});
+     if(j.error&&j.phase==='waiting'){alert(j.error);$('#cl-send').disabled=false;return}draw()});
+   on('cl-logout',async()=>{if(!confirm('Выйти из Claude Code? Artel перестанет использовать подписку Claude, пока вы не войдёте снова.'))return;await api('/api/providers/claude/logout',{method:'POST'});draw()});
    on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST'});draw()});
    on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST'});draw()});
    on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});

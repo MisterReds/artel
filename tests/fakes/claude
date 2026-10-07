@@ -1,0 +1,27 @@
+#!/usr/bin/env python3
+"""Stand-in for the Claude Code CLI's auth and help commands: `auth login` prints an authorize link and waits for
+the pasted code on stdin ("good-code" signs in), `auth logout`, `auth status` as JSON, and `--help` with --model."""
+import json, os, sys
+from pathlib import Path
+
+home = Path(os.environ["FAKE_CLAUDE_HOME"])
+args = sys.argv[1:]
+if args[:1] == ["--version"]:
+    print("9.9.9 (Claude Code)"); sys.exit(0)
+if args[:1] == ["--help"]:
+    print("Options:\n  --model <model>   Model for the current session. Provide\n"
+          "                    an alias for the latest model (e.g.\n                    'fable', 'opus', or 'sonnet') or a\n"
+          "                    model's full name.\n  -n, --name <name>  Set a name"); sys.exit(0)
+if args[:2] == ["auth", "status"]:
+    print(json.dumps({"loggedIn": (home / "auth").exists(), "authMethod": "claude.ai"})); sys.exit(0)
+if args[:2] == ["auth", "logout"]:
+    (home / "auth").unlink(missing_ok=True); print("Successfully logged out"); sys.exit(0)
+if args[:2] == ["auth", "login"]:
+    print("Opening browser to sign in…\nIf the browser didn't open, visit: "
+          "https://claude.com/cai/oauth/authorize?code=true&state=xyz", flush=True)
+    print("Paste code here if prompted > ", end="", flush=True)
+    code = sys.stdin.readline().strip()
+    if code == "good-code":
+        home.mkdir(parents=True, exist_ok=True); (home / "auth").write_text("1"); print("Login successful."); sys.exit(0)
+    print("Login failed: Request failed with status code 400"); sys.exit(1)
+sys.exit(2)

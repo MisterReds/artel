@@ -75,7 +75,6 @@ def test_codex_models_come_from_the_cli_and_names_are_normalized(tmp_path, monke
     cfg = deep_merge(DEFAULT_CONFIG, {"codex": {"binary": fake_codex(tmp_path)}})
     cat = model_catalog(cfg, "codex")
     assert [m["id"] for m in cat] == ["gpt-fake-luna", "gpt-fake-sol"] and cat[0]["efforts"] == ["low", "medium", "high"]
-    assert [m["id"] for m in model_catalog(cfg, "claude_code")] == ["sonnet", "opus", "haiku"]
     r = save_routing(cfg, {"models": {"codex": "GPT-FAKE-LUNA"}}, path=tmp_path / "a.yaml")
     assert r["models"]["codex"] == "gpt-fake-luna" and r["catalogs"]["codex"] == cat
     with pytest.raises(ValueError, match="gpt-fake-sol"):
@@ -119,3 +118,33 @@ def test_a_limited_task_moves_to_the_free_executor_instead_of_waiting(tmp_path, 
     t = project.board.get(task["id"])
     assert t["status"] == "ready" and t["backoff_until"] == 0
     assert any(e["kind"] == "manager/provider_switch" for e in project.log.read())
+
+
+def fake_claude(tmp_path, monkeypatch) -> str:
+    import sys
+    from pathlib import Path
+
+    monkeypatch.setenv("FAKE_CLAUDE_HOME", str(tmp_path / "claude"))
+    fake = str(Path(__file__).parent / "fakes" / "claude")
+    if sys.platform != "win32":
+        return fake
+    shim = tmp_path / "claude.cmd"
+    shim.write_text(f'@"{sys.executable}" "{fake}" %*\r\n', encoding="utf-8", newline="")
+    return str(shim)
+
+
+def test_claude_login_with_pasted_code_logout_and_models_from_the_cli(tmp_path, monkeypatch):
+    from artel.providers import ClaudeLogin, claude_code_status, logout_claude, model_catalog
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    cfg = deep_merge(DEFAULT_CONFIG, {"claude_code": {"binary": fake_claude(tmp_path, monkeypatch)}})
+    assert [m["id"] for m in model_catalog(cfg, "claude_code")] == ["fable", "opus", "sonnet", "haiku"]
+    assert not claude_code_status(cfg)["logged_in"]
+    login = ClaudeLogin(cfg)
+    st = login.start()
+    assert st["phase"] == "waiting" and "/oauth/authorize" in st["url"]
+    assert login.submit("two words")["error"]  # nothing sent to the CLI, still waiting
+    assert login.submit("bad-code")["phase"] == "error" and "400" in login.state["error"]
+    assert login.start()["phase"] == "waiting" and login.submit("good-code")["phase"] == "done"
+    assert claude_code_status(cfg)["logged_in"]
+    assert logout_claude(cfg)["ok"] and not claude_code_status(cfg)["logged_in"]

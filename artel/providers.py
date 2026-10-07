@@ -79,6 +79,7 @@ class CodexLogin:
             rc = self.proc.wait()
             if rc == 0:
                 self.state = {"phase": "done", "at": time.time()}
+                _invalidate()
             elif self.state.get("phase") != "cancelled":
                 self.state = {"phase": "error", "error": text.strip()[-600:] or f"exit {rc}"}
             found.set()
@@ -93,6 +94,101 @@ class CodexLogin:
                 self.state = {"phase": "cancelled"}
                 terminate_tree(self.proc)
         return self.state
+
+
+class ClaudeLogin:
+    """Claude subscription login through the official CLI (`claude auth login --claudeai`): it prints an authorize
+    link; after signing in, the page shows a code that the person pastes into the dashboard, which hands it to the
+    waiting CLI on stdin. The CLI stores and refreshes the tokens; Artel never sees them."""
+
+    def __init__(self, config: dict):
+        self.config = config
+        self.state: dict = {"phase": "idle"}
+        self.proc: Optional[subprocess.Popen] = None
+        self.lock = threading.Lock()
+
+    def _binary(self) -> Optional[str]:
+        return resolve((self.config.get("claude_code") or {}).get("binary", "claude"))
+
+    def start(self, wait_s: float = 20.0) -> dict:
+        from .runtimes.claude_code import child_env
+
+        with self.lock:
+            if self.proc and self.proc.poll() is None:
+                return self.state
+            binary = self._binary()
+            if not binary:
+                self.state = {"phase": "error", "error": "Claude Code CLI не установлен — сначала «Установить»"}
+                return self.state
+            env = {**child_env(), "BROWSER": "true"}  # no browser on a server: the link is shown in the dashboard
+            self.proc = subprocess.Popen([binary, "auth", "login", "--claudeai"], stdin=subprocess.PIPE,
+                                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
+                                         bufsize=1, encoding="utf-8", errors="replace")
+            self.state = {"phase": "starting", "since": time.time()}
+        found = threading.Event()
+
+        def reader():
+            text = ""
+            for line in self.proc.stdout:
+                text += ANSI.sub("", line)
+                url = re.search(r"https://\S+/oauth/authorize\S*", text)
+                if url and self.state.get("phase") == "starting":
+                    self.state = {"phase": "waiting", "url": url.group(0), "since": time.time()}
+                    found.set()
+            rc = self.proc.wait()
+            if rc == 0:
+                self.state = {"phase": "done", "at": time.time()}
+                _invalidate()
+            elif self.state.get("phase") != "cancelled":
+                lines = [ln for ln in text.strip().splitlines() if "authorize" not in ln]
+                self.state = {"phase": "error", "error": "\n".join(lines)[-600:] or f"exit {rc}"}
+            found.set()
+
+        threading.Thread(target=reader, daemon=True, name="claude-login").start()
+        found.wait(wait_s)
+        return self.state
+
+    def submit(self, code: str, wait_s: float = 30.0) -> dict:
+        code = (code or "").strip()
+        with self.lock:
+            if not (self.proc and self.proc.poll() is None and self.state.get("phase") == "waiting"):
+                return {**self.state, "error": self.state.get("error") or "вход не начат"}
+            if not code or any(c.isspace() for c in code):
+                return {**self.state, "error": "вставьте код целиком, одной строкой"}
+            self.state = {"phase": "checking"}
+            self.proc.stdin.write(code + "\n")
+            self.proc.stdin.flush()
+        try:
+            self.proc.wait(wait_s)
+        except subprocess.TimeoutExpired:
+            pass
+        time.sleep(0.2)  # let the reader record the outcome
+        return self.state
+
+    def cancel(self) -> dict:
+        with self.lock:
+            if self.proc and self.proc.poll() is None:
+                self.state = {"phase": "cancelled"}
+                terminate_tree(self.proc)
+        return self.state
+
+
+def logout_claude(config: dict) -> dict:
+    from .runtimes.claude_code import child_env
+
+    binary = resolve((config.get("claude_code") or {}).get("binary", "claude"))
+    if not binary:
+        return {"ok": False, "detail": "Claude Code CLI не установлен"}
+    rc, text = _run([binary, "auth", "logout"], env=child_env())
+    _invalidate()
+    return {"ok": rc == 0, "detail": text}
+
+
+def _invalidate() -> None:
+    """A login or logout changes who is connected: auto must not keep using its cached answer."""
+    from .runtimes import _auto_cache
+
+    _auto_cache.clear()
 
 
 def codex_status(config: dict) -> dict:
@@ -113,6 +209,7 @@ def codex_status(config: dict) -> dict:
 def logout_codex(config: dict) -> dict:
     cfg = codex_settings(config)
     rc, text = _run([resolve(cfg["binary"]) or cfg["binary"], "logout"], env=codex_env(cfg))
+    _invalidate()
     return {"ok": rc == 0, "detail": text}
 
 
@@ -135,7 +232,7 @@ def claude_code_status(config: dict) -> dict:
     return {"installed": True, "by_artel": installed_by_artel("claude"), "version": ver.splitlines()[-1] if ver else "",
             "logged_in": bool(st.get("loggedIn")),
             "method": method, "model": cc.get("model", "sonnet"),
-            "detail": "вход: запустите `claude` в терминале и выполните /login"}
+            "detail": "вход: кнопка «Войти» ниже или `artel providers login claude`"}
 
 
 def dsh_status(config: dict) -> dict:
@@ -218,8 +315,33 @@ def model_catalog(config: dict, runtime: str) -> list[dict]:
 
         return codex_models(codex_settings(config))
     if runtime == "claude_code":
-        return CLAUDE_MODELS
+        return claude_models(config)
     return []
+
+
+_claude_cache: dict = {}
+
+
+def claude_models(config: dict, ttl: float = 600.0) -> list[dict]:
+    """Claude Code has no model-listing command; its `--help` names the aliases it resolves to the latest model of
+    each family (e.g. 'fable', 'opus', 'sonnet'). Those come first, then the other known aliases; any full model
+    name is accepted as a custom value."""
+    from .runtimes.claude_code import child_env
+
+    binary = resolve((config.get("claude_code") or {}).get("binary", "claude"))
+    hit = _claude_cache.get(binary)
+    if hit and time.time() - hit[1] < ttl:
+        return hit[0]
+    names: list[str] = []
+    if binary:
+        _, text = _run([binary, "--help"], env=child_env())
+        m = re.search(r"--model <model>(.*?)(?:\n\s*-{1,2}[a-z]|\Z)", text, re.S)
+        names = re.findall(r"'([a-z][a-z0-9.-]*)'", m.group(1)) if m else []
+    known = {c["id"]: c["name"] for c in CLAUDE_MODELS}
+    out = [{"id": n, "name": known.get(n, n.capitalize() + " (последняя)")} for n in dict.fromkeys(names + list(known))]
+    if binary:
+        _claude_cache[binary] = (out, time.time())
+    return out
 
 
 def limited(config: dict) -> dict:
@@ -320,4 +442,4 @@ def overview(config: dict) -> dict:
             "timezone": __import__("artel.tz", fromlist=["info"]).info(config)}
 
 
-__all__ = ["CodexLogin", "overview", "model_catalog", "save_routing", "save_timezone", "logout_codex", "json"]
+__all__ = ["CodexLogin", "ClaudeLogin", "logout_claude", "overview", "model_catalog", "save_routing", "save_timezone", "logout_codex", "json"]
