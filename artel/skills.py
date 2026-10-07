@@ -208,10 +208,26 @@ class SkillStore:
                         "state": u.get("state", "active"), "use_count": u.get("use_count", 0)})
         return out
 
-    def index(self, limit: int = 120) -> str:
-        """Compact skill index for system prompts (name: description)."""
+    def relevant(self, query: str, config: Optional[dict] = None, top: int = 40) -> list[dict]:
+        """Active skills most relevant to ``query`` (hybrid lexical + embeddings, artel/retrieval.py); pinned skills
+        always come first."""
+        from .retrieval import rank
+
+        rows = [s for s in self.list() if s["state"] != "archived"]
+        pinned = [s for s in rows if s["pinned"]]
+        rest = [s for s in rows if not s["pinned"]]
+        hits = rank(query, [f"{s['name'].replace('-', ' ')}: {s['description']}" for s in rest], config,
+                    titles=[s["name"] for s in rest], top=top)
+        return pinned + [rest[i] for i, _, _ in hits]
+
+    def index(self, limit: int = 120, query: str = "", config: Optional[dict] = None) -> str:
+        """Compact skill index for system prompts (name: description). With ``query``, a large library is cut to
+        the skills relevant to it instead of the first ``limit`` by name."""
+        rows = self.list()
+        if query and len(rows) > limit // 3:
+            rows = self.relevant(query, config, top=limit // 3) or rows
         lines = []
-        for s in self.list()[:limit]:
+        for s in rows[:limit]:
             if s["state"] == "archived":
                 continue
             desc = s["description"].replace("\n", " ")

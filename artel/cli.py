@@ -518,6 +518,9 @@ def cmd_providers(args) -> int:
           f"{' '.join(a['command'])}")
     for k in o["keys"]:
         print(f"  {k['label']:<14} {'задан' if k['set'] else 'не задан':<34} ${k['env']}")
+    em = o["embeddings"]
+    print(f"  {'Эмбеддинги':<14} {('включены: ' + em['active']) if em['active'] != 'off' else ('выключены' if em['installed'] else 'не установлены — поиск по словам'):<34} "
+          f"{'EmbeddingGemma 2 ' + em['quant'] + ', ' + str(em['dim']) + 'd' if em['installed'] else 'artel providers install embeddings'}")
     s1 = o["system_one"]
     print(f"  {'System One':<14} {('подключена: ' + s1['name']) if s1['connected'] else 'не подключена':<34} "
           f"{'точки: ' + ', '.join(s1['points']) if s1['points'] else ''}")

@@ -356,6 +356,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
      if(s.by_artel)return `<button data-uninst="${name}">Удалить ${label}</button>`;
      return ''};
    const cx=o.codex,cc=o.claude_code,ds=o.dsh||{},r=o.routing;
+   const em=o.embeddings||{};
    const off=new Set(r.disabled_runtimes||[]),lim=r.limited||{},CL=o.claude_login||{};
    const clogin=CL.phase==='waiting'?`<p>1. Откройте ссылку и войдите в аккаунт Claude:</p><a href="${esc(CL.url)}" target="_blank" rel="noopener">открыть страницу входа Claude</a>
       <p>2. Скопируйте код, который покажет страница, и вставьте сюда:</p><input id="cl-code" autocomplete="off" placeholder="код со страницы входа">
@@ -399,6 +400,15 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       ${o.acp.presets.map(p=>`<span>${esc(p.name)}</span><span>${p.installed?'<span style="color:var(--ok)">установлен</span>':'не установлен'} · <code>${esc(p.command.join(' '))}</code></span>`).join('')}</div>
       ${o.acp.error?`<pre>${esc(o.acp.error)}</pre>`:''}
       <p class="stat">Вход выполняется в CLI самого агента. Роль назначается ниже: «ACP-агент: имя». Свои агенты — <code>acp.presets</code> в artel.yaml.</p></div>
+    <div class="pvc"><h3>${ri('librarian')}Эмбеддинги${st(em.active!=='off','включены: '+(em.active==='local'?'локально':'HTTP'),em.installed?'выключены':'не установлены')}</h3>
+      <div class="kv"><span>что даёт</span><span>поиск по смыслу: агенты получают подходящие к задаче навыки, инструмент <code>search</code> находит код и документы по описанию, на любом языке</span>
+      <span>модель</span><span>Google EmbeddingGemma 2 · Apache-2.0 · работает на этом компьютере, данные никуда не уходят</span>
+      ${em.installed?`<span>режим</span><span><select id="em-backend">${[['auto','автоматически (локально, если установлена)'],['local','локально'],['http','свой сервер (OpenAI-совместимый)'],['off','выключено — поиск по словам']].map(([v,l])=>`<option value="${v}" ${v===em.backend?'selected':''}>${l}</option>`).join('')}</select></span>
+      <span>размерность</span><span><select id="em-dim">${[768,512,256,128].map(d=>`<option ${d===em.dim?'selected':''}>${d}</option>`).join('')}</select></span>
+      <span>сервер</span><span>${em.running?'<span style="color:var(--ok)">запущен</span>':'запускается при первом поиске'}</span>`:''}</div>
+      ${em.error?`<pre>${esc(em.error)}</pre>`:''}
+      ${em.installed?'<p><button id="em-save">Сохранить</button> <button id="em-test">Проверить</button> <span class="stat" id="em-msg"></span></p>':''}
+      ${inst('embeddings',{installed:em.installed,by_artel:em.installed},'EmbeddingGemma 2','Ставится сервер llama.cpp (~45 МБ) и модель EmbeddingGemma 2 Q8_0 (~310 МБ) в папку Artel; контрольная сумма модели сверяется с Hugging Face. Без модели поиск работает по словам.')}</div>
     <div class="pvc"><h3>${ri('librarian')}Ключи API</h3><div class="kv">${o.keys.map(k=>`<span>${esc(k.label)}</span><span>${k.set?'<span style="color:var(--ok)">задан</span>':'не задан'} · <code>${esc(k.env)}</code></span>`).join('')}</div>
       <p class="stat">Задаются в настройках окружения, не в чате и не здесь.</p></div>
     <div class="pvc"><h3>${ri('auditor')}System One${st(o.system_one.connected,'подключена','не подключена')}</h3>
@@ -430,6 +440,9 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    document.querySelectorAll('[data-use]').forEach(b=>b.onchange=async()=>{const d=[...document.querySelectorAll('[data-use]')].filter(x=>!x.checked).map(x=>x.dataset.use);
      await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({disabled_runtimes:d})});draw()});
    document.querySelectorAll('[data-unlim]').forEach(b=>b.onclick=async()=>{await api('/api/providers/unlimit/'+b.dataset.unlim,{method:'POST'});draw()});
+   on('em-save',async()=>{const j=await api('/api/providers/embeddings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backend:$('#em-backend').value,dim:+$('#em-dim').value})});$('#em-msg').textContent=j.error?'Не сохранено: '+j.error:'Сохранено.'});
+   on('em-test',async()=>{$('#em-msg').textContent='Проверяю (первый запуск сервера — до минуты)…';const j=await api('/api/providers/embeddings/test',{method:'POST'});
+     $('#em-msg').textContent=j.how==='hybrid'?`Работает: запрос по-русски нашёл английский текст о лимитах за ${j.seconds} с.`:'Модель не ответила — поиск идёт по словам. '+(j.error||'')});
    on('tg-pair',async()=>{await api('/api/telegram/pair',{method:'POST'});draw()});
    on('cx-login',async()=>{$('#cx-login').disabled=true;await api('/api/providers/codex/login',{method:'POST'});draw()});
    on('cl-login',async()=>{$('#cl-login').disabled=true;await api('/api/providers/claude/login',{method:'POST'});draw()});

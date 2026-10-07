@@ -118,7 +118,7 @@ class Manager:
     # --- planning -------------------------------------------------------
     def plan(self) -> None:
         skills = self.kernel.get("skills")
-        user = (f"<goal>\n{self.project.goal}\n</goal>\n\nSkill library index:\n{skills.index() or '(empty)'}\n\n"
+        user = (f"<goal>\n{self.project.goal}\n</goal>\n\nSkill library index:\n{skills.index(query=self.project.goal, config=self.cfg) or '(empty)'}\n\n"
                 "Plan the project now.")
         ctx = ToolContext(self.kernel, self.project, role="planner", workspace=self.project.shared)
         from .runtimes import runtime_for
@@ -176,7 +176,7 @@ class Manager:
             name=persona.name, role=persona.role, soul=files.get("SOUL.md", ""),
             rules=files.get("RULES.md", ""), memory=files.get("MEMORY.md", ""),
             notes=f"\n<project_notes>\n{notes}\n</project_notes>\n" if notes else "",
-            skills=skills.index() or "(empty)",
+            skills=skills.index(query=f"{persona.role}. {self.project.goal}", config=self.cfg) or "(empty)",
             preloaded=("\nPreloaded skills:\n" + "\n".join(preloaded)) if preloaded else "")
 
     def task_card(self, task: dict, include_feedback: bool = True) -> str:

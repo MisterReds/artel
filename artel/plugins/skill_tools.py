@@ -18,7 +18,11 @@ def _store(ctx: ToolContext):
 
 
 def skills_list(ctx: ToolContext, query: str = "") -> str:
-    rows = _store(ctx).list(query)
+    store = _store(ctx)
+    rows = store.list(query)  # exact keyword matches first, then the rest by meaning (artel/retrieval.py)
+    if query.strip():
+        seen = {r["name"] for r in rows}
+        rows += [r for r in store.relevant(query, ctx.kernel.config, top=15) if r["name"] not in seen]
     if not rows:
         return "no skills match"
     return "\n".join(f"- {r['name']} [{r['category']}, {r['origin']}{', pinned' if r['pinned'] else ''}, "
@@ -68,7 +72,7 @@ def skill_manage(ctx: ToolContext, action: str, name: str, content: str = "", ol
 def setup(kernel) -> None:
     S = {"type": "object", "additionalProperties": False}
     kernel.register_tool(ToolSpec(
-        "skills_list", "List skills in the shared library, optionally filtered by a keyword.",
+        "skills_list", "List skills in the shared library; with a query, the ones matching it by keyword and by meaning.",
         {**S, "properties": {"query": {"type": "string"}}, "required": []}, skills_list, roles=READ_ROLES))
     kernel.register_tool(ToolSpec(
         "skill_view", "Load a skill's SKILL.md (or one of its support files via file_path) before doing a task "

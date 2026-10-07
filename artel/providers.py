@@ -435,11 +435,41 @@ def save_timezone(config: dict, name, path: Optional[Path] = None) -> dict:
     return info(config)
 
 
+def embeddings_status(config: dict) -> dict:
+    from .embeddings import status
+
+    return status(config)
+
+
+def save_embeddings(config: dict, data: dict, path: Optional[Path] = None) -> dict:
+    """embeddings.backend (auto | local | http | off), dim (768/512/256/128), url/model for http."""
+    from .embeddings import DIMS
+    from .project import artel_home, deep_merge
+
+    upd: dict = {}
+    if data.get("backend") in ("auto", "local", "http", "off"):
+        upd["backend"] = data["backend"]
+    if data.get("dim") is not None:
+        if int(data["dim"]) not in DIMS:
+            raise ValueError(f"размерность одна из {DIMS}")
+        upd["dim"] = int(data["dim"])
+    for k in ("url", "model", "api_key_env"):
+        if isinstance(data.get(k), str):
+            upd[k] = data[k].strip()
+    path = path or artel_home() / "artel.yaml"
+    current = (yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}) or {}
+    current = deep_merge(current, {"embeddings": upd})
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(yaml.safe_dump(current, allow_unicode=True, sort_keys=False), encoding="utf-8")
+    config["embeddings"] = deep_merge(config.get("embeddings") or {}, upd)
+    return embeddings_status(config)
+
+
 def overview(config: dict) -> dict:
-    return {"codex": codex_status(config), "claude_code": claude_code_status(config), "dsh": dsh_status(config), "acp": acp_status(config),
+    return {"embeddings": embeddings_status(config),"codex": codex_status(config), "claude_code": claude_code_status(config), "dsh": dsh_status(config), "acp": acp_status(config),
             "keys": api_keys(config),
             "system_one": system_one_status(config), "routing": routing(config),
             "timezone": __import__("artel.tz", fromlist=["info"]).info(config)}
 
 
-__all__ = ["CodexLogin", "ClaudeLogin", "logout_claude", "overview", "model_catalog", "save_routing", "save_timezone", "logout_codex", "json"]
+__all__ = ["save_embeddings", "embeddings_status", "CodexLogin", "ClaudeLogin", "logout_claude", "overview", "model_catalog", "save_routing", "save_timezone", "logout_codex", "json"]

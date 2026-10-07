@@ -52,6 +52,35 @@ items:
   - {id: D-installers, wave: 0, mode: design, status: done, title: "Installers for Linux/macOS and Windows that install only what Artel needs", source: {harness: Artel, repo: MisterReds/artel}, target: [install.sh, install.ps1]}
   - {id: D-failure-classes, wave: 0, mode: design, status: done, title: "No crash, no endless loop: auto executor, setup errors to a person, limits wait, replan cap", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/failures.py, artel/manager.py, artel/runtimes/__init__.py]}
   - {id: D-evolution-ops, wave: 0, mode: design, status: done, title: "Evolution operations: adopt mode for roadmap items, resume after restart, pause on provider limits, journal on GitHub", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/evolve/engine.py]}
+  - {id: D-provider-failover, wave: 0, mode: design, status: done, title: "Provider failover on limits, disabling runtimes, model lists from the CLIs, Claude and Codex sign-in from the dashboard, live agents panel", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/limits.py, artel/providers.py, artel/runtimes/__init__.py]}
+  - id: D-semantic-retrieval
+    wave: 0
+    mode: design
+    status: done
+    title: "Meaning-based search, local and private: EmbeddingGemma 2 via llama.cpp, hybrid with BM25, skills by relevance, `search` tool"
+    source: {harness: Google EmbeddingGemma 2, repo: google/embeddinggemma-2, license: Apache-2.0}
+    target: [artel/embeddings.py, artel/retrieval.py, artel/skills.py, artel/plugins/builtin_tools.py, artel/tools.py]
+    plan: >-
+      Planners and workers got the first 120 skills by name and agents could only grep. Embeddings come from
+      EmbeddingGemma 2 (text part, GGUF from unsloth/embeddinggemma-2-GGUF) run by llama.cpp's llama-server, both installed
+      on demand with checksums; any OpenAI-compatible /v1/embeddings endpoint works too. BM25 always runs and is fused
+      with the vectors by weighted reciprocal rank fusion, so without a model nothing changes; vectors are cached, each
+      call embeds a bounded number of new chunks and warms the rest in the background.
+    acceptance: [tests/test_embeddings.py, a Russian query finds an English document by meaning, retrieval never fails without a model]
+  - id: D-multimodal-retrieval
+    wave: 0
+    mode: design
+    status: planned
+    title: "Multimodal memory: images, audio and video in deliverables and across projects; fully local RAG with Gemma 4"
+    source: {harness: Google EmbeddingGemma 2, repo: google/embeddinggemma-2, license: Apache-2.0}
+    target: [artel/embeddings.py, artel/retrieval.py]
+    plan: >-
+      Load EmbeddingGemma 2's vision/audio encoders (mmproj GGUF, ~555 MB at Q8_0) only when a project produces media;
+      index screenshots, diagrams and recordings in shared/ into the same 768-d space so `search` finds them by
+      description. A cross-project memory (past goals, accepted results, reviewer feedback) is retrieved into planning.
+      With a local Gemma 4 served through the openai_compat provider, the whole loop — model and retrieval — can run
+      on the machine. Verify llama-server's multimodal embedding endpoint before building on it.
+    acceptance: [an image in shared/ is found by a text description, media encoders are loaded only when needed]
   # ---- wave 1: loop reliability (cheap, directly moves pass rate and cost) ----
   - id: W1-loop-detector
     wave: 1

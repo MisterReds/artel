@@ -78,6 +78,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
         "points": {"skill_review": False, "refine": False, "replan_shortcut": False, "difficulty": False},
         "thresholds": {"skip_learning_below": 0.25, "shortcut_min": 0.8},
     },
+    "embeddings": {"backend": "auto", "dim": 768},  # meaning-based search (artel/embeddings.py): auto = local if installed
     "isolation": {"worktrees": False},   # true: each task works in its own git worktree, merged on acceptance
     "sandbox": {                         # OS sandbox for agents' bash (artel/sandbox.py); off = as before
         "mode": "off",                   # off | auto | bwrap | seatbelt

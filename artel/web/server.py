@@ -539,6 +539,24 @@ def make_handler(runner: Runner, auth=None):
                         return self._json(save_routing(runner.config, data))
                     except ValueError as e:
                         return self._json({"error": str(e)}, 400)
+                if parts == ["api", "providers", "embeddings"]:
+                    from ..providers import save_embeddings
+
+                    try:
+                        return self._json(save_embeddings(runner.config, data))
+                    except (ValueError, TypeError) as e:
+                        return self._json({"error": str(e)}, 400)
+                if parts == ["api", "providers", "embeddings", "test"]:
+                    from ..retrieval import rank
+
+                    docs = ["When Claude hits its usage limit, the work moves to Codex.",
+                            "Рецепт борща со сметаной и чесноком."]
+                    import time as _t
+
+                    t0 = _t.time()
+                    r = rank("как переключить провайдера при лимите", docs, runner.config)
+                    return self._json({"how": r[0][2] if r else "lexical", "top": docs[r[0][0]] if r else "",
+                                       "seconds": round(_t.time() - t0, 2)})
                 if parts == ["api", "providers", "timezone"]:
                     from ..providers import save_timezone
 

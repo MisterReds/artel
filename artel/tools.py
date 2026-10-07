@@ -33,7 +33,10 @@ from typing import Callable, Optional
 WIN = sys.platform == "win32"
 EXE = ".exe" if WIN else ""
 TOOLS = {"codex": {"bin": "codex", "label": "Codex CLI"}, "claude": {"bin": "claude", "label": "Claude Code CLI"},
-         "dsh": {"bin": "dsh", "label": "DeepSeek Harness"}}
+         "dsh": {"bin": "dsh", "label": "DeepSeek Harness"},
+         "embeddings": {"bin": "llama-server", "label": "EmbeddingGemma 2 (локальные эмбеддинги)"}}
+LLAMA_REPO = "ggml-org/llama.cpp"
+LLAMA_FALLBACK_TAG = "b11459"  # a release known to run EmbeddingGemma 2 (gemma-embedding2), used if the API is out
 DSH_PIP = ["deepseek-harness-sdk"]  # pulls the matching deepseek-harness-runtime-bin wheel for this platform
 DSH_DISTS = ["deepseek-harness-sdk", "deepseek-harness-runtime-bin"]
 CODEX_RELEASE = "https://github.com/openai/codex/releases/latest/download"
@@ -123,6 +126,8 @@ def terminate_tree(proc: subprocess.Popen, force: bool = False) -> bool:
 
 
 def installed_by_artel(name: str) -> bool:
+    if name == "embeddings":
+        return (tools_dir() / "llama").exists() or (tools_dir() / "models").exists()
     if name == "dsh":
         return (tools_dir() / "dsh.installed").exists()
     return (bin_dir() / (TOOLS[name]["bin"] + EXE)).exists()
@@ -182,10 +187,33 @@ def claude_platform(system: str = sys.platform, machine: str = platform.machine(
     return f"linux-{arch}" + ("-musl" if musl else "")
 
 
-def _download(url: str, dest: Path) -> None:
-    req = urllib.request.Request(url, headers={"User-Agent": "artel"})
-    with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
-        shutil.copyfileobj(r, f, 1 << 20)
+def _download(url: str, dest: Path, attempts: int = 4) -> None:
+    """Download with retries on transient failures (5xx, dropped connections): 2s, 4s, 8s."""
+    import time as _t
+    import urllib.error
+
+    for i in range(attempts):
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "artel"})
+            with urllib.request.urlopen(req, timeout=120) as r, open(dest, "wb") as f:
+                shutil.copyfileobj(r, f, 1 << 20)
+            return
+        except urllib.error.HTTPError as e:
+            if e.code < 500 or i == attempts - 1:
+                raise
+        except (urllib.error.URLError, OSError):
+            if i == attempts - 1:
+                raise
+        _t.sleep(2 ** (i + 1))
+
+
+def _get_json(url: str, timeout: int = 60):
+    import tempfile as _tf
+
+    with _tf.TemporaryDirectory() as tmp:
+        p = Path(tmp) / "x.json"
+        _download(url, p)
+        return json.loads(p.read_text(encoding="utf-8"))
 
 
 def _place(src: Path, name: str) -> Path:
@@ -236,8 +264,101 @@ def install_claude(log: Callable[[str], None]) -> Path:
         return _place(binary, "claude")
 
 
+def llama_asset(tag: str, system: str = sys.platform, machine: str = platform.machine()) -> str:
+    arch = _arch(machine)
+    if system == "win32":
+        return f"llama-{tag}-bin-win-cpu-{arch}.zip"
+    if system == "darwin":
+        return f"llama-{tag}-bin-macos-{arch}.tar.gz"
+    return f"llama-{tag}-bin-ubuntu-{arch}.tar.gz"
+
+
+def _sha256(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for block in iter(lambda: f.read(1 << 20), b""):
+            h.update(block)
+    return h.hexdigest()
+
+
+def _extract(archive: Path, out: Path) -> None:
+    if archive.name.endswith(".zip"):
+        with zipfile.ZipFile(archive) as z:
+            z.extractall(out)
+    else:
+        with tarfile.open(archive) as t:
+            try:
+                t.extractall(out, filter="data")
+            except TypeError:
+                t.extractall(out)
+
+
+def install_embeddings(log: Callable[[str], None], quant: str = "Q8_0") -> Path:
+    """llama.cpp's llama-server (official release build, CPU) + EmbeddingGemma 2 GGUF, both into ARTEL_HOME/tools.
+    The model file is checked against the SHA-256 Hugging Face publishes for it; the server archive against the
+    digest GitHub publishes when the API is reachable."""
+    from .embeddings import MODEL_NAME, MODEL_REPO, model_path
+
+    tag, digest = LLAMA_FALLBACK_TAG, None
+    try:
+        req = urllib.request.Request(f"https://api.github.com/repos/{LLAMA_REPO}/releases/latest",
+                                     headers={"User-Agent": "artel", "Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=30) as r:
+            rel = json.loads(r.read())
+        want = llama_asset(rel["tag_name"])
+        asset = next((a for a in rel.get("assets", []) if a["name"] == want), None)
+        if asset:  # the newest tag may still be building its binaries; then the known-good one is used
+            tag, digest = rel["tag_name"], (asset.get("digest") or "").removeprefix("sha256:") or None
+    except (OSError, ValueError, KeyError) as e:
+        log(f"GitHub API недоступен ({e}); беру проверенную сборку {tag}")
+    lib = tools_dir() / "llama"
+    if not server_present():
+        asset = llama_asset(tag)
+        log(f"скачиваю llama.cpp {tag} ({asset})")
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / asset
+            _download(f"https://github.com/{LLAMA_REPO}/releases/download/{tag}/{asset}", archive)
+            if digest and _sha256(archive) != digest:
+                raise RuntimeError("контрольная сумма llama.cpp не совпала с опубликованной — файл не установлен")
+            if lib.exists():
+                shutil.rmtree(lib)
+            lib.mkdir(parents=True)
+            _extract(archive, lib)
+        for p in lib.rglob("llama-*"):
+            if p.is_file() and not WIN:
+                p.chmod(0o755)
+    dest = model_path(quant)
+    if not dest.exists():
+        fname = f"{MODEL_NAME}-{quant}.gguf"
+        tree = _get_json(f"https://huggingface.co/api/models/{MODEL_REPO}/tree/main")
+        meta = next((f for f in tree if f.get("path") == fname), None)
+        if not meta:
+            raise RuntimeError(f"{fname} нет в {MODEL_REPO}")
+        expected = (meta.get("lfs") or {}).get("oid")
+        log(f"скачиваю {fname} ({round((meta.get('size') or 0) / 1e6)} МБ) с Hugging Face")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        part = dest.with_suffix(".part")
+        _download(f"https://huggingface.co/{MODEL_REPO}/resolve/main/{fname}", part)
+        if not expected or _sha256(part) != expected:
+            part.unlink(missing_ok=True)
+            raise RuntimeError("контрольная сумма модели не совпала с Hugging Face — файл не установлен")
+        log("контрольная сумма модели совпала")
+        part.replace(dest)
+    return dest
+
+
+def server_present() -> bool:
+    from .embeddings import server_binary
+
+    return bool(server_binary())
+
+
 def install(name: str, log: Callable[[str], None] = print) -> dict:
     spec = TOOLS[name]
+    if name == "embeddings":
+        path = install_embeddings(log)
+        log(f"{spec['label']} установлен: {path}")
+        return {"ok": True, "path": str(path)}
     found = (sys.executable if dsh_installed() else None) if name == "dsh" else resolve(spec["bin"])
     if found and not installed_by_artel(name):
         log(f"{spec['label']} уже установлен: {found}")
@@ -252,6 +373,13 @@ def uninstall(name: str) -> dict:
     spec = TOOLS[name]
     if not installed_by_artel(name):
         return {"ok": False, "error": f"{spec['label']} установлен не Artel — удалите его тем же способом, каким ставили"}
+    if name == "embeddings":
+        from .embeddings import LocalServer
+
+        LocalServer.stop()
+        for d in (tools_dir() / "llama", tools_dir() / "models"):
+            shutil.rmtree(d, ignore_errors=True)
+        return {"ok": True}
     if name == "dsh":
         try:
             _pip(["uninstall", "-y", *DSH_DISTS], lambda m: None)

@@ -15,7 +15,7 @@ from ..tools import shell_run
 
 PLUGIN = {"name": "artel.plugins.builtin_tools", "version": "1",
           "provides": ["tool:bash", "tool:read_file", "tool:write_file", "tool:edit_file", "tool:list_files",
-                       "tool:memory_write"]}
+                       "tool:memory_write", "tool:search"]}
 MAX_OUT = 20_000
 MAX_LINES = 2000
 MAX_BYTES = 50 * 1024
@@ -258,6 +258,24 @@ def list_files(ctx: ToolContext, path: str = ".", depth: int = 3) -> str:
     return _bound(ctx, "\n".join(out), "list_files") or "(empty)"
 
 
+def search(ctx: ToolContext, query: str, path: str = ".", kind: str = "code", top: int = 8) -> str:
+    """Find where something is by meaning (and by exact words): code, docs and deliverables under ``path``."""
+    from ..retrieval import search_files
+
+    base = ctx.resolve(path)
+    if not base.is_dir():
+        raise ToolError(f"{path} is not a directory")
+    task = kind if kind in ("code", "search", "qa") else "code"
+    hits = search_files(base, query, ctx.kernel.config, top=max(1, min(int(top), 20)), task=task)
+    ctx.project.log.append("search/query", actor=ctx.actor, query=query[:300], path=path, hits=len(hits),
+                           how=hits[0]["how"] if hits else "")
+    if not hits:
+        return "nothing found"
+    out = [f"{ctx.display(base / h['path'])}:{h['start']}-{h['end']}\n{h['text'][:700]}" for h in hits]
+    how = "by meaning and keywords" if hits[0]["how"] == "hybrid" else "by keywords (no embedding model)"
+    return _bound(ctx, f"{len(hits)} matches, {how}:\n\n" + "\n\n---\n".join(out), "search")
+
+
 def memory_write(ctx: ToolContext, content: str, mode: str = "append") -> str:
     if ctx.persona is None:
         raise ToolError("only workers keep a MEMORY.md")
@@ -294,6 +312,13 @@ def setup(kernel) -> None:
         "list_files", "List files under a directory (workspace-relative or shared/).",
         {**S, "properties": {"path": {"type": "string"}, "depth": {"type": "integer"}}, "required": []},
         list_files, roles=EXEC_ROLES + ("librarian", "refiner", "manager")))
+    kernel.register_tool(ToolSpec(
+        "search", "Find code, docs or results by what they do or mean, not only by exact words (e.g. 'where are "
+        "provider limits handled'); returns file:line ranges with snippets. For code, phrase the query in the code's language (usually English). kind: code | search | qa.",
+        {**S, "properties": {"query": {"type": "string"}, "path": {"type": "string"},
+                             "kind": {"type": "string", "enum": ["code", "search", "qa"]},
+                             "top": {"type": "integer"}}, "required": ["query"]},
+        search, roles=EXEC_ROLES + ("librarian", "refiner", "manager", "auditor")))
 
     kernel.register_tool(ToolSpec(
         "memory_write", "Persist a durable note to your MEMORY.md (facts, decisions, lessons about this project). "
