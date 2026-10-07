@@ -157,7 +157,12 @@ def project_view(project: Project, runner: Runner) -> dict:
     live = project.slug in runner.active
     errors = [e for e in events if e["kind"] in ("llm/error", "manager/escalated", "manager/provider_switch",
                                                 "manager/provider_limit", "provider/limited")][-5:]
+    from ..tooling import effective_grants
+
+    g = effective_grants(project, "worker")
+    grants = {"read": g["read"], "write": g["write"], "refs": [str(r) for r in project.refs]}
     return {"slug": project.slug, "meta": project.meta, "board": snap, "workers": workers, "stats": stats,
+            "grants": grants,
             "active": analytics.active_agents(events, live), "stage": analytics.stage_of(project, snap["tasks"]),
             "recent_problems": errors,
             "notes": project.prompt_notes(), "live": project.slug in runner.active, "seq": project.log.seq}

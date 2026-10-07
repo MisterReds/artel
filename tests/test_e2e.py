@@ -149,3 +149,21 @@ def test_librarian_runs_below_2x_threshold_after_rejection(cfg):
     project, status = run_goal("Write a short guide to SQLite WAL mode", cfg)
     assert status == "done"
     assert _reviewed(project)
+
+
+def test_ref_run_and_write_refused(cfg, tmp_path):
+    from artel.agent import execute_tool
+    from artel.tooling import ToolContext
+    ref = tmp_path / "ref"
+    ref.mkdir()
+    (ref / "a.txt").write_text("source")
+    project, status = run_goal("Write a short guide to SQLite WAL mode", cfg, name="withref", refs=(ref,))
+    assert status == "done"
+    assert str(ref.resolve()) in project.meta["refs"] or str(ref) in project.meta["refs"]
+    k = new_kernel(cfg)
+    ctx = ToolContext(k, project, role="worker", workspace=project.shared)
+    msg, err = execute_tool(k, ctx, "write_file", {"path": str(ref / "new.txt"), "content": "x"})
+    assert err and "write grants" in msg
+    assert not (ref / "new.txt").exists()
+    msg, err = execute_tool(k, ctx, "read_file", {"path": str(ref / "a.txt")})
+    assert not err and "source" in msg

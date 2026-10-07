@@ -29,7 +29,7 @@ from .. import policy
 from ..agent import LoopDetector, Outcome, _short, execute_tool
 from ..prompts import CONTINUATION
 from ..tools import terminate_tree
-from ..tooling import ToolContext
+from ..tooling import READONLY_ROLES, ToolContext
 
 # Claude Code ships better versions of these; do not expose Artel's duplicates.
 NATIVE_DUPLICATES = {"bash", "read_file", "write_file", "edit_file", "list_files"}
@@ -42,7 +42,6 @@ SESSION_ENV = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUD
                "CLAUDE_AFTER_LAST_COMPACT", "CLAUDE_CODE_SESSION_ATTENDED")
 MCP_PREFIX = "mcp__artel__"
 # Roles that judge or plan must not edit the deliverables they are judging.
-READONLY_ROLES = {"planner", "reviewer", "auditor", "manager", "evolver", "absorber"}
 WRITE_TOOLS = ("Write", "Edit", "MultiEdit")
 
 DEFAULTS = {"binary": "claude", "model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
@@ -116,6 +115,13 @@ class ToolBridge:
     def close(self) -> None:
         self.httpd.shutdown()
         self.httpd.server_close()
+
+
+def build_dir_args(grants: Optional[dict]) -> list:
+    """``--add-dir`` for every read and write grant (the workspace is the cwd); no grants: nothing extra."""
+    if grants is None:
+        return []
+    return [x for d in dict.fromkeys([*grants["write"], *grants["read"]]) for x in ("--add-dir", d)]
 
 
 def policy_hook_settings(project_root) -> str:
@@ -196,14 +202,15 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                 break
             from ..tools import resolve
 
+            grants = ctx.grants()
+            no_write = role in READONLY_ROLES or not grants["write"]
             args = [resolve(cc["binary"]) or cc["binary"], "-p", prompt, "--model", cc["model"], "--output-format", "stream-json", "--verbose",
                     "--mcp-config", str(cfg_path), "--strict-mcp-config",
                     *([] if session_id else ["--append-system-prompt", system + note]),  # a resumed session keeps it
-                    "--permission-mode", cc["permission_mode"], "--add-dir", str(ctx.shared_dir),
-                    *[x for r in getattr(project, "refs", []) for x in ("--add-dir", str(r))],
-                    "--allowedTools", *[t for t in BUILTIN_TOOLS if role not in READONLY_ROLES or t not in WRITE_TOOLS],
+                    "--permission-mode", cc["permission_mode"], *build_dir_args(grants),
+                    "--allowedTools", *[t for t in BUILTIN_TOOLS if not no_write or t not in WRITE_TOOLS],
                     "mcp__artel"]
-            if role in READONLY_ROLES:
+            if no_write:
                 args += ["--disallowedTools", *WRITE_TOOLS]
             args += ["--settings", policy_hook_settings(project.root)]
             eff = ctx.state.get("effort") or cc.get("effort")
