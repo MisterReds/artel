@@ -6,7 +6,7 @@
  "running": {
   "generation": 5,
   "since": 1791393763.7214735,
-  "phase": "benchmarking the integration of 2 items (round 0)",
+  "phase": "final integration of 2 adopted items",
   "plan": {
    "champ": "0f3b1cc7d02743e7131e6d8290d64e7e2948e1f5",
    "kind": "candidate",
