@@ -121,6 +121,9 @@ class Manager:
         user = (f"<goal>\n{self.project.goal}\n</goal>\n\nSkill library index:\n{skills.index() or '(empty)'}\n\n"
                 "Plan the project now.")
         ctx = ToolContext(self.kernel, self.project, role="planner", workspace=self.project.shared)
+        from .runtimes import runtime_for
+
+        self.note("planning", runtime=runtime_for(self.cfg, "planner"))
         out = run_agent(self.kernel, self.project, role="planner", system=prompts.PLANNER, first_user=user, ctx=ctx,
                        max_turns=12, purpose="plan", stop_event=self.stop)
         if out.name != "submit_plan":
@@ -443,7 +446,17 @@ class Manager:
             self.board.comment(task["id"], "manager", f"Нужна настройка, повтор не поможет: {reason}")
             self.note("escalated", task_id=task["id"], rationale=f"setup: {reason}")
             return
-        if kind == "limit":  # the provider's limit: wait for the reset, do not spend attempts
+        if kind == "limit":  # the provider's limit: switch executor if auto has another one, else wait for the reset
+            from . import limits
+            from .runtimes import runtime_for
+
+            alt = runtime_for(self.cfg, "worker")
+            out = limits.load()  # the run that hit the limit recorded its runtime there (runtimes._note_limit)
+            if out and alt != "none" and alt.split(":")[0] not in out:
+                self.board.update(task["id"], status="ready", backoff_until=0, actor="manager")
+                self.board.comment(task["id"], "manager", f"Лимит провайдера ({reason[:200]}); продолжаю на {alt}.")
+                self.note("provider_switch", task_id=task["id"], to=alt, reason=reason)
+                return
             until = retry_at(reason) or time.time() + 900
             self.board.update(task["id"], status="ready", backoff_until=until, actor="manager")
             self.board.comment(task["id"], "manager", f"Лимит провайдера ({reason}); повтор после "
@@ -721,9 +734,23 @@ class Manager:
             self.project.log.append("plugin/failed", plugin=plugin, error=error)
         self.kernel.emit("project_start", project=self.project, resumed=bool(self.root_id))
         if not self.root_id:
-            try:
-                self.plan()
-            except Exception as exc:  # noqa: BLE001 - a project that cannot start must say why, not crash
+            for _attempt in range(4):  # a provider limit during planning moves planning to the next executor
+                try:
+                    self.plan()
+                    exc = None
+                    break
+                except Exception as e:  # noqa: BLE001
+                    exc = e
+                    from . import limits
+                    from .failures import classify
+                    from .runtimes import runtime_for
+
+                    alt = runtime_for(self.cfg, "planner")
+                    out = limits.load()
+                    if classify(str(e)) != "limit" or not out or alt == "none" or alt.split(":")[0] in out:
+                        break
+                    self.note("provider_switch", to=alt, reason=str(e)[:300])
+            if exc is not None:  # a project that cannot start must say why, not crash
                 from .failures import classify
 
                 reason = str(exc)

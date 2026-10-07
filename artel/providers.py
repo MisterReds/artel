@@ -205,14 +205,40 @@ def system_one_status(config: dict) -> dict:
             "points": [k for k, v in (dec.get("points") or {}).items() if v]}
 
 
+CLAUDE_MODELS = [{"id": "sonnet", "name": "Sonnet (последняя)"}, {"id": "opus", "name": "Opus (последняя)"},
+                 {"id": "haiku", "name": "Haiku (последняя)"}]
+TOGGLABLE = ["claude_code", "codex", "dsh", "native"]
+
+
+def model_catalog(config: dict, runtime: str) -> list[dict]:
+    """Models a runtime can use: Codex asks its CLI (`codex debug models`), Claude Code takes the aliases its CLI
+    resolves to the latest model of each family; [] when unknown (the field stays free text)."""
+    if runtime == "codex":
+        from .runtimes.codex import model_catalog as codex_models
+
+        return codex_models(codex_settings(config))
+    if runtime == "claude_code":
+        return CLAUDE_MODELS
+    return []
+
+
+def limited(config: dict) -> dict:
+    from . import limits
+
+    return {k: v for k, v in limits.load().items()}
+
+
 def routing(config: dict) -> dict:
     from .runtimes import detect_runtime
 
-    return {"runtime": config.get("runtime", "auto"), "auto_resolves_to": detect_runtime(config, ttl=0), "runtime_by_role": config.get("runtime_by_role") or {},
+    return {"runtime": config.get("runtime", "auto"), "auto_resolves_to": detect_runtime(config, ttl=0),
+            "disabled_runtimes": list(config.get("disabled_runtimes") or []), "togglable": TOGGLABLE,
+            "limited": limited(config), "runtime_by_role": config.get("runtime_by_role") or {},
             "roles": ROLES, "runtimes": runtimes(config),
             "models": {"claude_code": (config.get("claude_code") or {}).get("model", "sonnet"),
                        "codex": (config.get("codex") or {}).get("model") or "",
                        "dsh": (config.get("dsh") or {}).get("model") or ""},
+            "catalogs": {rt: model_catalog(config, rt) for rt in ("claude_code", "codex")},
             "acp_agent": (config.get("acp") or {}).get("agent", "gemini")}
 
 
@@ -230,20 +256,32 @@ def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
         upd["runtime_by_role"] = {r: v for r, v in data["runtime_by_role"].items() if r in ROLES and v in allowed}
     if data.get("acp_agent") in presets(config):
         upd["acp"] = {"agent": data["acp_agent"]}
+    if isinstance(data.get("disabled_runtimes"), list):
+        upd["disabled_runtimes"] = [r for r in data["disabled_runtimes"] if r in TOGGLABLE]
     for rt in ("claude_code", "codex", "dsh"):
         m = (data.get("models") or {}).get(rt)
         if isinstance(m, str):
-            upd[rt] = {"model": m.strip() or None}
+            m = m.strip()
+            if m and rt == "codex":
+                from .runtimes.codex import normalize_model
+
+                m = normalize_model(m, codex_settings(config))
+                known = [x["id"] for x in model_catalog(config, "codex")]
+                if known and m not in known:
+                    raise ValueError(f"Codex не знает модель {m!r}; доступны: {', '.join(known)}")
+            upd[rt] = {"model": m or None}
     path = path or artel_home() / "artel.yaml"
     current = yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}
     current = current or {}
-    if "runtime_by_role" in upd:
-        current.pop("runtime_by_role", None)  # replace, not merge: removing a role override must stick
+    for k in ("runtime_by_role", "disabled_runtimes"):
+        if k in upd:
+            current.pop(k, None)  # replace, not merge: removing a role override must stick
     merged = deep_merge(current, upd)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(merged, allow_unicode=True, sort_keys=False), encoding="utf-8")
-    if "runtime_by_role" in upd:
-        config["runtime_by_role"] = upd.pop("runtime_by_role")
+    for k in ("runtime_by_role", "disabled_runtimes"):
+        if k in upd:
+            config[k] = upd.pop(k)
     for k, v in upd.items():
         config[k] = deep_merge(config.get(k) or {}, v) if isinstance(v, dict) else v
     return routing(config)
@@ -282,4 +320,4 @@ def overview(config: dict) -> dict:
             "timezone": __import__("artel.tz", fromlist=["info"]).info(config)}
 
 
-__all__ = ["CodexLogin", "overview", "save_routing", "save_timezone", "logout_codex", "json"]
+__all__ = ["CodexLogin", "overview", "model_catalog", "save_routing", "save_timezone", "logout_codex", "json"]

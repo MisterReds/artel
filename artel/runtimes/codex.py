@@ -33,6 +33,47 @@ DEFAULTS = {"binary": "codex", "model": None, "sandbox": "workspace-write", "max
 EFFORT = {"low": "low", "medium": "medium", "high": "high"}
 
 
+_catalog_cache: dict = {}
+
+
+def model_catalog(cc: Optional[dict] = None, ttl: float = 600.0) -> list[dict]:
+    """Models this Codex account can use (`codex debug models`), cached; [] when the CLI is missing or fails."""
+    import time as _t
+
+    cc = cc or DEFAULTS
+    key = (cc.get("binary"), cc.get("home"), os.environ.get("CODEX_HOME"))
+    hit = _catalog_cache.get(key)
+    if hit and _t.time() - hit[1] < ttl:
+        return hit[0]
+    from ..tools import resolve
+
+    binary = resolve(cc.get("binary", "codex"))
+    if not binary:
+        return []
+    try:
+        p = subprocess.run([binary, "debug", "models"], capture_output=True, text=True, encoding="utf-8",
+                           errors="replace", timeout=30, env=codex_env(cc))
+        data = json.loads(p.stdout) if p.returncode == 0 else {}
+    except (subprocess.TimeoutExpired, ValueError, OSError):
+        data = {}
+    models = [{"id": m.get("slug"), "name": m.get("display_name") or m.get("slug"),
+               "description": m.get("description", ""), "default_effort": m.get("default_reasoning_level"),
+               "efforts": [x.get("effort") for x in m.get("supported_reasoning_levels") or []]}
+              for m in (data.get("models") or []) if m.get("slug") and m.get("visibility", "list") == "list"]
+    if models:
+        _catalog_cache[key] = (models, _t.time())
+    return models
+
+
+def normalize_model(model: str, cc: Optional[dict] = None) -> str:
+    """Accept a display name ("GPT-6-Luna") or any capitalisation for the model id Codex expects ("gpt-6-luna")."""
+    m = (model or "").strip()
+    for item in model_catalog(cc):
+        if m.lower() in (str(item["id"]).lower(), str(item["name"]).lower()):
+            return item["id"]
+    return m
+
+
 def codex_settings(config: dict) -> dict:
     return {**DEFAULTS, **(config.get("codex") or {})}
 
@@ -62,7 +103,11 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
             "-c", f"mcp_servers.artel.args={_toml(['-m', 'artel.runtimes.mcp_proxy', bridge_url, bridge_token])}",
             "-c", f"mcp_servers.artel.env={{PYTHONPATH={_toml(pkg_root)}}}",
             "-c", "mcp_servers.artel.tool_timeout_sec=900",
-            "-c", 'approval_policy="never"']
+            # Autonomous: Codex never stops to ask (nobody would answer). Its own commands stay inside the sandbox
+            # below and Artel's command policy; Artel's coordination tools must run without a per-call approval,
+            # otherwise the planner cannot even submit its plan.
+            "-c", 'approval_policy="never"',
+            "-c", 'mcp_servers.artel.default_tools_approval_mode="approve"']
     if sandbox == "danger-full-access":
         args += ["--dangerously-bypass-approvals-and-sandbox"]
     else:
@@ -70,7 +115,7 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
         if sandbox == "workspace-write":
             args += ["--add-dir", str(shared)]
     if cc.get("model"):
-        args += ["-m", cc["model"]]
+        args += ["-m", normalize_model(cc["model"], cc)]
     eff = EFFORT.get(effort or cc.get("reasoning_effort") or "")
     if eff:
         args += ["-c", f"model_reasoning_effort={_toml(eff)}"]

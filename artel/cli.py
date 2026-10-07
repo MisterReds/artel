@@ -428,6 +428,56 @@ def cmd_providers(args) -> int:
     from .runtimes.codex import codex_env, codex_settings
 
     cfg = _cfg(args)
+    rt = "claude_code" if args.name == "claude" else args.name
+    if args.action in ("use", "model", "models", "disable", "enable", "unlimit"):
+        from . import limits
+        from .providers import TOGGLABLE, model_catalog, routing, runtimes, save_routing
+
+        r = routing(cfg)
+        try:
+            if args.action == "models":
+                cat = model_catalog(cfg, rt)
+                if not cat:
+                    print(f"{rt}: список моделей недоступен (CLI не установлен или не отвечает); задайте имя вручную")
+                    return 1
+                cur = r["models"].get(rt) or ""
+                for m in cat:
+                    eff = f"  усилие: {', '.join(m['efforts'])}" if m.get("efforts") else ""
+                    print(f"  {'*' if m['id'] == cur else ' '} {m['id']:<18} {m['name']}{eff}")
+                return 0
+            if args.action == "model":
+                if rt not in ("claude_code", "codex", "dsh"):
+                    print("модель задаётся для claude_code, codex или dsh")
+                    return 2
+                r = save_routing(cfg, {"models": {rt: args.value or ""}})
+                print(f"{rt}: модель {r['models'][rt] or 'по умолчанию'}")
+                return 0
+            if args.action == "use":
+                if rt not in runtimes(cfg) and not (args.role and rt == "default"):
+                    print(f"неизвестный рантайм {rt}; доступны: {', '.join(runtimes(cfg))}")
+                    return 2
+                if args.role:
+                    by = dict(r["runtime_by_role"])
+                    by.pop(args.role, None) if rt == "default" else by.__setitem__(args.role, rt)
+                    r = save_routing(cfg, {"runtime_by_role": by})
+                else:
+                    r = save_routing(cfg, {"runtime": rt})
+            elif args.action in ("disable", "enable"):
+                if rt not in TOGGLABLE:
+                    print(f"отключить можно: {', '.join(TOGGLABLE)}")
+                    return 2
+                d = [x for x in r["disabled_runtimes"] if x != rt] + ([rt] if args.action == "disable" else [])
+                r = save_routing(cfg, {"disabled_runtimes": d})
+            else:
+                limits.clear(rt)
+                r = routing(cfg)
+        except ValueError as e:
+            print(e)
+            return 1
+        print(f"по умолчанию: {r['runtime']}" + (f" → {r['auto_resolves_to']}" if r["runtime"] == "auto" else "")
+              + "".join(f"; {k}: {v}" for k, v in r["runtime_by_role"].items())
+              + (f"; отключены: {', '.join(r['disabled_runtimes'])}" if r["disabled_runtimes"] else ""))
+        return 0
     if args.action in ("install", "uninstall"):
         from .tools import install, uninstall
 
@@ -458,7 +508,14 @@ def cmd_providers(args) -> int:
     print(f"  {'System One':<14} {('подключена: ' + s1['name']) if s1['connected'] else 'не подключена':<34} "
           f"{'точки: ' + ', '.join(s1['points']) if s1['points'] else ''}")
     r = o["routing"]
-    print(f"  рантайм по умолчанию: {r['runtime']}" + "".join(f"; {k}: {v}" for k, v in r["runtime_by_role"].items()))
+    print(f"  рантайм по умолчанию: {r['runtime']}" + (f" (сейчас → {r['auto_resolves_to']})" if r["runtime"] == "auto" else "")
+          + "".join(f"; {k}: {v}" for k, v in r["runtime_by_role"].items()))
+    print("  модели: " + ", ".join(f"{k} = {v or 'по умолчанию'}" for k, v in r["models"].items()))
+    if r["disabled_runtimes"]:
+        print(f"  отключены: {', '.join(r['disabled_runtimes'])}")
+    for k, v in r["limited"].items():
+        print(f"  лимит: {k} до {fmt_ts(v, config=cfg)} — работа идёт на других")
+    print("  настройка: artel providers use|models|model|disable|enable <рантайм> — подробнее: artel providers -h")
     return 0
 
 
@@ -729,8 +786,15 @@ def main(argv=None) -> int:
     ev.set_defaults(fn=cmd_evolve)
 
     pv = sub.add_parser("providers", help="subscriptions, API keys and runtimes; Codex device-code login")
-    pv.add_argument("action", nargs="?", default="status", choices=["status", "login", "logout", "install", "uninstall"])
-    pv.add_argument("name", nargs="?", default="codex", choices=["codex", "claude", "claude_code", "dsh"])
+    pv.add_argument("action", nargs="?", default="status",
+                    choices=["status", "login", "logout", "install", "uninstall", "use", "models", "model", "disable",
+                             "enable", "unlimit"],
+                    help="use <runtime> [--role R] — who does the work; models <runtime> — what it can run; "
+                         "model <runtime> <id> — pick one; disable|enable <runtime> — exclude from auto; "
+                         "unlimit <runtime> — forget a recorded limit")
+    pv.add_argument("name", nargs="?", default="codex")
+    pv.add_argument("value", nargs="?", help="model id for `model`")
+    pv.add_argument("--role", help="for `use`: set the runtime of one role only (empty runtime 'default' clears it)")
     pv.add_argument("--config")
     pv.set_defaults(fn=cmd_providers)
 
