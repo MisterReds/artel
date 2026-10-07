@@ -168,6 +168,7 @@ items:
     mode: evolve
     status: planned
     result: "gen 4: conflicted in artel/plugins/builtin_tools.py with the adopted items; retried on the new main"
+    note: "Study 2026-10: ECC ecc2/src/observability/mod.rs scores each tool call deterministically before any model (base tool risk + secret-file sensitivity + blast radius such as force-push or rm -rf + irreversibility, clamped to 0..1, thresholds review / confirm / block); use it as the cheap first pass and call the model reviewer only above the review threshold."
     title: Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/prompts/templates/guardian/classifier_instructions.md]}
     target: [artel/manager.py]
@@ -230,6 +231,7 @@ items:
     mode: design
     status: done
     result: "Telegram bot (control, answers, notifications, one-time pairing) and `artel web --remote`: token login (scrypt hash only, rotatable), server-side HttpOnly SameSite=Strict sessions, per-IP rate limit, HTTPS recipes (Caddy, Tailscale) with an insecure-connection banner; installable PWA (manifest, icons, shell-only service worker)"
+    note: "Study 2026-10: ECC ecc2/src/notifications.rs adds per-event toggles and quiet hours (cross-midnight) plus Slack/Discord webhook payloads; Fusion packages/engine/src/notification/ntfy-provider.ts uses ntfy topics with a click-through deep link to the task (no bot account needed) and packages/engine/src/remote-access/ manages a tailscale funnel / cloudflared tunnel instead of a reverse-proxy recipe. Two-way replies: A-hive-chat-reply."
     title: Use from the phone — authenticated remote dashboard and notifications (Telegram / webhook)
     source: {harness: Hermes Agent / OpenClaw, repo: NousResearch/hermes-agent, paths: [gateway/]}
     target: [artel/web/server.py, artel/web/auth.py, artel/web/static/sw.js]
@@ -306,6 +308,7 @@ items:
     wave: 3
     mode: evolve
     status: planned
+    note: "Study 2026-10: AgentTeams docs/design/teamharness/task-transition-engine.md and plugins/teamharness/contracts/task-transitions.json keep the table as a JSON contract file, route every change through one _transition_task entry, append a capped per-task history {ts, from, to, action, actor}, and reject out-of-order moves with an error naming the correct action."
     title: Task as a state machine with executable transition gates
     source: {harness: StateM, repo: henryqin1997/statem, paths: [README.md]}
     target: [artel/manager.py]
@@ -354,6 +357,7 @@ items:
     wave: 3
     mode: evolve
     status: planned
+    note: "Study 2026-10: Munder Difflin src/main/breaker.ts escalates one level per check (steer -> constrain -> stop, recovering a level per healthy check) on token velocity, error storms and no workspace progress; budgets should count work tokens, see A-munder-work-tokens."
     title: Budget for the whole agent tree with threshold reminders
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/core/src/rollout_budget.rs]}
     target: [artel/agent.py]
@@ -365,6 +369,7 @@ items:
     wave: 3
     mode: evolve
     status: planned
+    note: "Study 2026-10: Munder Difflin src/main/hive.ts has agents write only to their own outbox while a single router delivers to inboxes (one committer, no index.lock races) and wakes an idle recipient with an inbox nudge."
     title: Agent mailbox and teams
     source: {harness: Claude Code / Gas Town, repo: lintsinghua/claude-code-book, paths: [en/Part-3-Advanced-Patterns/10-The-Coordinator-Pattern-Multi-Agent-Orchestration.md]}
     target: [artel/plugins/board_tools.py]
@@ -395,3 +400,373 @@ items:
       decision points. When the partner repository is ready: connect it (plugin or HTTP), turn the points on one at a
       time and keep only those that lower cost without lowering the pass rate on the benchmark.
     acceptance: [each enabled point measured with and without System One, decision latency under 500 ms]
+
+  # ---- wave 4: studied affaan-m/ECC (2026-10) ----
+  - id: A-ecc-paired-promotion
+    wave: 4
+    mode: design
+    status: planned
+    title: 'Free hypotheses win only on paired repeats: minimum samples, mean delta and per-task win rate'
+    source:
+      harness: ECC
+      repo: affaan-m/ECC
+      paths:
+      - ecc2/src/harness_eval.rs
+      - ecc2/README.md
+      license: MIT
+    target:
+    - artel/evolve/engine.py
+    - artel/evolve/bench.py
+    plan: 'Policy.decide today accepts a free hypothesis on any pass-rate or partial gain from one benchmark run,
+      which is noise on a 7-task suite. Port ECC2''s PromotionPolicy.compare: run candidate and champion with repeats
+      >= min_samples on the same tasks, pair results per (task, repeat), compute candidate mean, baseline mean, mean
+      delta and win rate (share of pairs where the candidate scores higher); accept only when all three thresholds
+      hold (defaults min_samples 2, min_mean_delta 0.05 on partial score, min_win_rate 0.5) and record every failed
+      threshold in the decision reason. Roadmap adoption (Policy.adopt) is unchanged. Touches the measured-evolution
+      pillar, so it is designed by hand and covered by tests/test_invariants.py.'
+    acceptance:
+    - 'unit test: a candidate that wins one noisy run but loses the paired mean is rejected with the failing threshold
+      named'
+    - decision ledger entries carry sample_count, mean_delta and win_rate
+    - test_failing_tests_reject_candidate and test_population_* still pass
+  - id: A-ecc-run-heartbeat-watchdog
+    wave: 4
+    mode: evolve
+    status: planned
+    title: 'Silent-run watchdog: a CLI worker with no stream events for N minutes is killed and retried as ''hung'''
+    source:
+      harness: ECC
+      repo: affaan-m/ECC
+      paths:
+      - ecc2/src/session/daemon.rs
+      - ecc2/src/session/manager.rs
+      license: MIT
+    target:
+    - artel/runtimes/claude_code.py
+    - artel/runtimes/codex.py
+    - artel/manager.py
+    - artel/board.py
+    plan: 'Artel writes run heartbeats (board.heartbeat) but nothing reads them (board.stale_runs is unused), and
+      the Claude Code / Codex runtimes only have a 40-minute wall timeout. Following ECC2''s enforce_session_heartbeats:
+      the runtimes record the time of the last stream event; a watchdog thread kills the subprocess after runtimes.idle_timeout_s
+      (default 600) of silence and ends the run with status ''hung''. The manager retries a hung run once without
+      counting an attempt and logs manager/hung; Manager.recover also marks runs whose heartbeat is older than the
+      idle timeout as orphaned. Test with a fake CLI that prints one event and sleeps.'
+    acceptance:
+    - 'unit test: a silent fake CLI is killed after the idle timeout and the task returns to ready without an attempt
+      counted'
+    - stale runs are finished as orphaned on recover
+    - no benchmark regression
+
+  # ---- wave 4: studied Runfusion/Fusion (2026-10) ----
+  - id: A-fusion-file-scope-lease
+    wave: 4
+    mode: evolve
+    status: planned
+    title: 'File-scope leases: tasks declare the paths they write; overlapping tasks never run at the same time'
+    source:
+      harness: Fusion
+      repo: Runfusion/Fusion
+      paths:
+      - packages/engine/src/executor/file-scope-lease-dispatch-gate.ts
+      - packages/engine/src/scheduler.ts
+      license: MIT
+    target:
+    - artel/plugins/board_tools.py
+    - artel/board.py
+    - artel/manager.py
+    - artel/prompts.py
+    plan: 'Workers share one deliverables directory and run in parallel (budgets.max_parallel), so two tasks can edit
+      the same file at once; worktree isolation (W2-worktree-isolation) is a larger structural change. Cheaper step
+      from Fusion: TASK_ITEM gets an optional `files` list (paths or `dir/*` prefixes) the task writes; the board
+      stores it; Manager.schedule skips a ready task whose scope overlaps a running or in-review task (findFileScopeOverlaps
+      semantics: equal paths or directory prefix) and logs manager/scope_wait with the blocking task. Tasks without
+      a scope behave as today. The planner prompt asks for scopes.'
+    acceptance:
+    - unit test of the overlap matcher (equal, prefix, glob, disjoint)
+    - scripted two-task plan with overlapping scopes runs them one after the other
+    - disjoint scopes still run in parallel
+    - no benchmark regression
+  - id: A-fusion-novelty-loop-window
+    wave: 4
+    mode: evolve
+    status: planned
+    title: 'Loop detector catches alternating loops: low-novelty window over recent tool-call fingerprints'
+    source:
+      harness: Fusion
+      repo: Runfusion/Fusion
+      paths:
+      - packages/engine/src/healing/stuck-task-detector.ts
+      license: MIT
+    target:
+    - artel/agent.py
+    - artel/runtimes/claude_code.py
+    - artel/runtimes/codex.py
+    plan: 'LoopDetector only counts identical consecutive calls, so A,B,A,B cycles (edit the same lines, rerun the
+      same failing test) are never caught. Add Fusion''s window: keep the last 40 fingerprints (tool name + sha256
+      prefix of whitespace-collapsed args); with at least 20 samples and unique/total <= 0.25, warn once with a corrective
+      note, then stop the run as ''loop''. No single-fingerprint dominance rule (fix/test alternation with new edits
+      stays healthy).'
+    acceptance:
+    - 'unit tests: A,B,A,B... is flagged; a test command alternating with distinct edits is not'
+    - existing loop-detector tests pass
+    - no benchmark regression
+  - id: A-fusion-external-obstacle-classes
+    wave: 4
+    mode: evolve
+    status: planned
+    title: 'Failure classes for network and host problems: transient network retries free, full disk goes to a person'
+    source:
+      harness: Fusion
+      repo: Runfusion/Fusion
+      paths:
+      - packages/engine/src/execution-block-classifier.ts
+      license: MIT
+    target:
+    - artel/failures.py
+    - artel/manager.py
+    plan: 'failures.classify knows limit / setup / work, so ECONNRESET, ETIMEDOUT, EAI_AGAIN or ''socket hang up''
+      burn attempts and trip the circuit breaker, and ENOSPC / EROFS / ENOMEM are retried uselessly. Add Fusion''s
+      exact-code classes: ''network'' (retry after backoff, attempt not counted, at most 5 times in a row, then human)
+      and ''host'' (blocked, needs_human, with the code). Patterns are word-anchored codes only; everything unrecognized
+      stays ''work''.'
+    acceptance:
+    - unit tests for each code and for ordinary test failures staying 'work'
+    - a scripted network error does not increase attempts
+    - no benchmark regression
+  - id: A-fusion-review-dispute
+    wave: 4
+    mode: evolve
+    status: planned
+    title: Workers can dispute a review finding; the next reviewer must rule on each dispute
+    source:
+      harness: Fusion
+      repo: Runfusion/Fusion
+      paths:
+      - packages/engine/src/executor/create-review-dispute-tool.ts
+      license: MIT
+    target:
+    - artel/plugins/board_tools.py
+    - artel/manager.py
+    - artel/prompts.py
+    plan: 'A wrong rejection today costs attempts until the circuit breaker fires. Add a worker tool review_dispute(criterion,
+      rationale) usable on a task with a REJECTED verdict; it records an open dispute (board comment + review/dispute
+      event) and does not change the verdict. The next reviewer sees open disputes in its card and review_verdict
+      gains `disputes: [{criterion, upheld, reason}]`; an unanswered dispute makes the verdict invalid and the reviewer
+      is asked again (existing review_retries path).'
+    acceptance:
+    - dispute recorded and shown to the next reviewer (test)
+    - verdict without a ruling on an open dispute is rejected as malformed
+    - rejections per task on the benchmark do not rise
+
+  # ---- wave 4: studied bytedance/deer-flow (2026-10) ----
+  - id: A-deerflow-typed-criteria
+    wave: 4
+    mode: evolve
+    status: planned
+    title: Machine-checkable acceptance criteria (file exists / non-empty / json-valid, tests_passed:<cmd>) decided
+      in code
+    source:
+      harness: DeerFlow
+      repo: bytedance/deer-flow
+      paths:
+      - backend/packages/harness/deerflow/subagents/acceptance_checks.py
+      - backend/tests/test_json_acceptance.py
+      license: MIT
+    target:
+    - artel/manager.py
+    - artel/plugins/board_tools.py
+    - artel/prompts.py
+    plan: 'Every criterion is judged by the reviewer model, and evidence is free text. Port DeerFlow''s leaf families
+      as a new module used by Manager.run_gates: `file:<path> exists|non-empty|json-valid` (resolved under shared/,
+      bounded read 50 KB) and `tests_passed:<command>` bound to a recorded bash call of the task''s runs (event log)
+      whose output tail has a pass shape (`N passed`, `OK`, `test result: ok`) and no fail or zero-test shape. Each
+      leaf is holds / does not hold / UNVERIFIED; a failing decidable leaf rejects without a reviewer call, UNVERIFIED
+      and prose criteria go to the reviewer with the leaf table. The planner prompt shows the syntax.'
+    acceptance:
+    - unit tests per family incl. '0 passed' and missing file
+    - a failing typed criterion rejects without a reviewer model call (test)
+    - reviewer cost per task on the benchmark does not rise
+
+  # ---- wave 4: studied aden-hive/hive (2026-10) ----
+  - id: A-hive-chat-reply
+    wave: 4
+    mode: design
+    status: planned
+    title: 'Answer a waiting task from the phone: Telegram reply routed back to the task by an HMAC reference'
+    source:
+      harness: Hive
+      repo: aden-hive/hive
+      paths:
+      - core/framework/sentinel/manager.py
+      - core/framework/sentinel/token.py
+      - core/framework/sentinel/listeners.py
+      - core/framework/sentinel/store.py
+      license: Apache-2.0
+    target:
+    - artel/web/server.py
+    - artel/manager.py
+    plan: W2-remote-and-notify sends notifications out; Hive's Sentinel also takes the answer back. When a task goes
+      to a person (needs_human, policy prompt), the message carries a `ref:` token = HMAC(escalation id) under a per-install
+      secret (0600 file). A Telegram getUpdates long-poll (outbound only, works behind NAT, no open port) receives
+      replies from the configured chat id only; a reply whose token verifies is applied with human_comment(project,
+      task) and continue_after_human. Open escalations are files on disk so a restart still resolves replies. Builds
+      on W2-remote-and-notify.
+    acceptance:
+    - reply with a valid ref unblocks the task (test double for the Telegram API)
+    - forged ref or foreign chat id is ignored and logged
+    - pending escalations survive a restart
+    - no token stored in plain text logs
+  - id: A-hive-escalation-filter
+    wave: 4
+    mode: evolve
+    status: planned
+    title: 'Filter spurious ''ask a human'' blocks: a cheap check sends permission-seeking back to work'
+    source:
+      harness: Hive
+      repo: aden-hive/hive
+      paths:
+      - core/framework/sentinel/classifier.py
+      license: Apache-2.0
+    target:
+    - artel/manager.py
+    - artel/decide.py
+    - artel/prompts.py
+    plan: 'A worker''s task_block(needs_human=true) goes straight to a person, including blocks that only ask for
+      permission to continue. As in Hive''s park classifier: hard blockers (setup failure class, policy prompt) always
+      escalate; otherwise a decision point ''escalation_filter'' (System One when connected, else one call of the
+      cheap model) sees goal, criteria, the block reason and recent tool errors and answers continue | needs_human;
+      on ''continue'' with confidence >= 0.8 the task returns to ready with a comment telling the worker to proceed
+      with the stated assumption, at most twice per task.'
+    acceptance:
+    - scripted 'shall I continue?' block returns to work; missing-credential block reaches a person (tests)
+    - decision logged with latency
+    - waiting_human stops on the benchmark do not rise
+
+  # ---- wave 4: studied agentscope-ai/AgentTeams (2026-10) ----
+  - id: A-agentteams-secret-free-env
+    wave: 4
+    mode: evolve
+    status: planned
+    title: 'Workers never see provider secrets: tool and CLI environments are scrubbed of keys and tokens'
+    source:
+      harness: AgentTeams
+      repo: agentscope-ai/AgentTeams
+      paths:
+      - README.md
+      - docs/usage/higress-gateway-api.md
+      - shared/lib/agentteams-env.sh
+      license: Apache-2.0
+    target:
+    - artel/plugins/builtin_tools.py
+    - artel/runtimes/claude_code.py
+    - artel/runtimes/codex.py
+    plan: 'The native bash tool runs with the full os.environ, so any worker command (or a prompt-injected one) can
+      read ANTHROPIC_API_KEY, OPENAI_API_KEY, notification tokens. AgentTeams keeps real credentials in the gateway
+      and gives workers only scoped keys. Artel version: one function builds the worker env: drop variables matching
+      *_API_KEY, *_TOKEN, *SECRET*, *PASSWORD*, ARTEL_* credentials, keep an explicit allowlist (PATH, HOME, LANG,
+      proxy, the runtime''s own auth variable only for the CLI process itself); projects can pass named secrets to
+      tasks explicitly via config.'
+    acceptance:
+    - 'test: `env` in worker bash shows no provider key'
+    - Claude Code and Codex runtimes still authenticate
+    - no benchmark regression
+
+  # ---- wave 4: studied Yeachan-Heo/oh-my-claudecode (2026-10) ----
+  - id: A-omc-clarify-gate
+    wave: 4
+    mode: evolve
+    status: planned
+    title: 'Clarify vague goals before planning: ambiguity score, up to three questions to the owner'
+    source:
+      harness: oh-my-claudecode
+      repo: Yeachan-Heo/oh-my-claudecode
+      paths:
+      - skills/deep-interview/SKILL.md
+      license: MIT
+    target:
+    - artel/manager.py
+    - artel/prompts.py
+    - artel/plugins/board_tools.py
+    plan: A goal typed on a phone is often vague and the whole team spends on a guess. Before planning, one cheap
+      call scores clarity of goal, constraints and success criteria (0..1) and computes ambiguity = 1 - (0.4 goal
+      + 0.3 constraints + 0.3 criteria) as in deep-interview. Above planning.ambiguity_threshold (default 0.4) the
+      project goes to waiting_human with at most three questions targeting the weakest dimension; answers are appended
+      to the goal and planning starts. The owner can answer 'go' to skip. Off for the benchmark tasks (their goals
+      are explicit).
+    acceptance:
+    - vague goal produces questions, precise goal plans directly (scripted tests)
+    - answers reach the planner prompt
+    - no benchmark change (gate skipped below threshold)
+  - id: A-omc-review-tiers
+    wave: 4
+    mode: evolve
+    status: planned
+    title: 'Review effort scaled to the change: light review for small diffs, full review for large or sensitive ones'
+    source:
+      harness: oh-my-claudecode
+      repo: Yeachan-Heo/oh-my-claudecode
+      paths:
+      - src/verification/tier-selector.ts
+      license: MIT
+    target:
+    - artel/manager.py
+    - artel/snapshot.py
+    plan: The reviewer runs on the same model and effort for a one-line fix and a 30-file change. Use the shadow-git
+      snapshot already taken before each attempt to get files and lines changed; tier LIGHT (<5 files, <100 lines,
+      gates exist and pass) uses the cheap model and low effort, THOROUGH (>20 files or security-sensitive paths)
+      the strongest model, otherwise today's setting. Tier logged with the verdict.
+    acceptance:
+    - unit test of the tier selector
+    - tier recorded on review/verdict events
+    - benchmark cost drops with no pass-rate drop
+  - id: A-omc-secret-redaction
+    wave: 4
+    mode: evolve
+    status: planned
+    title: Redact secrets from the event log, tool results and notifications
+    source:
+      harness: oh-my-claudecode
+      repo: Yeachan-Heo/oh-my-claudecode
+      paths:
+      - src/notifications/redact.ts
+      license: MIT
+    target:
+    - artel/kernel.py
+    - artel/tooling.py
+    plan: 'Nothing in Artel masks tokens: a key printed by a command lands in events.jsonl, the dashboard feed and
+      the reviewer''s context. Port redactTokens'' patterns (sk-ant-api, sk-, ghp_/gho_/ghs_/github_pat_, xox*/xapp,
+      Telegram bot tokens, AKIA, Bearer values) plus the literal values of secret environment variables known to Artel;
+      apply once in EventLog.append and in tool results before they enter the model context.'
+    acceptance:
+    - 'test: a token echoed by bash is masked in the tool result and in events.jsonl'
+    - event log invariant test still passes
+    - redaction cost < 1 ms per event
+
+  # ---- wave 4: studied chaitanyagiri/munder-difflin (2026-10) ----
+  - id: A-munder-work-tokens
+    wave: 4
+    mode: evolve
+    status: planned
+    title: 'Count cache reads separately: budgets on work tokens, costs with cache prices'
+    source:
+      harness: Munder Difflin
+      repo: chaitanyagiri/munder-difflin
+      paths:
+      - src/main/breaker.ts
+      - src/main/usage.ts
+      license: MIT
+    target:
+    - artel/runtimes/claude_code.py
+    - artel/project.py
+    - artel/agent.py
+    - artel/analytics.py
+    plan: The Claude Code runtime adds cache_read_input_tokens into input_tokens, so budgets.max_total_tokens and
+      the dashboard's token figures grow with the request count against a fixed cached context (Munder found cache
+      reads were ~99% of the counted figure). Record input, output, cache_creation and cache_read separately in project
+      usage and run events; the token budget checks work tokens (input + output + cache_creation, Munder's workTokensOf);
+      analytics.cost_usd prices cache reads and writes at their own rates when the runtime reports no cost.
+    acceptance:
+    - usage carries four counters (test)
+    - a run with large cache reads does not trip the token budget (test)
+    - dashboard token totals match the provider's billed categories

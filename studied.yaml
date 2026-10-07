@@ -1,0 +1,89 @@
+# Harnesses whose code Artel's absorber has read. Written by `artel absorb` / `artel evolve --cycle`.
+- repo: affaan-m/ECC
+  license: MIT
+  found: 7
+  added:
+  - A-ecc-paired-promotion
+  - A-ecc-run-heartbeat-watchdog
+  skipped:
+    cross-harness hooks installer: Artel owns its runtimes; a Claude Code plugin/hook bundle does not apply
+    language-specific reviewer agents: Artel's planner writes worker souls per project; a fixed catalogue adds prompt
+      weight without evidence
+    ecc2 TUI dashboard: Artel already has a web dashboard; a terminal UI does not help the phone use case
+  summary: 'Plugin/skill bundle for Claude Code plus an alpha Rust control plane (ecc2): SQLite sessions, daemon,
+    worktrees, deterministic risk scoring, notifications with quiet hours and a paired-seed harness promotion gate.'
+- repo: Runfusion/Fusion
+  license: MIT
+  found: 9
+  added:
+  - A-fusion-file-scope-lease
+  - A-fusion-novelty-loop-window
+  - A-fusion-external-obstacle-classes
+  - A-fusion-review-dispute
+  skipped:
+    multi-node mesh / PostgreSQL storage: Artel is single-machine SQLite by design
+    agent companies (440 imported agents): no evidence it improves results; Artel's planner hires per goal
+    Capacitor mobile app: a PWA plus notifications covers the phone at a fraction of the cost (see W2-remote-and-notify
+      note)
+    planner overseer levels: overlaps W3-plan-review, already planned
+  summary: 'TypeScript kanban ''software factory'': PROMPT.md plans with file scope, worktree per task, plan/execute/review
+    gates, stuck-task detector, external-obstacle classifier, ntfy/webhook notifications, tailscale/cloudflare tunnels.'
+- repo: bytedance/deer-flow
+  license: MIT
+  found: 4
+  added:
+  - A-deerflow-typed-criteria
+  skipped:
+    LangGraph runtime, IM channels, RAGFlow, browser control: different product (chat super-agent); no gain for
+      Artel's goal loop
+    DeerMem long-term memory: chat-assistant user memory; W3-two-phase-memory already covers worker memory
+    snapshot context for sub-agents: Artel has no in-run sub-agents yet (W3-plan-review adds Explore/Verify)
+  summary: 'LangGraph super-agent: lead agent, sub-agents with acceptance criteria checked in code, sandboxes, skills,
+    memory backends, goals evaluated after each run, doctor and redacted support bundles.'
+- repo: aden-hive/hive
+  license: Apache-2.0
+  found: 5
+  added:
+  - A-hive-chat-reply
+  - A-hive-escalation-filter
+  skipped:
+    Queen pilots one unit then fans out: idea noted; Artel's DAG planner has no evidence it would help on the benchmark
+    browser extension, business-system MCP tools: outside Artel's scope
+    stream stall TTFT nudge: native runtime only; folded into A-ecc-run-heartbeat-watchdog
+  summary: 'Python colony runtime: a Queen agent loop clones itself into workers, tracker ledger, crash-safe park/resume,
+    Sentinel out-of-band escalation over Telegram/Slack with HMAC reply routing and a nudge-vs-escalate classifier.'
+- repo: agentscope-ai/AgentTeams
+  license: Apache-2.0
+  found: 4
+  added:
+  - A-agentteams-secret-free-env
+  skipped:
+    Matrix IM server, MinIO, Higress gateway, Kubernetes CRDs: heavy infrastructure; Artel targets one machine
+    multi-runtime workers in one room: W3-acp-runtime covers runtime plurality
+  summary: 'Kubernetes-native manager/worker platform: Matrix rooms for human visibility, MinIO shared files, Higress
+    gateway holding credentials, TeamHarness task transition table with history and completion notifications.'
+- repo: Yeachan-Heo/oh-my-claudecode
+  license: MIT
+  found: 7
+  added:
+  - A-omc-clarify-gate
+  - A-omc-review-tiers
+  - A-omc-secret-redaction
+  skipped:
+    tmux CLI workers for many vendors: Artel's runtimes are plugins; W3-acp-runtime is the general path
+    HUD, wiki, 40+ skills: Claude Code UX add-ons, not harness behaviour
+    lookout pre-flight danger scan: overlaps W2-execpolicy (done) and W2-guardian
+    reply listener (Telegram/Discord into tmux): same idea as A-hive-chat-reply; Hive's token routing is cleaner
+  summary: 'Claude Code plugin: team pipeline plan/prd/exec/verify/fix, deep-interview ambiguity gate, verification
+    tiers, notifications with a reply listener and token redaction, lookout danger scan.'
+- repo: chaitanyagiri/munder-difflin
+  license: MIT
+  found: 6
+  added:
+  - A-munder-work-tokens
+  skipped:
+    office floor avatars, dictation, meeting transcription: product surface, no effect on results
+    closing-time shutdown protocol: Artel already preserves workspaces and resumes runs; nothing in memory to lose
+    GOD-agent adjudication: Artel's manager/replan already plays this role
+  summary: 'Electron desktop app wrapping many terminal agent CLIs as an office: git-backed hive mailbox with a
+    single committer, markdown memory, runaway circuit breaker (repeat, error storm, token velocity, no progress).'

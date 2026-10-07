@@ -73,4 +73,37 @@
 | W3-automations | Automations — schedule and event triggers | OpenHands / Qwen Code (`QwenLM/qwen-code`) | evolve | план |
 | W3-system-one | Our own System One from the partner team, connected through the System One contract (docs/SYSTEM_ONE.md) | partner team (`pending`) | design | план |
 
-Итого: 25/37 пунктов готово.
+## Волна 4 (найдено разбором проектов) — 0/14 готово
+
+| Пункт | Что | Откуда | Режим | Статус |
+|---|---|---|---|---|
+| A-ecc-paired-promotion | Free hypotheses win only on paired repeats: minimum samples, mean delta and per-task win rate | ECC (`affaan-m/ECC`) | design | план |
+| A-ecc-run-heartbeat-watchdog | Silent-run watchdog: a CLI worker with no stream events for N minutes is killed and retried as 'hung' | ECC (`affaan-m/ECC`) | evolve | план |
+| A-fusion-file-scope-lease | File-scope leases: tasks declare the paths they write; overlapping tasks never run at the same time | Fusion (`Runfusion/Fusion`) | evolve | план |
+| A-fusion-novelty-loop-window | Loop detector catches alternating loops: low-novelty window over recent tool-call fingerprints | Fusion (`Runfusion/Fusion`) | evolve | план |
+| A-fusion-external-obstacle-classes | Failure classes for network and host problems: transient network retries free, full disk goes to a person | Fusion (`Runfusion/Fusion`) | evolve | план |
+| A-fusion-review-dispute | Workers can dispute a review finding; the next reviewer must rule on each dispute | Fusion (`Runfusion/Fusion`) | evolve | план |
+| A-deerflow-typed-criteria | Machine-checkable acceptance criteria (file exists / non-empty / json-valid, tests_passed:<cmd>) decided in code | DeerFlow (`bytedance/deer-flow`) | evolve | план |
+| A-hive-chat-reply | Answer a waiting task from the phone: Telegram reply routed back to the task by an HMAC reference | Hive (`aden-hive/hive`) | design | план |
+| A-hive-escalation-filter | Filter spurious 'ask a human' blocks: a cheap check sends permission-seeking back to work | Hive (`aden-hive/hive`) | evolve | план |
+| A-agentteams-secret-free-env | Workers never see provider secrets: tool and CLI environments are scrubbed of keys and tokens | AgentTeams (`agentscope-ai/AgentTeams`) | evolve | план |
+| A-omc-clarify-gate | Clarify vague goals before planning: ambiguity score, up to three questions to the owner | oh-my-claudecode (`Yeachan-Heo/oh-my-claudecode`) | evolve | план |
+| A-omc-review-tiers | Review effort scaled to the change: light review for small diffs, full review for large or sensitive ones | oh-my-claudecode (`Yeachan-Heo/oh-my-claudecode`) | evolve | план |
+| A-omc-secret-redaction | Redact secrets from the event log, tool results and notifications | oh-my-claudecode (`Yeachan-Heo/oh-my-claudecode`) | evolve | план |
+| A-munder-work-tokens | Count cache reads separately: budgets on work tokens, costs with cache prices | Munder Difflin (`chaitanyagiri/munder-difflin`) | evolve | план |
+
+## Изученные проекты — 7
+
+Код прочитан агентом-аналитиком (`artel absorb` / `artel evolve --cycle`); найденное стало пунктами выше.
+
+| Проект | Лицензия | Найдено | В карту | Итог |
+|---|---|---|---|---|
+| `affaan-m/ECC` | MIT | 7 | A-ecc-paired-promotion, A-ecc-run-heartbeat-watchdog | Plugin/skill bundle for Claude Code plus an alpha Rust control plane (ecc2): SQLite sessions, daemon, worktrees, deterministic risk scoring, notifications with  |
+| `Runfusion/Fusion` | MIT | 9 | A-fusion-file-scope-lease, A-fusion-novelty-loop-window, A-fusion-external-obstacle-classes, A-fusion-review-dispute | TypeScript kanban 'software factory': PROMPT.md plans with file scope, worktree per task, plan/execute/review gates, stuck-task detector, external-obstacle clas |
+| `bytedance/deer-flow` | MIT | 4 | A-deerflow-typed-criteria | LangGraph super-agent: lead agent, sub-agents with acceptance criteria checked in code, sandboxes, skills, memory backends, goals evaluated after each run, doct |
+| `aden-hive/hive` | Apache-2.0 | 5 | A-hive-chat-reply, A-hive-escalation-filter | Python colony runtime: a Queen agent loop clones itself into workers, tracker ledger, crash-safe park/resume, Sentinel out-of-band escalation over Telegram/Slac |
+| `agentscope-ai/AgentTeams` | Apache-2.0 | 4 | A-agentteams-secret-free-env | Kubernetes-native manager/worker platform: Matrix rooms for human visibility, MinIO shared files, Higress gateway holding credentials, TeamHarness task transiti |
+| `Yeachan-Heo/oh-my-claudecode` | MIT | 7 | A-omc-clarify-gate, A-omc-review-tiers, A-omc-secret-redaction | Claude Code plugin: team pipeline plan/prd/exec/verify/fix, deep-interview ambiguity gate, verification tiers, notifications with a reply listener and token red |
+| `chaitanyagiri/munder-difflin` | MIT | 6 | A-munder-work-tokens | Electron desktop app wrapping many terminal agent CLIs as an office: git-backed hive mailbox with a single committer, markdown memory, runaway circuit breaker ( |
+
+Итого: 25/51 пунктов готово.
