@@ -139,6 +139,9 @@ def project_stats(project: Project, live: bool = False) -> dict:
             model = "codex:" + ((project.config.get("codex") or {}).get("model") or "default")
         elif runtime_for(project.config, "worker") == "dsh":
             model = "dsh:" + ((project.config.get("dsh") or {}).get("model") or "default")
+        elif runtime_for(project.config, "worker").split(":")[0] == "acp":
+            rt = runtime_for(project.config, "worker")
+            model = "acp:" + (rt.split(":", 1)[1] if ":" in rt else (project.config.get("acp") or {}).get("agent", "gemini"))
         else:
             model = p.model or project.config["models"].get("worker", default_model)
         workers.append({

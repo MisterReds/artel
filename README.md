@@ -68,6 +68,10 @@ models: {default: deepseek-chat}
 - **Ключи API** (Anthropic, OpenAI, OpenRouter, DeepSeek…) — только признак «задан / не задан»; значения задаются
   в переменных окружения и нигде не показываются.
 - **Роли → рантайм.** Для каждой роли можно выбрать Artel / Claude Code / Codex / DeepSeek Harness и модель; сохраняется в
+
+- **ACP-агенты.** Любой агент с Agent Client Protocol (Gemini CLI, goose, OpenHands, Claude Code и Codex через
+  ACP-адаптеры) — исполнитель; см. «Любой ACP-агент как исполнитель».
+- **Роли → рантайм.** Для каждой роли можно выбрать Artel / Claude Code / Codex / ACP-агента и модель; сохраняется в
   `ARTEL_HOME/artel.yaml`. Разные подписки на разных ролях разносят нагрузку по их лимитам.
 - **Часовой пояс.** Настройка `ui.timezone` (имя IANA, например `Asia/Sakhalin`; пусто — системный пояс) задаётся
   на странице «Провайдеры» и хранится в `ARTEL_HOME/artel.yaml`. В этом поясе показывается любое время: в дашборде,
@@ -345,6 +349,50 @@ dsh:
 композиции (например, свой MCP-сервер или `str_replace_editor`) — файлом патча Cordis в том же списке. Ошибка
 установки плагина, отсутствие SDK или ключа сразу уходят человеку как ошибка настройки; лимит или нехватка баланса
 DeepSeek (`RATE_LIMIT`, `QUOTA`) — как лимит провайдера, который ждёт сброса.
+
+## Любой ACP-агент как исполнитель
+
+Рантайм `acp` подключает любого агента, говорящего на [Agent Client Protocol](https://agentclientprotocol.com)
+(JSON-RPC через stdio, тот же протокол, которым Zed управляет агентами): Gemini CLI, Claude Code и Codex через их
+ACP-адаптеры, goose, OpenHands, OpenCode, Qwen Code и другие. Artel выступает клиентом протокола версии 1:
+
+- `initialize` — Artel объявляет `fs/read_text_file` и `fs/write_text_file` (терминал не объявляется: агент
+  пользуется своей оболочкой); при `acp.auth_method` вызывается `authenticate`;
+- `session/new` — `cwd` = рабочая папка роли, в `mcpServers` передаётся MCP-прокси Artel (stdio), поэтому агент
+  получает инструменты Artel (`task_submit`, доска, скиллы, вердикты) через тот же мост, что Claude Code и Codex;
+  общая папка и refs передаются как `additionalDirectories`, если агент их поддерживает;
+- `session/prompt` — инструкции роли и задача; если ход кончился без терминального инструмента, в ту же сессию
+  уходит ещё один `session/prompt` с подсказкой-продолжением (до `max_resumes` раз);
+- `session/update` — фрагменты ответа и размышлений → `llm/response`, `tool_call` / `tool_call_update` →
+  `tool/call` / `tool/result` (незавершённый вызов получает результат-ошибку, пары не рвутся), `plan` →
+  `agent/plan`, `usage_update` и `usage` хода учитываются; повторы ловит детектор зацикливания;
+- `session/request_permission` — ответ по политике роли: роли только для чтения не получают правок, команды
+  проверяются `artel.policy` (запрещённые отклоняются и объясняются в продолжении, «спросить человека» —
+  задача уходит человеку), правки вне рабочей и общей папки отклоняются;
+- `fs/read_text_file` — только рабочая папка, общая папка и refs; `fs/write_text_file` — только рабочая и общая
+  папка, никогда refs и никогда для ролей только для чтения; путь должен быть абсолютным;
+- `session/cancel` — как только Artel принял терминальный инструмент, при остановке, зацикливании, лимите ходов.
+
+Нет команды агента — сразу ошибка настройки человеку; агент требует входа (`auth_required`) — тоже; сообщения о
+лимитах провайдера («Quota exceeded», 429…) ждут сброса, как у остальных рантаймов.
+
+```yaml
+acp:
+  agent: gemini                 # пресет для runtime: acp
+  # command: [my-agent, --acp]  # своя команда вместо пресета
+  env: {}                       # переменные окружения агента
+  timeout_s: 2400
+  max_resumes: 3
+  presets:                      # свои агенты в дополнение к встроенным
+    kimi: [kimi, --acp]
+runtime_by_role: {worker: "acp:gemini", reviewer: "acp:claude"}
+```
+
+Встроенные пресеты: `gemini` (`gemini --experimental-acp`), `claude` (`claude-agent-acp`, npm
+`@agentclientprotocol/claude-agent-acp`), `codex` (`codex-acp`), `goose` (`goose acp`), `openhands`
+(`openhands acp`), `opencode` (`opencode acp`), `qwen` (`qwen --experimental-acp`). На странице «Провайдеры»
+карточка «ACP-агенты» показывает, какие из них установлены; в таблице ролей выбирается «ACP-агент: имя». Вход
+выполняется в CLI самого агента. В терминале: `artel run … --runtime acp:gemini`.
 
 ## Самоулучшение: Artel улучшает Artel
 

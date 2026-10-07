@@ -95,7 +95,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
     out = Outcome(status="stalled")
     out.cost_usd = 0.0  # subscription runs are not billed per token; tokens are still counted
     detector = LoopDetector()
-    bridge = ToolBridge(kernel, project, ctx, role, tool_names, actor)
+    bridge = ToolBridge(kernel, project, ctx, role, tool_names, actor, runtime="codex")
     terminal_names = [s.name for s in bridge.specs if s.terminal]
     note = (f"\n\n## Runtime\nYou run inside OpenAI Codex. Use your own shell and apply_patch for files. Artel "
             f"coordination tools come from the MCP server `artel`: {', '.join(s.name for s in bridge.specs)}. The "
@@ -133,6 +133,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
             failure = ""
             grace: Optional[threading.Timer] = None
             blocked = ""
+            closer: Optional[threading.Timer] = None
             try:
                 for line in proc.stdout:
                     if stop_event is not None and stop_event.is_set():

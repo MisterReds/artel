@@ -56,11 +56,11 @@
 | W2-timezone | User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin | Artel (`MisterReds/artel`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-evolve-two-subscriptions | Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it | Artel (`MisterReds/artel`) | design | готово — evolve.runtimes [claude_code, codex]: a limit moves implementation and benchmark to the next runtime, pause only when all are limited; baselines per (commit, runtime) (tests/test_evolve_runtimes.py) |
 
-## Волна 3 — 2/12 готово
+## Волна 3 — 3/12 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
-| W3-acp-runtime | ACP runtime plugin — any ACP agent (Claude Code, Codex, Gemini, OpenHands) as a worker | OpenHands (`OpenHands/OpenHands`) | design | план |
+| W3-acp-runtime | ACP runtime plugin — any ACP agent (Claude Code, Codex, Gemini, OpenHands) as a worker | OpenHands (`OpenHands/OpenHands`) | design | готово — feat/acp-runtime — runtime `acp` (artel/runtimes/acp.py): ACP v1 client over stdio with presets chosen per role (`acp:gemini`, `acp:claude`…); Artel's MCP proxy passed in session/new; session/update mirrored to the event log; permissions and fs/* by role policy; resume in the same session; tests with a stand-in ACP agent; handshake checked against the real Gemini CLI and the Claude ACP adapter. |
 | W3-dsh-runtime | DeepSeek Harness as a runtime plugin, so dsh plugins work inside Artel workers | DeepSeek Harness (`deepseek-ai/deepseek-harness`) | design | готово — Runtime `dsh` (artel/runtimes/dsh.py) on the official Python SDK; dsh plugins (profile packages and patch layers) load unchanged, Artel tools over dsh-mcp-client; verified for real (boot, MCP tool discovery, missing-key classification, no key used) and end to end against a stand-in SDK (tests/test_dsh.py) |
 | W3-durable | Durable turns and idempotent run receipts — resume mid-turn after a crash | Pi / OpenScience (`badlogic/pi-mono`) | design | план |
 | W3-plugin-packages | Plugin packages (install from git/pip), lifecycle events before_agent_start / session_shutdown | Pi (`badlogic/pi-mono`) | design | готово — feat/plugin-packages: artel plugins install|list|show|enable|disable|update|remove (git, pip, path; ARTEL_HOME/plugins + plugins.json; static manifest, installed disabled), lifecycle events project_start / before_agent_start / agent_end / task_done / project_end / session_shutdown, failing plugins disabled with the error, dashboard section, examples/artel-plugin-hello |
@@ -73,4 +73,4 @@
 | W3-automations | Automations — schedule and event triggers | OpenHands / Qwen Code (`QwenLM/qwen-code`) | evolve | план |
 | W3-system-one | Our own System One from the partner team, connected through the System One contract (docs/SYSTEM_ONE.md) | partner team (`pending`) | design | план |
 
-Итого: 24/37 пунктов готово.
+Итого: 25/37 пунктов готово.

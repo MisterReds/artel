@@ -59,8 +59,9 @@ def child_env() -> dict:
 class ToolBridge:
     """Localhost HTTP endpoint that executes Artel tools for one run."""
 
-    def __init__(self, kernel, project, ctx: ToolContext, role: str, tool_names: Optional[list], actor: str):
-        self.kernel, self.project, self.ctx, self.actor = kernel, project, ctx, actor
+    def __init__(self, kernel, project, ctx: ToolContext, role: str, tool_names: Optional[list], actor: str,
+                 runtime: str = "claude_code"):
+        self.kernel, self.project, self.ctx, self.actor, self.runtime = kernel, project, ctx, actor, runtime
         self.specs = [s for s in kernel.tools_for(role, tool_names) if s.name not in NATIVE_DUPLICATES]
         self.token = secrets.token_hex(16)
         self.calls = 0
@@ -103,10 +104,10 @@ class ToolBridge:
                 return {"text": "this run is already finished; stop now", "is_error": True}
             self.calls += 1
             self.project.log.append("tool/call", actor=self.actor, task_id=task_id, tool=name, input=args,
-                                    call_id=call_id, runtime="claude_code")
+                                    call_id=call_id, runtime=self.runtime)
             text, is_error = execute_tool(self.kernel, self.ctx, name, args)
             self.project.log.append("tool/result", actor=self.actor, task_id=task_id, tool=name, call_id=call_id,
-                                    is_error=is_error, output=text[:4000])
+                                    is_error=is_error, output=text[:4000], runtime=self.runtime)
         return {"text": text, "is_error": is_error}
 
     def close(self) -> None:

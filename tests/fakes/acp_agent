@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""Stand-in ACP agent for tests: speaks the Agent Client Protocol (v1, JSON-RPC 2.0 over stdio) the way real agents
+do — streams session/update notifications, asks session/request_permission before edits and commands, uses the
+client's fs/* methods, and connects to the MCP servers given in session/new (stdio) to finish through Artel's
+terminal tool. Behaviour switches (env): FAKE_ACP_LOG (jsonl of everything received), FAKE_ACP_LAZY (first prompt
+ends without a terminal tool), FAKE_ACP_NO_SUBMIT, FAKE_ACP_LIMIT, FAKE_ACP_AUTH, FAKE_ACP_LOOP, FAKE_ACP_FS_PROBE
+(a JSON list of [method, path] the agent tries through the client), FAKE_ACP_CMD (the command it asks to run)."""
+import json, os, subprocess, sys
+from pathlib import Path
+
+LOG = os.environ.get("FAKE_ACP_LOG")
+state = {"id": 1000, "cancelled": False, "prompts": 0, "session": None, "mcp": [], "cwd": None}
+backlog = []
+
+
+def log(obj):
+    if LOG:
+        with open(LOG, "a") as fh:
+            fh.write(json.dumps(obj) + "\n")
+
+
+def send(obj):
+    sys.stdout.write(json.dumps({"jsonrpc": "2.0", **obj}) + "\n")
+    sys.stdout.flush()
+
+
+def recv():
+    if backlog:
+        return backlog.pop(0)
+    line = sys.stdin.readline()
+    if not line:
+        sys.exit(0)
+    msg = json.loads(line)
+    log({"in": msg})
+    if msg.get("method") == "session/cancel":
+        state["cancelled"] = True
+    return msg
+
+
+def request(method, params):
+    """Ask the client something and wait for its answer; requests from the client arriving meanwhile are kept."""
+    state["id"] += 1
+    rid = state["id"]
+    send({"id": rid, "method": method, "params": params})
+    while True:
+        msg = recv()
+        if msg.get("id") == rid and "method" not in msg:
+            log({"answer": method, "params": params, "msg": msg})
+            return msg
+        if msg.get("method") != "session/cancel":
+            backlog.append(msg)
+
+
+def update(u):
+    send({"method": "session/update", "params": {"sessionId": state["session"], "update": u}})
+
+
+def permission(tool_call_id, kind, title, raw):
+    r = request("session/request_permission", {
+        "sessionId": state["session"],
+        "toolCall": {"toolCallId": tool_call_id, "kind": kind, "title": title, "rawInput": raw},
+        "options": [{"optionId": "yes", "name": "Allow", "kind": "allow_once"},
+                    {"optionId": "always", "name": "Always", "kind": "allow_always"},
+                    {"optionId": "no", "name": "Reject", "kind": "reject_once"}]})
+    out = (r.get("result") or {}).get("outcome") or {}
+    return out.get("outcome") == "selected" and out.get("optionId") in ("yes", "always")
+
+
+def mcp_call(name, args):
+    """Connect to the client's MCP server the way agents do (stdio), list its tools and call one."""
+    srv = state["mcp"][0]
+    env = {**os.environ, **{e["name"]: e["value"] for e in srv.get("env") or []}}
+    p = subprocess.Popen([srv["command"], *srv["args"]], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True,
+                         env=env)
+
+    def rpc(i, method, params):
+        p.stdin.write(json.dumps({"jsonrpc": "2.0", "id": i, "method": method, "params": params}) + "\n")
+        p.stdin.flush()
+        return json.loads(p.stdout.readline())
+
+    rpc(1, "initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake"}})
+    tools = [t["name"] for t in rpc(2, "tools/list", {})["result"]["tools"]]
+    res = rpc(3, "tools/call", {"name": name, "arguments": args})["result"]
+    p.stdin.close()
+    p.wait()
+    log({"mcp_tools": tools, "mcp_result": res})
+    return res
+
+
+def wait_cancel_or_end():
+    """After the terminal tool Artel cancels the turn; answer with the 'cancelled' stop reason."""
+    import select
+
+    while not state["cancelled"]:
+        r, _, _ = select.select([sys.stdin], [], [], 5)
+        if not r:
+            return "end_turn"
+        msg = recv()
+        if msg.get("method") != "session/cancel":
+            backlog.append(msg)
+    return "cancelled"
+
+
+def prompt_turn(params):
+    state["prompts"] += 1
+    state["cancelled"] = False
+    first = state["prompts"] == 1
+    text = "".join(b.get("text", "") for b in params.get("prompt") or [])
+    log({"prompt": text})
+    if os.environ.get("FAKE_ACP_LIMIT"):
+        return None, {"code": -32603, "message": "RESOURCE_EXHAUSTED: Quota exceeded for quota metric "
+                                                 "'Generate Content API requests per minute' (429)"}
+    cwd = Path(state["cwd"])
+    update({"sessionUpdate": "plan", "entries": [{"content": "write hello.py", "priority": "high", "status": "pending"},
+                                                 {"content": "run it", "priority": "medium", "status": "pending"}]})
+    update({"sessionUpdate": "agent_thought_chunk", "messageId": "m1", "content": {"type": "text", "text": "Plan: "}})
+    update({"sessionUpdate": "agent_message_chunk", "messageId": "m1",
+            "content": {"type": "text", "text": "Writing " if first else "Continuing "}})
+    update({"sessionUpdate": "agent_message_chunk", "messageId": "m1", "content": {"type": "text", "text": "the file."}})
+    update({"sessionUpdate": "usage_update", "used": 1200, "size": 200000, "cost": {"amount": 0.01, "currency": "USD"}})
+    if os.environ.get("FAKE_ACP_LOOP"):
+        for i in range(12):
+            if state["cancelled"]:
+                break
+            update({"sessionUpdate": "tool_call", "toolCallId": f"loop{i}", "title": "ls", "kind": "execute",
+                    "status": "completed", "rawInput": {"command": "ls"},
+                    "content": [{"type": "content", "content": {"type": "text", "text": "hello.py"}}]})
+        return {"stopReason": wait_cancel_or_end()}, None
+    for i, (method, path) in enumerate(json.loads(os.environ.get("FAKE_ACP_FS_PROBE") or "[]")):
+        p = {"sessionId": state["session"], "path": path}
+        if method == "fs/write_text_file":
+            p["content"] = "probe\n"
+        request(method, p)
+    target = cwd / "hello.py"
+    raw = {"path": str(target), "content": "print('hi')\n"}
+    update({"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "Write hello.py", "kind": "edit",
+            "status": "pending", "rawInput": raw, "locations": [{"path": str(target)}]})
+    if permission("t1", "edit", "Write hello.py", raw):
+        update({"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "in_progress"})
+        r = request("fs/write_text_file", {"sessionId": state["session"], "path": str(target),
+                                           "content": "print('hi')\n"})
+        ok = "error" not in r
+        update({"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "completed" if ok else "failed",
+                "content": [{"type": "diff", "path": str(target), "oldText": None, "newText": "print('hi')\n"}]})
+    else:
+        update({"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "failed",
+                "content": [{"type": "content", "content": {"type": "text", "text": "permission denied"}}]})
+    cmd = os.environ.get("FAKE_ACP_CMD", "python hello.py")
+    update({"sessionUpdate": "tool_call", "toolCallId": "t2", "title": cmd, "kind": "execute", "status": "pending",
+            "rawInput": {"command": cmd}})
+    if permission("t2", "execute", cmd, {"command": cmd}):
+        res = subprocess.run(cmd, shell=True, cwd=cwd, capture_output=True, text=True)
+        update({"sessionUpdate": "tool_call_update", "toolCallId": "t2", "status": "completed",
+                "content": [{"type": "content", "content": {"type": "text", "text": res.stdout + res.stderr}}]})
+    else:
+        update({"sessionUpdate": "tool_call_update", "toolCallId": "t2", "status": "failed"})
+    # a call the agent never finishes: the client must still pair it with a result
+    update({"sessionUpdate": "tool_call", "toolCallId": "t3", "title": "Searching", "kind": "search",
+            "status": "in_progress", "rawInput": {"query": "hello"}})
+    if os.environ.get("FAKE_ACP_NO_SUBMIT") or (os.environ.get("FAKE_ACP_LAZY") and first):
+        update({"sessionUpdate": "agent_message_chunk", "messageId": "m2", "content": {"type": "text", "text": "Done?"}})
+        return {"stopReason": "end_turn", "usage": {"inputTokens": 100, "outputTokens": 20, "totalTokens": 120}}, None
+    update({"sessionUpdate": "tool_call", "toolCallId": "t4", "title": "task_submit (artel MCP Server)",
+            "kind": "other", "status": "in_progress", "rawInput": {"summary": "hello.py prints hi"}})
+    mcp_call("task_submit", {"summary": "hello.py prints hi", "evidence": "$ python hello.py\nhi"})
+    update({"sessionUpdate": "tool_call_update", "toolCallId": "t4", "status": "completed"})
+    return {"stopReason": wait_cancel_or_end(), "usage": {"inputTokens": 1000, "outputTokens": 200,
+                                                          "totalTokens": 1200}}, None
+
+
+def main():
+    log({"argv": sys.argv[1:], "cwd": os.getcwd(), "env_marker": os.environ.get("FAKE_ACP_MARKER")})
+    print("fake acp agent starting (not JSON, must be ignored)", flush=True)
+    while True:
+        msg = recv()
+        mid, method, params = msg.get("id"), msg.get("method"), msg.get("params") or {}
+        if method == "initialize":
+            send({"id": mid, "result": {
+                "protocolVersion": 1,
+                "agentCapabilities": {"loadSession": False, "promptCapabilities": {"embeddedContext": True},
+                                      "mcpCapabilities": {"http": False, "sse": False},
+                                      "sessionCapabilities": {"additionalDirectories": {}}},
+                "agentInfo": {"name": "fake-acp", "version": "0.1"},
+                "authMethods": [{"id": "oauth", "name": "Log in with Google"}]}})
+        elif method == "authenticate":
+            send({"id": mid, "result": {}})
+        elif method == "session/new":
+            if os.environ.get("FAKE_ACP_AUTH"):
+                send({"id": mid, "error": {"code": -32000, "message": "Authentication required"}})
+                continue
+            state["session"], state["mcp"], state["cwd"] = "sess-1", params.get("mcpServers") or [], params["cwd"]
+            send({"id": mid, "result": {"sessionId": "sess-1"}})
+        elif method == "session/prompt":
+            result, error = prompt_turn(params)
+            send({"id": mid, "error": error} if error else {"id": mid, "result": result})
+        elif method == "session/cancel":
+            pass
+        elif mid is not None:
+            send({"id": mid, "error": {"code": -32601, "message": f"unknown {method}"}})
+
+
+if __name__ == "__main__":
+    main()

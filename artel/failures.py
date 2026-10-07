@@ -11,7 +11,8 @@ import re
 from typing import Optional
 
 LIMIT = re.compile(r"session limit|usage limit|rate limit|hit your [a-z ]*limit|overloaded_error|credit balance|"
-                   r"insufficient balance|quota exceeded|\b429\b|\b529\b", re.I)
+                   r"insufficient balance|quota exceeded|resource_exhausted|exhausted your capacity|too many requests|"
+                   r"\b429\b|\b529\b", re.I)
 SETUP = re.compile(r"не установлен|not installed|command not found|no such file or directory|not logged in|"
                    r"invalid api key|authentication_error|authentication failed|unauthorized|\b401\b|"
                    r"api key .*not set|missing api key|no api key|MISSING_CREDENTIAL|INVALID_CREDENTIAL", re.I)

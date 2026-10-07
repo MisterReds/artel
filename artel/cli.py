@@ -27,6 +27,12 @@ from .project import Project, list_projects, load_config
 ICONS = {"todo": "·", "ready": "○", "running": "▶", "review": "◎", "done": "✓", "blocked": "✗", "cancelled": "–"}
 
 
+def _runtime_arg(value: str) -> str:
+    if value in ("native", "claude_code", "codex", "acp") or (value.startswith("acp:") and len(value) > 4):
+        return value
+    raise argparse.ArgumentTypeError(f"unknown runtime {value!r}: native, claude_code, codex, acp, acp:<preset>")
+
+
 def _cfg(args) -> dict:
     cfg = load_config(getattr(args, "config", None))
     if getattr(args, "provider", None):
@@ -443,6 +449,9 @@ def cmd_providers(args) -> int:
         state = ("вход выполнен" + (f" ({st['method']})" if st.get("method") else "")) if st["logged_in"] else \
             ("не подключён" if st["installed"] else "не установлен")
         print(f"  {label:<14} {state:<34} {st.get('version', '')}")
+    a = o["acp"]
+    print(f"  {'ACP-агент':<14} {(a['agent'] + (' — найден' if a['installed'] else ' — не установлен')):<34} "
+          f"{' '.join(a['command'])}")
     for k in o["keys"]:
         print(f"  {k['label']:<14} {'задан' if k['set'] else 'не задан':<34} ${k['env']}")
     s1 = o["system_one"]
@@ -616,7 +625,8 @@ def main(argv=None) -> int:
     r.add_argument("--workdir", help="work directly in this directory (e.g. a git worktree) instead of shared/")
     r.add_argument("--ref", action="append", help="read-only source directory the team may study (repeatable)")
     r.add_argument("--seed", help="copy this directory into the deliverables directory before planning")
-    r.add_argument("--runtime", choices=["native", "claude_code", "codex", "dsh"])
+    r.add_argument("--runtime", type=_runtime_arg,
+                   help="native | claude_code | codex | dsh | acp | acp:<preset> (e.g. acp:gemini)")
     r.add_argument("--port", type=int, default=8765)
     r.set_defaults(fn=cmd_run)
 
