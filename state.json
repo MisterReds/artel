@@ -6,7 +6,7 @@
  "running": {
   "generation": 5,
   "since": 1791393763.7214735,
-  "phase": "reopened",
+  "phase": "benchmarking the integration of 2 items (round 0)",
   "plan": {
    "champ": "0f3b1cc7d02743e7131e6d8290d64e7e2948e1f5",
    "kind": "candidate",
@@ -49,6 +49,7 @@
     "W2-fs-grants"
    ],
    "mode": "adopt"
-  }
+  },
+  "resumed_at": 1791393768.789317
  }
 }
