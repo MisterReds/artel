@@ -46,10 +46,12 @@ class Roadmap:
 
     def next_items(self, n: int, wave: Optional[int] = None, mode: str = "evolve",
                    skip: tuple = ()) -> list[dict]:
-        """Open items of the lowest open wave first, in file order, whose ``after`` dependencies are done."""
+        """Open items whose ``after`` dependencies are done: ``priority: core`` first (gaps against the main
+        harnesses), then the lowest wave, in file order."""
         open_items = [it for it in self.items if it.get("mode") == mode and it.get("status") in ("planned", "partial")
                       and it["id"] not in skip and (wave is None or it.get("wave") == wave) and self.ready(it)]
-        open_items.sort(key=lambda it: it.get("wave", 99))  # stable: file order within a wave
+        # what the main harnesses have and Artel lacks goes first (harnesses.yaml), then by wave; file order within
+        open_items.sort(key=lambda it: (it.get("priority") != "core", it.get("wave", 99)))
         return open_items[:n]
 
     # --- updates (in place, comment preserving) -------------------------
@@ -202,7 +204,8 @@ def add_studied(repo: Path, row: dict) -> None:
 
 
 def next_to_study(repo: Path, registry: Optional[list] = None, n: int = 1) -> list[dict]:
-    """Most relevant live harnesses from the registry that have not been studied yet.
+    """Harnesses to study next: the most significant main harnesses whose code has not been read (harnesses.yaml),
+    then the most relevant live ones from the registry.
 
     Already covered: anything in studied.yaml and every donor named in roadmap.yaml (studied by hand)."""
     if registry is None:
@@ -211,8 +214,69 @@ def next_to_study(repo: Path, registry: Optional[list] = None, n: int = 1) -> li
         registry = json.loads((Path(__file__).parent / "data" / "harnesses.json").read_text(encoding="utf-8"))
     rm = Roadmap.of_repo(repo)
     seen = {r["repo"].lower() for r in load_studied(repo)}
+    # the main harnesses come first: by significance (harnesses.yaml), those whose code has not been read yet
+    major = [h for h in load_harnesses(repo).get("harnesses", []) if h.get("studied") != "code"
+             and h["repo"].lower() not in seen and h.get("origin") != "derivative"]
+    major.sort(key=lambda h: significance(h)["total"], reverse=True)
+    picked = [{"repo": h["repo"], "category": h.get("class", ""), "relevance": round(significance(h)["total"]),
+               "description": h.get("origin_note", ""), "status": "alive"} for h in major][:n]
+    if len(picked) >= n:
+        return picked
     seen |= {str((it.get("source") or {}).get("repo", "")).lower() for it in rm.pillars + rm.items}
     pool = [h for h in registry if h.get("status") == "alive" and h.get("category") in STUDY_CATEGORIES
             and "/" in h.get("repo", "") and h["repo"].lower() not in seen]
     pool.sort(key=lambda h: (h.get("relevance", 0), h.get("last_commit") or ""), reverse=True)
-    return pool[:n]
+    taken = {p["repo"].lower() for p in picked}
+    return picked + [h for h in pool if h["repo"].lower() not in taken][:n - len(picked)]
+
+
+# --- significance of harnesses (harnesses.yaml next to roadmap.yaml) ----------------------------
+
+SIGNIFICANCE = (  # (key, weight, label, how it is measured) — documented in the HTML report
+    ("adoption", 35, "Популярность", "звёзды GitHub по логарифмической шкале: 1 000 → 15, 10 000 → 22, 100 000 → 30, 400 000 → 35"),
+    ("community", 10, "Сообщество", "форки — сколько людей строят на этом коде (логарифм; 60 000 форков = 10)"),
+    ("curation", 10, "Признание кураторов", "в скольких из 10 awesome-списков по харнессам он есть (8 и больше = 10)"),
+    ("activity", 10, "Живость", "последний коммит: до 30 дней — 10, до 120 — 5, старше — 0"),
+    ("origin", 35, "Первоисточник", "породил механизмы, которые копируют остальные — 35; собственная школа — 18; "
+                                     "производный (форк, клон, сборник) — 0. Единственный экспертный критерий, "
+                                     "обоснование записано у каждого харнесса"),
+)
+STUDY = {"code": "код разобран", "readme": "прочитан README и документация", "none": "не изучен"}
+TIERS = ((85, "core", "Ядро — главные харнессы"), (70, "major", "Значимые"), (0, "niche", "Нишевые и производные"))
+
+
+def _log_scale(x: float, top: float) -> float:
+    import math
+
+    return 0.0 if not x or x <= 1 else min(1.0, math.log10(x) / math.log10(top))
+
+
+def significance(h: dict, today: Optional[str] = None) -> dict:
+    """Score 0..100 with its parts, from the metrics snapshot in harnesses.yaml. Openness is reported separately
+    (it decides how deeply Artel can borrow, not how important a harness is)."""
+    import datetime as dt
+
+    m = h.get("metrics") or {}
+    parts = {"adoption": 35 * _log_scale(m.get("stars") or 0, 400_000),
+             "community": 10 * _log_scale(m.get("forks") or 0, 60_000),
+             "curation": 10 * min(int(m.get("lists") or 0), 8) / 8}
+    pushed = m.get("pushed")
+    if pushed:
+        ref = dt.date.fromisoformat(today) if today else dt.date.today()
+        days = (ref - dt.date.fromisoformat(str(pushed)[:10])).days
+        parts["activity"] = 10 if days <= 30 else 5 if days <= 120 else 0
+    else:
+        parts["activity"] = 0
+    parts["origin"] = {"originator": 35, "school": 18, "derivative": 0}.get(h.get("origin", "derivative"), 0)
+    total = round(sum(parts.values()), 1)
+    tier = next(t for t in TIERS if total >= t[0])
+    lic = str(m.get("license") or "").lower()
+    openness = "open" if lic in ("mit", "apache-2.0", "bsd-3-clause", "bsd-2-clause", "isc") else \
+        "closed" if lic in ("", "none", "proprietary") else "restricted"
+    return {"total": total, "parts": {k: round(v, 1) for k, v in parts.items()}, "tier": tier[1],
+            "tier_label": tier[2], "openness": openness}
+
+
+def load_harnesses(repo: Path) -> dict:
+    p = Path(repo) / "harnesses.yaml"
+    return (yaml.safe_load(p.read_text(encoding="utf-8")) or {}) if p.exists() else {}

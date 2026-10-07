@@ -642,6 +642,17 @@ def cmd_roadmap(args) -> int:
             return 0 if ok else 1
         target.write_text(md, encoding="utf-8")
         print(f"wrote {target}")
+    elif args.action == "html":
+        from .roadmap_html import render_html
+
+        page = render_html(repo)
+        target = repo / "docs" / "roadmap.html"
+        if args.check:
+            ok = target.exists() and target.read_text(encoding="utf-8") == page
+            print("docs/roadmap.html is up to date" if ok else "docs/roadmap.html is stale: run `artel roadmap html`")
+            return 0 if ok else 1
+        target.write_text(page, encoding="utf-8")
+        print(f"wrote {target}")
     elif args.action == "study":
         from .roadmap import next_to_study
 
@@ -864,7 +875,7 @@ def main(argv=None) -> int:
     upd.set_defaults(fn=cmd_update)
 
     rmp = sub.add_parser("roadmap", help="roadmap.yaml: status, next items, render docs/ROADMAP.md")
-    rmp.add_argument("action", choices=["status", "next", "study", "render"], nargs="?", default="status")
+    rmp.add_argument("action", choices=["status", "next", "study", "render", "html"], nargs="?", default="status")
     rmp.add_argument("--repo")
     rmp.add_argument("-n", type=int, default=5)
     rmp.add_argument("--wave", type=int)

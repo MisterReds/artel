@@ -59,7 +59,7 @@
 | W2-timezone | User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin | Artel (`MisterReds/artel`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-evolve-two-subscriptions | Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it | Artel (`MisterReds/artel`) | design | готово — evolve.runtimes [claude_code, codex]: a limit moves implementation and benchmark to the next runtime, pause only when all are limited; baselines per (commit, runtime) (tests/test_evolve_runtimes.py) |
 
-## Волна 3 — 3/12 готово
+## Волна 3 — 3/29 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
@@ -75,6 +75,23 @@
 | W3-mailbox | Agent mailbox and teams | Claude Code / Gas Town (`lintsinghua/claude-code-book`) | evolve | план |
 | W3-automations | Automations — schedule and event triggers | OpenHands / Qwen Code (`QwenLM/qwen-code`) | evolve | план |
 | W3-system-one | Our own System One from the partner team, connected through the System One contract (docs/SYSTEM_ONE.md) | partner team (`pending`) | design | план |
+| C-agents-md | Project instruction files — AGENTS.md / CLAUDE.md / GEMINI.md / .clinerules read into every agent's context | Codex / Claude Code / Gemini CLI (`openai/codex`) | evolve | план |
+| C-mcp-client | External MCP servers for agents — configured once, available to every runtime (Playwright browser preset) | Claude Code / Gemini CLI / goose / Cline (`anomalyco/opencode`) | evolve | план |
+| C-task-tool | Subagents on demand — a worker delegates a sub-question to a child agent with a fresh context and gets a summary back | Claude Code / OpenCode / Deep Agents / Hermes (`anomalyco/opencode`) | design | план |
+| C-web-tools | web_search and web_fetch for the native runtime (CLI runtimes already have their own) | Gemini CLI / OpenCode (`anomalyco/opencode`) | evolve | план |
+| C-user-hooks | User hooks from the config — shell commands on before_tool / after_tool / task_done / project_end, can block a tool call | Claude Code / Crush / Qwen Code (`anthropics/claude-code`) | evolve | план |
+| C-headless-ci | Headless runs and GitHub — `artel run --json`, a GitHub Action, @artel in issues and pull requests | Claude Code / Gemini CLI / Codex / OpenHands (`openai/codex`) | design | план |
+| C-lsp | Diagnostics after every edit — language server or linter errors returned in the same turn | OpenCode / Crush / Qwen Code / Aider (`anomalyco/opencode`) | evolve | план |
+| C-repo-map | Repo map — a ranked map of the codebase's files and symbols in the worker's context | Aider (`Aider-AI/aider`) | evolve | план |
+| C-rewind | Rewind from the dashboard — every accepted step is a checkpoint a person can return a task or the deliverables to | Claude Code / Cline / Gemini CLI (`anomalyco/opencode`) | evolve | план |
+| C-methodology-skills | Bundled methodology skills — brainstorm, bite-sized plan, TDD, verification, systematic debugging, spec | Superpowers / Spec Kit (`obra/superpowers`) | evolve | план |
+| C-spec-artifacts | Spec artifacts — constitution and spec per project, kept in sync with the plan and audited against | Spec Kit / OpenSpec / MetaGPT (`github/spec-kit`) | design | план |
+| C-user-profile | Owner profile (USER.md) — what the team knows about the person it works for, learned and editable | OpenClaw / Hermes Agent (`NousResearch/hermes-agent`) | evolve | план |
+| C-channels | More channels — Slack and Discord next to Telegram, one channel interface | OpenClaw / Hermes Agent (`openclaw/openclaw`) | evolve | план |
+| C-exec-backends | Execution backends — Docker container and SSH host per task next to the local sandbox | OpenHands / Hermes Agent / DeerFlow (`OpenHands/OpenHands`) | design | план |
+| C-best-of-n | Best of N for hard tasks — several workers (or runtimes) on one task in separate worktrees, the reviewer picks | Orca / Qwen Code Agent Arena (`stablyai/orca`) | design | план |
+| C-evolution-archive | Evolution keeps an archive of variants, not only a champion — parents sampled for diversity | Darwin Gödel Machine / OpenEvolve (`jennyzzt/dgm`) | design | план |
+| C-acp-server | Artel as an ACP agent — drive the whole team from Zed, JetBrains or any ACP client | Gemini CLI / Claude Code / goose (IDE integration) (`agentclientprotocol/agent-client-protocol`) | design | план |
 
 ## Волна 4 (найдено разбором проектов) — 0/14 готово
 
@@ -109,4 +126,4 @@
 | `Yeachan-Heo/oh-my-claudecode` | MIT | 7 | A-omc-clarify-gate, A-omc-review-tiers, A-omc-secret-redaction | Claude Code plugin: team pipeline plan/prd/exec/verify/fix, deep-interview ambiguity gate, verification tiers, notifications with a reply listener and token red |
 | `chaitanyagiri/munder-difflin` | MIT | 6 | A-munder-work-tokens | Electron desktop app wrapping many terminal agent CLIs as an office: git-backed hive mailbox with a single committer, markdown memory, runaway circuit breaker ( |
 
-Итого: 29/54 пунктов готово.
+Итого: 29/71 пунктов готово.

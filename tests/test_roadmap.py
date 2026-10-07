@@ -222,3 +222,50 @@ def test_absorb_turns_findings_into_roadmap_items_and_cycle_follows_the_plan(tmp
     assert out["roadmap_added"] == []
     s = ev.roadmap_generation(1, ids=["A-otherharness-marker"])
     assert impls[-1] == "roadmap:A-otherharness-marker"
+
+
+def test_harnesses_rating_refs_and_html_are_consistent():
+    from artel.roadmap import TIERS, load_harnesses, significance
+    from artel.roadmap_html import render_html
+
+    rm = Roadmap.of_repo(ROOT)
+    ids = {it["id"] for it in rm.pillars + rm.items}
+    hs = load_harnesses(ROOT)
+    assert hs["findings"] and len(hs["harnesses"]) >= 30
+    for h in hs["harnesses"]:
+        assert h["origin"] in ("originator", "school", "derivative") and h.get("origin_note"), h["repo"]
+        for f in h.get("features", []):
+            assert f["artel"] in ("done", "partial", "planned", "gap", "skip"), (h["repo"], f["name"])
+            assert f["artel"] != "skip" or f.get("note"), (h["repo"], f["name"])  # not taking something needs a reason
+            assert not f.get("ref") or f["ref"] in ids, (h["repo"], f["ref"])
+            if f["artel"] == "gap":  # every gap against a harness is a planned item, never just a note
+                assert f.get("ref") and rm.get(f["ref"])["status"] != "done", (h["repo"], f["name"])
+    scores = {h["repo"]: significance(h, hs["snapshot"]) for h in hs["harnesses"]}
+    assert all(0 <= s["total"] <= 100 for s in scores.values())
+    core = {r for r, s in scores.items() if s["tier"] == "core"}
+    assert {"openai/codex", "anthropics/claude-code", "openclaw/openclaw", "NousResearch/hermes-agent"} <= core
+    assert scores["ultraworkers/claw-code"]["tier"] != "core"  # a clone with many stars is not a main harness
+    assert [t[1] for t in TIERS] == ["core", "major", "niche"]
+    assert (ROOT / "docs" / "roadmap.html").read_text(encoding="utf-8") == render_html(ROOT), "run `artel roadmap html`"
+
+
+def test_core_priority_items_go_first_and_study_follows_significance(tmp_path):
+    from artel.roadmap import next_to_study
+
+    p = _toy(tmp_path)
+    text = p.read_text(encoding="utf-8").replace("    title: Feature C needs A\n",
+                                                 "    title: Feature C needs A\n  - id: W3-core\n    wave: 3\n"
+                                                 "    priority: core\n    mode: evolve\n    status: planned\n"
+                                                 "    title: Gap of a main harness\n    source: {harness: H, repo: a/b}\n")
+    p.write_text(text, encoding="utf-8")
+    assert [it["id"] for it in Roadmap(p).next_items(3)] == ["W3-core", "W1-a", "W1-b"]
+    (tmp_path / "harnesses.yaml").write_text(
+        "snapshot: '2026-10-07'\nharnesses:\n"
+        "- {repo: big/origin, name: Big, class: coding-agent, origin: originator, origin_note: x, studied: readme,"
+        " metrics: {stars: 100000, forks: 9000, pushed: '2026-10-01', license: mit, lists: 6}}\n"
+        "- {repo: big/clone, name: Clone, class: coding-agent, origin: derivative, origin_note: y, studied: none,"
+        " metrics: {stars: 300000, forks: 90000, pushed: '2026-10-01', license: mit, lists: 6}}\n"
+        "- {repo: done/one, name: Done, class: coding-agent, origin: originator, origin_note: z, studied: code,"
+        " metrics: {stars: 200000, forks: 9000, pushed: '2026-10-01', license: mit, lists: 6}}\n", encoding="utf-8")
+    reg = [{"repo": "x/registry", "status": "alive", "category": "harness", "relevance": 30}]
+    assert [h["repo"] for h in next_to_study(tmp_path, reg, n=2)] == ["big/origin", "x/registry"]

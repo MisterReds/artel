@@ -325,6 +325,7 @@ items:
     source: {harness: DeepSeek Harness, repo: deepseek-ai/deepseek-harness, paths: [docs/user/guide/python-sdk.md]}
     target: [artel/plugins/runtimes.py]
   - id: W3-durable
+    priority: core
     wave: 3
     mode: design
     status: planned
@@ -365,6 +366,7 @@ items:
       the agent and checked by the manager.
     acceptance: [tasks over N turns run in steps with a progress file, pass rate on long tasks does not drop, tokens per long task drop]
   - id: W3-plan-review
+    priority: core
     wave: 3
     mode: evolve
     status: planned
@@ -377,6 +379,7 @@ items:
       are available to workers as tools.
     acceptance: [plan review events for every project, fewer audit rounds and replans on the benchmark, no cost increase over 10%]
   - id: W3-two-phase-memory
+    priority: core
     wave: 3
     mode: evolve
     status: planned
@@ -413,6 +416,7 @@ items:
       finding. Messages are events, visible in the feed; a worker reads its mailbox at the start of each run.
     acceptance: [messages delivered and logged, a two-worker scripted scenario uses the mailbox, no benchmark regression]
   - id: W3-automations
+    priority: core
     wave: 3
     mode: evolve
     status: planned
@@ -435,6 +439,228 @@ items:
       decision points. When the partner repository is ready: connect it (plugin or HTTP), turn the points on one at a
       time and keep only those that lower cost without lowering the pass rate on the benchmark.
     acceptance: [each enabled point measured with and without System One, decision latency under 500 ms]
+
+  # ---- wave 3, core: what the main harnesses have and Artel lacks (harnesses.yaml, docs/roadmap.html) ----
+  - id: C-agents-md
+    wave: 3
+    priority: core
+    mode: evolve
+    status: planned
+    title: Project instruction files — AGENTS.md / CLAUDE.md / GEMINI.md / .clinerules read into every agent's context
+    source: {harness: Codex / Claude Code / Gemini CLI, repo: openai/codex, paths: [docs/agents_md.md], license: Apache-2.0}
+    target: [artel/manager.py, artel/project.py, artel/prompts.py]
+    plan: >-
+      The de-facto standard every major coding agent reads. Find instruction files in the project's work directory and
+      its parents up to the repository root (AGENTS.md first, then CLAUDE.md, GEMINI.md, .clinerules, nearest wins),
+      put them into planner, worker, reviewer and auditor prompts under a size cap, show which file was used on the
+      project page; CLI runtimes already read them natively, so they are not duplicated there.
+    acceptance: [a rule in AGENTS.md changes the worker's output (scripted test), size cap respected, file shown in the dashboard]
+  - id: C-mcp-client
+    wave: 3
+    priority: core
+    mode: evolve
+    status: planned
+    title: External MCP servers for agents — configured once, available to every runtime (Playwright browser preset)
+    source: {harness: Claude Code / Gemini CLI / goose / Cline, repo: anomalyco/opencode, paths: [packages/opencode/src/mcp], license: MIT}
+    target: [artel/runtimes/mcp_client.py, artel/plugins/builtin_tools.py, artel/runtimes/claude_code.py, artel/runtimes/codex.py]
+    plan: >-
+      `mcp_servers:` in artel.yaml (stdio / http, env from variables, per-role allow list). The native runtime lists
+      their tools and calls them as Artel tools (logged, policy-checked); Claude Code and Codex get them in their own
+      MCP config next to Artel's bridge. Presets: Playwright (browser QA — gstack /qa, Cline), fetch, filesystem.
+    acceptance: [a stdio MCP server's tool is called by a native worker (fake server test), the same server reaches Claude Code and Codex args, roles without the grant do not see it]
+  - id: C-task-tool
+    wave: 3
+    priority: core
+    mode: design
+    status: planned
+    title: Subagents on demand — a worker delegates a sub-question to a child agent with a fresh context and gets a summary back
+    source: {harness: Claude Code / OpenCode / Deep Agents / Hermes, repo: anomalyco/opencode, paths: [packages/opencode/src/tool/task.ts], license: MIT}
+    target: [artel/plugins/builtin_tools.py, artel/agent.py, artel/manager.py]
+    plan: >-
+      A `delegate` tool: description + kind (explore / verify / general), runs a child agent on the same runtime with
+      read-only or workspace grants, its own turn limit and the parent's budget (W3-tree-budget), returns only the
+      final report; the child's events are nested under the parent's run in the log and the dashboard. Complements the
+      planner's team: the team divides the goal, subagents keep a worker's context clean.
+    acceptance: [a worker's delegate call returns a child's summary (scripted), child cost counted in the parent's budget, nested in the event log, depth limited to 2]
+  - id: C-web-tools
+    wave: 3
+    priority: core
+    mode: evolve
+    status: planned
+    title: web_search and web_fetch for the native runtime (CLI runtimes already have their own)
+    source: {harness: Gemini CLI / OpenCode, repo: anomalyco/opencode, paths: [packages/opencode/src/tool/websearch.ts, packages/opencode/src/tool/webfetch.ts], license: MIT}
+    target: [artel/plugins/builtin_tools.py]
+    plan: >-
+      web_fetch: URL to readable text (HTML stripped, size cap, spill to file), allowed by the command policy's
+      network rules; web_search through a configured provider (search API key in an environment variable) with
+      graceful "not configured" errors. Both logged as tool calls.
+    acceptance: [fetch of a local test server returns its text, search without a key returns a clear tool error, policy can forbid hosts]
+  - id: C-user-hooks
+    wave: 3
+    priority: core
+    mode: evolve
+    status: planned
+    title: User hooks from the config — shell commands on before_tool / after_tool / task_done / project_end, can block a tool call
+    source: {harness: Claude Code / Crush / Qwen Code, repo: anthropics/claude-code, paths: [CHANGELOG.md, plugins], license: proprietary (behaviour only)}
+    target: [artel/kernel.py, artel/plugins/builtin_tools.py]
+    plan: >-
+      `hooks:` in artel.yaml maps lifecycle events to shell commands; the event is passed as JSON on stdin, a non-zero
+      exit with a message blocks a before_tool call and returns the message to the agent; timeouts and failures are
+      logged, never fatal. Built on the existing kernel events, so plugins and hooks see the same stream.
+    acceptance: [a hook blocks `rm` with its message (test), a slow hook times out without stopping the run, hooks listed on the Plugins page]
+  - id: C-headless-ci
+    wave: 3
+    priority: core
+    mode: design
+    status: planned
+    title: Headless runs and GitHub — `artel run --json`, a GitHub Action, @artel in issues and pull requests
+    source: {harness: Claude Code / Gemini CLI / Codex / OpenHands, repo: openai/codex, paths: [docs/exec.md], license: Apache-2.0}
+    target: [artel/cli.py, .github/actions/artel/action.yml, docs/CI.md]
+    plan: >-
+      Non-interactive mode with stable JSON events on stdout and exit codes by outcome; a composite GitHub Action that
+      installs Artel, runs a goal from an issue or a review request with the repository as the work directory and
+      posts the result as a comment or a pull request; secrets only from the repository's secret store.
+    acceptance: [artel run --json emits parseable events (test), the action runs in CI on a fixture repository, no secret ever printed]
+  - id: C-lsp
+    wave: 3
+    priority: core
+    mode: evolve
+    status: planned
+    title: Diagnostics after every edit — language server or linter errors returned in the same turn
+    source: {harness: OpenCode / Crush / Qwen Code / Aider, repo: anomalyco/opencode, paths: [packages/opencode/src/lsp], license: MIT}
+    target: [artel/plugins/builtin_tools.py, artel/diagnostics.py]
+    plan: >-
+      After write_file / edit_file, run a fast checker for the file's language (pyright / ruff for Python, tsc for
+      TypeScript, a configured command otherwise; LSP servers when installed) and append new errors to the tool
+      result; per-language timeouts; nothing when no checker is available.
+    acceptance: [a syntax error introduced by an edit is reported in the same tool result (test), no checker installed means no change]
+  - id: C-repo-map
+    wave: 3
+    priority: core
+    mode: evolve
+    status: planned
+    title: Repo map — a ranked map of the codebase's files and symbols in the worker's context
+    source: {harness: Aider, repo: Aider-AI/aider, paths: [aider/repomap.py], license: Apache-2.0}
+    target: [artel/repomap.py, artel/manager.py]
+    plan: >-
+      Extract definitions and references per file (Python ast; tree-sitter when installed), rank files by references
+      and relevance to the task (retrieval.rank), fit the top of the map into a token budget and add it to the task
+      card for code tasks; cached by file mtime.
+    acceptance: [map of Artel's own repository fits the budget and lists the task's relevant module first, cache hit on the second build]
+  - id: C-rewind
+    wave: 3
+    priority: core
+    mode: evolve
+    status: planned
+    title: Rewind from the dashboard — every accepted step is a checkpoint a person can return a task or the deliverables to
+    source: {harness: Claude Code / Cline / Gemini CLI, repo: anomalyco/opencode, paths: [packages/opencode/src/session/revert.ts], license: MIT}
+    target: [artel/snapshot.py, artel/web/server.py, artel/web/index.html]
+    plan: >-
+      Snapshots already exist (W1-snapshots) but only Artel restores them on a rejection. List checkpoints per task
+      with their diff, restore one (deliverables and the task's state) by a button or `artel rewind`, recorded in the
+      event log; restoring never deletes later checkpoints.
+    acceptance: [restore returns the files to the checkpoint and is itself undoable, shown in the timeline]
+  - id: C-methodology-skills
+    wave: 3
+    priority: core
+    mode: evolve
+    status: planned
+    title: Bundled methodology skills — brainstorm, bite-sized plan, TDD, verification, systematic debugging, spec
+    source: {harness: Superpowers / Spec Kit, repo: obra/superpowers, paths: [skills], license: MIT}
+    target: [artel/data/skills/, artel/skills.py]
+    plan: >-
+      Import the most-starred methodology as skills with attribution (MIT), adapted to Artel's roles: planner uses
+      brainstorm and plan, workers TDD and verification-before-completion, reviewer the two-stage review. Measured
+      on the benchmark like any change; a skill that does not help is archived, not kept.
+    acceptance: [skills present with license notes, benchmark not worse, planner index lists them first for code goals]
+  - id: C-spec-artifacts
+    wave: 3
+    priority: core
+    mode: design
+    status: planned
+    title: Spec artifacts — constitution and spec per project, kept in sync with the plan and audited against
+    source: {harness: Spec Kit / OpenSpec / MetaGPT, repo: github/spec-kit, license: MIT}
+    target: [artel/manager.py, artel/prompts.py, artel/web/index.html]
+    plan: >-
+      The planner writes SPEC.md (what and why, requirements as checkable statements) before tasks; an optional
+      CONSTITUTION.md (project principles) is respected by every role; the auditor checks the result against SPEC.md
+      requirement by requirement; changes to the goal produce a spec delta instead of a rewrite.
+    acceptance: [spec written before tasks, auditor verdict lists requirements met / unmet, shown on the project page]
+  - id: C-user-profile
+    wave: 3
+    priority: core
+    mode: evolve
+    status: planned
+    title: Owner profile (USER.md) — what the team knows about the person it works for, learned and editable
+    source: {harness: OpenClaw / Hermes Agent, repo: NousResearch/hermes-agent, license: MIT}
+    target: [artel/project.py, artel/manager.py, artel/web/index.html]
+    plan: >-
+      ARTEL_HOME/USER.md (language, time zone, preferences, standing rules) read by every role; the librarian proposes
+      additions from the owner's comments and answers, the owner approves them in the dashboard; never stores secrets.
+    acceptance: [a preference in USER.md changes outputs (scripted), proposals need approval, secret-looking lines rejected]
+  - id: C-channels
+    wave: 3
+    priority: core
+    mode: evolve
+    status: planned
+    title: More channels — Slack and Discord next to Telegram, one channel interface
+    source: {harness: OpenClaw / Hermes Agent, repo: openclaw/openclaw, license: MIT}
+    target: [artel/channels/, artel/telegram.py]
+    plan: >-
+      Extract a channel interface from the Telegram bot (pairing, status, goals, replies to waiting tasks,
+      notifications), implement Slack (Socket Mode) and Discord bots on it; tokens only from environment variables.
+    acceptance: [Telegram behaviour unchanged (existing tests), Slack and Discord adapters pass the same contract tests with fake APIs]
+  - id: C-exec-backends
+    wave: 3
+    priority: core
+    mode: design
+    status: planned
+    title: Execution backends — Docker container and SSH host per task next to the local sandbox
+    source: {harness: OpenHands / Hermes Agent / DeerFlow, repo: OpenHands/OpenHands, license: MIT}
+    target: [artel/sandbox.py, artel/worktree.py, artel/plugins/builtin_tools.py]
+    plan: >-
+      A backend interface for bash and file tools: local (today), docker (a container per task with the worktree
+      mounted, image configurable), ssh (a remote host with a synced worktree). Chosen per project; grants and the
+      command policy apply in every backend.
+    acceptance: [the same scripted task passes on local and docker backends, grants enforced inside the container]
+  - id: C-best-of-n
+    wave: 3
+    priority: core
+    mode: design
+    status: planned
+    title: Best of N for hard tasks — several workers (or runtimes) on one task in separate worktrees, the reviewer picks
+    source: {harness: Orca / Qwen Code Agent Arena, repo: stablyai/orca, license: MIT}
+    target: [artel/manager.py, artel/worktree.py]
+    plan: >-
+      For tasks marked hard (System One difficulty or the planner), run N attempts in parallel worktrees, possibly on
+      different runtimes; the reviewer compares them and merges the best; cost shown per attempt; off by default,
+      capped by the budget.
+    acceptance: [two attempts run in parallel and only the chosen one is merged (test), cost of both recorded]
+  - id: C-evolution-archive
+    wave: 3
+    priority: core
+    mode: design
+    status: planned
+    title: Evolution keeps an archive of variants, not only a champion — parents sampled for diversity
+    source: {harness: Darwin Gödel Machine / OpenEvolve, repo: jennyzzt/dgm, license: Apache-2.0}
+    target: [artel/evolve/engine.py]
+    plan: >-
+      Every measured variant stays in an archive with its scores per task; new candidates may branch from a
+      non-champion variant that is best on some tasks (quality-diversity), so improvements that first cost a little
+      are not lost. Merging into main still requires no regression against the champion.
+    acceptance: [archive persisted and shown on the Evolution page, a candidate branched from a non-champion parent can be adopted]
+  - id: C-acp-server
+    wave: 3
+    priority: core
+    mode: design
+    status: planned
+    title: Artel as an ACP agent — drive the whole team from Zed, JetBrains or any ACP client
+    source: {harness: Gemini CLI / Claude Code / goose (IDE integration), repo: agentclientprotocol/agent-client-protocol, license: Apache-2.0}
+    target: [artel/acp_server.py, artel/cli.py]
+    plan: >-
+      `artel acp` speaks ACP over stdio: a prompt becomes a goal, plan and task progress stream back as updates,
+      file edits are reported as diffs, permission requests map to Artel's human questions.
+    acceptance: [an ACP test client starts a goal and receives plan and completion updates]
 
   # ---- wave 4: studied affaan-m/ECC (2026-10) ----
   - id: A-ecc-paired-promotion

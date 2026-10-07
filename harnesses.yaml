@@ -1,0 +1,1145 @@
+# Main harnesses: significance metrics (snapshot), their signature mechanisms and whether Artel has them.
+# Rendered with roadmap.yaml into docs/roadmap.html by `artel roadmap html`. Score: artel/roadmap.py significance().
+snapshot: '2026-10-07'
+source: 'метрики: repos.ecosyste.ms (зеркало GitHub) на дату снимка; кураторы — 10 awesome-списков в artel/data/harnesses.json'
+findings:
+- '<b>Опоры взяты у лидеров — да.</b> Скиллы — от Hermes Agent (2-е место из 43), души — от OpenClaw (1-е), модульность —
+  от DeepSeek Harness (значимый); работа до готовности — от Prime Agent (по популярности нишевый, но первоисточник цикла целей).
+  Из Codex (4-е место) взят весь контур безопасности: песочница, execpolicy, guardian.'
+- '<b>Основные фишки главных coding-агентов — нет, не все.</b> Из 52 ключевых механизмов харнессов ядра в Artel есть 21 (40%),
+  ещё 9 частично, 10 запланированы, 12 — пробелы. Самые заметные пробелы повторяются у нескольких лидеров сразу: файлы инструкций
+  проекта (AGENTS.md / CLAUDE.md / GEMINI.md), подключение внешних MCP-серверов, субагенты по запросу, пользовательские хуки,
+  запуск из CI и GitHub, веб-поиск, диагностика после правки, repo map, откат по кнопке.'
+- <b>Почему так вышло.</b> Раньше очередь изучения задавала «релевантность» из реестра — оценка по ключевым словам README.
+  Она поднимала нишевые надстройки над Claude Code (ECC — 29, oh-my-claudecode — 25, Hive — 27) и занижала сами главные харнессы
+  (Claude Code — 8, Aider — 11, у Gemini CLI оценки не было). Поэтому волна 4 состоит из находок Fusion, Hive, ECC и oh-my-claudecode,
+  а у лидеров изучены не все механизмы.
+- <b>Что изменено.</b> Значимость теперь считается индексом (критерии ниже) по 43 харнессам; очередь изучения (<code>artel
+  roadmap study</code>) берёт сначала главные харнессы, чей код ещё не разобран — Superpowers, Spec Kit, CrewAI, LangGraph,
+  Mem0, SWE-agent, AutoGen, Aider. В план добавлено 17 пунктов с приоритетом «ядро» (волна 3) — по одному на каждый пробел
+  у лидеров; ещё 4 уже запланированных пункта (plan review, двухфазная память, автоматизации, устойчивое исполнение) подняты
+  в тот же приоритет. Эволюция (<code>artel evolve --roadmap</code>) берёт их первыми.
+- <b>Чего брать не нужно.</b> Производные проекты (claw-code, Qwen Code, ECC, Ruflo, oh-my-claudecode, nanobot) популярны,
+  но механизмов не вводят — их полезные находки уже учтены; дальше они изучаются только после первоисточников.
+harnesses:
+- repo: anthropics/claude-code
+  name: Claude Code
+  class: coding-agent
+  origin: originator
+  origin_note: Ввёл скиллы (SKILL.md), хуки, субагентов, CLAUDE.md, плагины и маркетплейс — их повторяют Qwen Code, OpenCode,
+    Gemini CLI, Crush, Cline
+  studied: code
+  metrics:
+    stars: 149414
+    forks: 25487
+    pushed: '2026-10-03'
+    license: none
+    lists: 4
+  features:
+  - name: Скиллы SKILL.md
+    what: папки с инструкциями, подгружаются по описанию
+    artel: done
+    ref: P2-skills
+    note: библиотека скиллов Hermes-типа, импорт SKILL.md
+  - name: Субагенты по запросу
+    what: агент сам порождает субагента с отдельным контекстом (Task)
+    artel: gap
+    ref: C-task-tool
+  - name: Хуки пользователя
+    what: shell-команды на PreToolUse / PostToolUse / Stop / SessionStart
+    artel: partial
+    ref: C-user-hooks
+    note: есть события жизненного цикла для Python-плагинов; простых shell-хуков из конфига нет
+  - name: CLAUDE.md / AGENTS.md
+    what: инструкции проекта автоматически в контексте
+    artel: gap
+    ref: C-agents-md
+  - name: MCP-клиент
+    what: подключение любых MCP-серверов к агенту
+    artel: partial
+    ref: C-mcp-client
+    note: Artel сам отдаёт инструменты по MCP CLI-агентам, но внешние MCP-серверы подключить нельзя
+  - name: Plan mode
+    what: только чтение и план, затем подтверждение
+    artel: planned
+    ref: W3-plan-review
+  - name: Откат (rewind / checkpoints)
+    what: вернуть код и разговор к точке
+    artel: partial
+    ref: C-rewind
+    note: теневые git-снимки есть, откат делает только Artel при отклонении
+  - name: Headless и GitHub (@claude)
+    what: запуск в CI, ответы на issue и PR
+    artel: gap
+    ref: C-headless-ci
+  - name: Плагины и маркетплейс
+    what: команды, агенты, хуки пакетами
+    artel: done
+    ref: W3-plugin-packages
+  - name: Песочница и права
+    what: allow / ask / deny, песочница команд
+    artel: done
+    ref: W2-execpolicy
+  - name: Интеграция с IDE
+    what: Zed, JetBrains, VS Code управляют агентом
+    artel: gap
+    ref: C-acp-server
+- repo: openai/codex
+  name: Codex
+  class: coding-agent
+  origin: originator
+  origin_note: AGENTS.md как стандарт, песочница bubblewrap/seatbelt, execpolicy, guardian, вход по подписке — эталон безопасного
+    автономного агента
+  studied: code
+  metrics:
+    stars: 127484
+    forks: 19933
+    pushed: '2026-10-01'
+    license: apache-2.0
+    lists: 7
+  features:
+  - name: Песочница
+    what: bubblewrap / seatbelt, сетевой прокси
+    artel: done
+    ref: W2-sandbox
+  - name: execpolicy
+    what: правила allow / prompt / forbidden с примерами
+    artel: done
+    ref: W2-execpolicy
+  - name: Guardian
+    what: асинхронный ревьюер риска траектории
+    artel: done
+    ref: W2-guardian
+  - name: AGENTS.md
+    what: инструкции репозитория для агента
+    artel: gap
+    ref: C-agents-md
+  - name: Двухфазная память
+    what: извлечение из прогонов, затем консолидация
+    artel: planned
+    ref: W3-two-phase-memory
+  - name: Бюджет дерева агентов
+    what: общий учёт субагентов
+    artel: planned
+    ref: W3-tree-budget
+  - name: codex exec / облачные задачи
+    what: неинтерактивный режим, GitHub-интеграция
+    artel: gap
+    ref: C-headless-ci
+  - name: Вход по подписке ChatGPT
+    what: device code вместо ключа
+    artel: done
+    ref: D-codex-runtime
+- repo: anomalyco/opencode
+  name: OpenCode
+  class: coding-agent
+  origin: school
+  origin_note: 'Самый популярный открытый coding-агент; собственные решения: агенты build/plan, LSP, теневые снимки, code-mode'
+  studied: code
+  metrics:
+    stars: 212142
+    forks: 28252
+    pushed: '2026-10-07'
+    license: mit
+    lists: 5
+  features:
+  - name: Теневые git-снимки
+    what: снимок на каждый шаг, откат
+    artel: done
+    ref: W1-snapshots
+  - name: Сжатие контекста
+    what: сначала вывод старых инструментов, потом суммаризация
+    artel: done
+    ref: W1-compaction
+  - name: Нечёткие правки
+    what: поиск блока по якорям
+    artel: done
+    ref: W1-fuzzy-edit
+  - name: Длинный вывод в файл
+    what: превью и путь вместо обрезки
+    artel: done
+    ref: W1-output-spill
+  - name: LSP-диагностика после правки
+    what: ошибки компилятора в том же ходе
+    artel: gap
+    ref: C-lsp
+  - name: Агенты build / plan
+    what: переключение режимов
+    artel: planned
+    ref: W3-plan-review
+  - name: Субагент @general
+    what: делегирование поиска и многошаговых задач
+    artel: gap
+    ref: C-task-tool
+  - name: Права по шаблонам
+    what: allow / ask / deny с учётом аргументов
+    artel: done
+    ref: W2-execpolicy
+- repo: google-gemini/gemini-cli
+  name: Gemini CLI
+  class: coding-agent
+  origin: school
+  origin_note: 'Открытый агент Google: GEMINI.md, чекпоинты, GitHub Action, поиск Google, 1M контекста; от него форкнут Qwen
+    Code'
+  studied: readme
+  metrics:
+    stars: 107193
+    forks: 14663
+    pushed: '2026-09-29'
+    license: apache-2.0
+    lists: 6
+  features:
+  - name: GEMINI.md
+    what: контекст проекта из файла
+    artel: gap
+    ref: C-agents-md
+  - name: Веб-поиск и загрузка страниц
+    what: встроенные web search / fetch
+    artel: gap
+    ref: C-web-tools
+  - name: MCP-расширения
+    what: подключение MCP-серверов
+    artel: partial
+    ref: C-mcp-client
+  - name: Чекпоинты сессий
+    what: сохранить и продолжить
+    artel: partial
+    ref: C-rewind
+    note: проекты продолжаются после остановки, отката по запросу нет
+  - name: Headless + GitHub Action
+    what: -p, JSON-вывод, @gemini-cli в issue/PR
+    artel: gap
+    ref: C-headless-ci
+  - name: Песочница и доверенные папки
+    what: ограничение исполнения
+    artel: done
+    ref: W2-fs-grants
+  - name: Интеграция с IDE
+    what: Zed, JetBrains, VS Code управляют агентом
+    artel: gap
+    ref: C-acp-server
+- repo: earendil-works/pi
+  name: Pi
+  class: coding-agent
+  origin: school
+  origin_note: Минимальное ядро + расширения и пакеты; durable-рантайм; единый API моделей
+  studied: code
+  metrics:
+    stars: 113108
+    forks: 14356
+    pushed: '2026-10-07'
+    license: mit
+    lists: 6
+  features:
+  - name: Расширения с жизненным циклом
+    what: before_agent_start, session_shutdown
+    artel: done
+    ref: W3-plugin-packages
+  - name: Pi packages
+    what: расширения и скиллы через npm/git
+    artel: done
+    ref: W3-plugin-packages
+  - name: Durable-рантайм
+    what: продолжение посреди хода после падения
+    artel: planned
+    ref: W3-durable
+  - name: Режимы print / JSON / RPC / SDK
+    what: встраивание и автоматизация
+    artel: gap
+    ref: C-headless-ci
+  - name: Единый API провайдеров
+    what: много моделей и подписок
+    artel: done
+    ref: D-providers
+- repo: OpenHands/OpenHands
+  name: OpenHands
+  class: coding-agent
+  origin: originator
+  origin_note: 'CodeAct и первый открытый агент уровня SWE-bench; теперь Agent Canvas: ACP, Docker-бэкенды, автоматизации'
+  studied: code
+  metrics:
+    stars: 90186
+    forks: 11933
+    pushed: '2026-10-07'
+    license: mit
+    lists: 6
+  features:
+  - name: ACP как универсальный адаптер
+    what: любой ACP-агент исполнителем
+    artel: done
+    ref: W3-acp-runtime
+  - name: Docker / VM / облачные бэкенды
+    what: каждый разговор в своём контейнере
+    artel: partial
+    ref: C-exec-backends
+    note: есть bwrap/seatbelt и worktree, контейнеров и удалённых машин нет
+  - name: Автоматизации
+    what: по расписанию и вебхукам
+    artel: planned
+    ref: W3-automations
+  - name: Интеграции Slack / GitHub / Linear
+    what: задачи из трекеров
+    artel: gap
+    ref: C-headless-ci
+  - name: Всегда включённая команда на сервере
+    what: self-hosted
+    artel: done
+    ref: W2-remote-and-notify
+- repo: cline/cline
+  name: Cline
+  class: coding-agent
+  origin: school
+  origin_note: Агент в IDE, популяризовал Plan/Act, чекпоинты и маркетплейс MCP
+  studied: readme
+  metrics:
+    stars: 69944
+    forks: 7610
+    pushed: '2026-10-06'
+    license: apache-2.0
+    lists: 4
+  features:
+  - name: Plan / Act
+    what: сначала план, потом действия
+    artel: planned
+    ref: W3-plan-review
+  - name: Чекпоинты с откатом
+    what: любой шаг можно откатить
+    artel: partial
+    ref: C-rewind
+  - name: Правила .clinerules
+    what: инструкции проекта
+    artel: gap
+    ref: C-agents-md
+  - name: MCP и хуки через SDK
+    what: расширения
+    artel: partial
+    ref: C-mcp-client
+  - name: Команды агентов
+    what: координатор делит работу на специалистов
+    artel: done
+    ref: P5-transparency
+    note: менеджер + планировщик + исполнители на канбане
+  - name: Cron-агенты, headless, чат-коннекторы
+    what: автоматизации
+    artel: planned
+    ref: W3-automations
+- repo: aaif-goose/goose
+  name: goose
+  class: coding-agent
+  origin: school
+  origin_note: Агент общего назначения на Rust под Linux Foundation; 15+ провайдеров, подписки через ACP, 70+ MCP-расширений
+  studied: readme
+  metrics:
+    stars: 54948
+    forks: 6362
+    pushed: '2026-10-05'
+    license: apache-2.0
+    lists: 5
+  features:
+  - name: MCP-расширения
+    what: 70+ готовых
+    artel: partial
+    ref: C-mcp-client
+  - name: Подписки через ACP
+    what: Claude / ChatGPT / Gemini
+    artel: done
+    ref: W3-acp-runtime
+  - name: Десктоп, CLI и API
+    what: три поверхности
+    artel: partial
+    note: дашборд + CLI + PWA; публичного API для встраивания нет
+  - name: Интеграция с IDE
+    what: Zed, JetBrains, VS Code управляют агентом
+    artel: gap
+    ref: C-acp-server
+- repo: Aider-AI/aider
+  name: Aider
+  class: coding-agent
+  origin: originator
+  origin_note: Repo map, форматы правок, автокоммиты, цикл lint/test — классика, которую переняли почти все
+  studied: readme
+  metrics:
+    stars: 49404
+    forks: 5037
+    pushed: '2026-05-22'
+    license: apache-2.0
+    lists: 5
+  features:
+  - name: Repo map
+    what: карта кодовой базы (символы) в контексте
+    artel: gap
+    ref: C-repo-map
+  - name: Автокоммиты
+    what: каждое изменение — коммит с сообщением
+    artel: partial
+    note: принятые задачи сливаются в git (worktree), отдельного коммита на шаг нет
+  - name: Lint/test после каждой правки
+    what: автоматическое исправление
+    artel: partial
+    ref: C-lsp
+    note: проверки задач (gates) есть, но после приёмки, а не после каждой правки
+  - name: Картинки и веб-страницы в контексте
+    what: визуальный контекст
+    artel: planned
+    ref: D-multimodal-retrieval
+- repo: QwenLM/qwen-code
+  name: Qwen Code
+  class: coding-agent
+  origin: derivative
+  origin_note: 'Форк Gemini CLI; ценен как сборник: детектор петель, цели с верификатором, Agent Arena, IM-каналы'
+  studied: code
+  metrics:
+    stars: 28288
+    forks: 3151
+    pushed: '2026-10-03'
+    license: apache-2.0
+    lists: 5
+  features:
+  - name: Детектор зацикливания
+    what: одинаковые вызовы подряд
+    artel: done
+    ref: W1-loop-detector
+  - name: Цели с верификатором
+    what: отдельный судья завершения
+    artel: done
+    ref: W1-evidence-window
+  - name: Agent Arena
+    what: несколько моделей на одной задаче
+    artel: gap
+    ref: C-best-of-n
+  - name: IM-каналы
+    what: Telegram, DingTalk, WeChat, Feishu
+    artel: partial
+    ref: C-channels
+- repo: charmbracelet/crush
+  name: Crush
+  class: coding-agent
+  origin: school
+  origin_note: 'Терминальный агент Charm: LSP-контекст, смена модели посреди сессии, общий сервер для нескольких TUI'
+  studied: readme
+  metrics:
+    stars: 28524
+    forks: 2318
+    pushed: '2026-10-07'
+    license: other
+    lists: 5
+  features:
+  - name: LSP-контекст
+    what: диагностика и символы
+    artel: gap
+    ref: C-lsp
+  - name: Смена модели посреди сессии
+    what: без потери контекста
+    artel: done
+    ref: D-provider-failover
+- repo: SWE-agent/SWE-agent
+  name: SWE-agent
+  class: coding-agent
+  origin: originator
+  origin_note: Ввёл понятие интерфейса агент–компьютер (ACI) и задал планку SWE-bench
+  studied: readme
+  metrics:
+    stars: 20495
+    forks: 2249
+    pushed: '2026-10-06'
+    license: mit
+    lists: 6
+  features:
+  - name: ACI — инструменты под модель
+    what: редактор и поиск, удобные модели
+    artel: done
+    ref: W1-fuzzy-edit
+  - name: Бенчмарк как часть цикла
+    what: оценка на реальных задачах
+    artel: done
+    ref: P7-measured-evolution
+- repo: ultraworkers/claw-code
+  name: claw-code
+  class: coding-agent
+  origin: derivative
+  origin_note: Публичная переписка Claude Code на Rust; новых механизмов не вводит
+  studied: readme
+  metrics:
+    stars: 195277
+    forks: 108289
+    pushed: '2026-08-16'
+    license: mit
+    lists: 4
+  features: []
+- repo: stablyai/orca
+  name: Orca
+  class: coding-agent
+  origin: school
+  origin_note: 'IDE для параллельной работы нескольких агентов: одна задача на 5 агентов в worktree, лучший результат вливается'
+  studied: readme
+  metrics:
+    stars: 86200
+    forks: 5533
+    pushed: '2026-10-06'
+    license: mit
+    lists: 6
+  features:
+  - name: Один промпт — N агентов, лучший вливается
+    what: best-of-N в worktree
+    artel: gap
+    ref: C-best-of-n
+  - name: Мобильный компаньон
+    what: следить и направлять с телефона
+    artel: done
+    ref: W2-remote-and-notify
+  - name: Комментарии к строкам диффа
+    what: замечания уходят агенту
+    artel: partial
+    note: комментарии к задаче есть, к строкам диффа — нет
+- repo: openclaw/openclaw
+  name: OpenClaw
+  class: personal-agent
+  origin: originator
+  origin_note: 'Личный агент на своих устройствах: SOUL.md, каналы мессенджеров через шлюз, heartbeat; самый звёздный проект
+    класса'
+  studied: code
+  metrics:
+    stars: 391269
+    forks: 82252
+    pushed: '2026-10-04'
+    license: mit
+    lists: 8
+  features:
+  - name: Души агентов (SOUL.md, MEMORY.md)
+    what: личность и память
+    artel: done
+    ref: P4-souls
+  - name: Каналы мессенджеров
+    what: Telegram, WhatsApp, Slack, Discord, iMessage…
+    artel: partial
+    ref: C-channels
+    note: есть Telegram
+  - name: Шлюз и сопряжение по коду
+    what: неизвестные отправители подтверждаются
+    artel: done
+    ref: W2-remote-and-notify
+  - name: USER.md — модель владельца
+    what: что агент знает о человеке
+    artel: gap
+    ref: C-user-profile
+  - name: Heartbeat / задачи по расписанию
+    what: агент просыпается сам
+    artel: planned
+    ref: W3-automations
+  - name: Сменные модели и харнессы как плагины
+    what: Claude, Codex, локальные
+    artel: done
+    ref: P1-modularity
+- repo: NousResearch/hermes-agent
+  name: Hermes Agent
+  class: personal-agent
+  origin: originator
+  origin_note: 'Замкнутый цикл обучения: агент сам создаёт и улучшает скиллы; память, поиск по прошлым сессиям, cron, шлюз
+    мессенджеров'
+  studied: code
+  metrics:
+    stars: 251255
+    forks: 53929
+    pushed: '2026-10-05'
+    license: mit
+    lists: 8
+  features:
+  - name: Самоулучшающиеся скиллы
+    what: создание после сложных задач, улучшение при использовании
+    artel: done
+    ref: P2-skills
+  - name: Память, курируемая агентом
+    what: с периодическими напоминаниями
+    artel: partial
+    ref: W3-two-phase-memory
+    note: MEMORY.md у каждого работника
+  - name: Поиск по прошлым сессиям
+    what: FTS5 + суммаризация
+    artel: partial
+    ref: D-semantic-retrieval
+    note: поиск по смыслу по файлам и скиллам; по истории проектов — в плане
+  - name: Модель пользователя (Honcho)
+    what: кто владелец и как с ним работать
+    artel: gap
+    ref: C-user-profile
+  - name: Cron с доставкой в любой канал
+    what: задачи по расписанию
+    artel: planned
+    ref: W3-automations
+  - name: Субагенты и программный вызов инструментов
+    what: параллельные потоки, скрипты через RPC
+    artel: gap
+    ref: C-task-tool
+  - name: Бэкенды терминала
+    what: Docker, SSH, Modal, Daytona
+    artel: partial
+    ref: C-exec-backends
+- repo: deepseek-ai/deepseek-harness
+  name: DeepSeek Harness
+  class: personal-agent
+  origin: school
+  origin_note: Всё — плагин (Cordis), журнал сессии только на добавление; опора модульности Artel
+  studied: code
+  metrics:
+    stars: 244113
+    forks: 29248
+    pushed: '2026-10-03'
+    license: mit
+    lists: 8
+  features:
+  - name: Всё — плагин
+    what: сервисы, инструменты, рантаймы
+    artel: done
+    ref: P1-modularity
+  - name: dsh как рантайм
+    what: плагины dsh внутри Artel
+    artel: done
+    ref: W3-dsh-runtime
+- repo: HKUDS/nanobot
+  name: nanobot
+  class: personal-agent
+  origin: derivative
+  origin_note: 'Облегчённый аналог OpenClaw/Hermes: каналы, память Dream, cron, MCP'
+  studied: readme
+  metrics:
+    stars: 48806
+    forks: 8609
+    pushed: '2026-10-05'
+    license: mit
+    lists: 7
+  features:
+  - name: Календарь автоматизаций
+    what: задачи и расписания в интерфейсе
+    artel: planned
+    ref: W3-automations
+- repo: Significant-Gravitas/AutoGPT
+  name: AutoGPT
+  class: personal-agent
+  origin: school
+  origin_note: Исторический первый автономный агент; сейчас — платформа визуальных агентов с маркетплейсом
+  studied: readme
+  metrics:
+    stars: 187674
+    forks: 45946
+    pushed: '2026-10-06'
+    license: other
+    lists: 1
+  features:
+  - name: Маркетплейс агентов
+    what: готовые агенты сообщества
+    artel: partial
+    note: реестр харнессов и пакеты плагинов
+- repo: bytedance/deer-flow
+  name: DeerFlow
+  class: multi-agent
+  origin: school
+  origin_note: '«Супер-харнесс» на LangGraph: субагенты, песочница, память, скиллы, глубокое исследование, каналы'
+  studied: code
+  metrics:
+    stars: 83229
+    forks: 11547
+    pushed: '2026-09-29'
+    license: mit
+    lists: 7
+  features:
+  - name: Субагенты с изолированным контекстом
+    what: делегирование
+    artel: gap
+    ref: C-task-tool
+  - name: Выгрузка промежуточного в файлы
+    what: контекст-инжиниринг
+    artel: done
+    ref: W1-output-spill
+  - name: Проверяемые критерии приёмки
+    what: file exists / json-valid / tests_passed
+    artel: planned
+    ref: A-deerflow-typed-criteria
+  - name: Docker-песочница
+    what: AIO sandbox
+    artel: partial
+    ref: C-exec-backends
+  - name: Задачи по расписанию
+    what: scheduled tasks
+    artel: planned
+    ref: W3-automations
+- repo: langchain-ai/deepagents
+  name: Deep Agents
+  class: multi-agent
+  origin: school
+  origin_note: 'Готовый харнесс на LangGraph по мотивам Claude Code: субагенты, файловая система, скиллы, одобрение инструментов'
+  studied: readme
+  metrics:
+    stars: 29964
+    forks: 4208
+    pushed: '2026-10-06'
+    license: mit
+    lists: 8
+  features:
+  - name: Субагенты
+    what: изолированный контекст
+    artel: gap
+    ref: C-task-tool
+  - name: Сменные бэкенды файловой системы
+    what: локально / песочница / удалённо
+    artel: partial
+    ref: C-exec-backends
+  - name: Суммаризация и выгрузка вывода
+    what: контекст
+    artel: done
+    ref: W1-compaction
+- repo: langchain-ai/langgraph
+  name: LangGraph
+  class: framework
+  origin: originator
+  origin_note: Графы с устойчивым исполнением и прерываниями для человека — стандарт для долгих агентов
+  studied: readme
+  metrics:
+    stars: 42784
+    forks: 7271
+    pushed: '2026-10-06'
+    license: mit
+    lists: 6
+  features:
+  - name: Устойчивое исполнение
+    what: продолжение с точки сбоя
+    artel: planned
+    ref: W3-durable
+  - name: Прерывания для человека
+    what: посмотреть и поправить состояние посреди прогона
+    artel: done
+    ref: P3-goal-loop
+    note: задачи ждут человека, комментарии читаются посреди прогона
+  - name: Короткая и долгая память
+    what: между сессиями
+    artel: planned
+    ref: W3-two-phase-memory
+- repo: crewAIInc/crewAI
+  name: CrewAI
+  class: framework
+  origin: originator
+  origin_note: Ввёл «команды» агентов с ролями и целями; Flows для детерминированных шагов
+  studied: readme
+  metrics:
+    stars: 59374
+    forks: 8653
+    pushed: '2026-10-05'
+    license: mit
+    lists: 6
+  features:
+  - name: Роли, цели, инструменты
+    what: команда специалистов
+    artel: done
+    ref: P4-souls
+  - name: Иерархический менеджер
+    what: делегирует и проверяет
+    artel: done
+    ref: P3-goal-loop
+  - name: Flows — детерминированные шаги
+    what: состояние, ветвления
+    artel: planned
+    ref: W3-state-machine
+- repo: microsoft/autogen
+  name: AutoGen
+  class: framework
+  origin: originator
+  origin_note: Ввёл разговорные мультиагентные системы и групповые чаты; сейчас в режиме поддержки
+  studied: readme
+  metrics:
+    stars: 61254
+    forks: 9281
+    pushed: '2026-04-15'
+    license: cc-by-4.0
+    lists: 6
+  features:
+  - name: Групповой чат агентов
+    what: агенты обмениваются сообщениями
+    artel: planned
+    ref: W3-mailbox
+  - name: AgentTool — агент как инструмент
+    what: оркестрация
+    artel: gap
+    ref: C-task-tool
+  - name: AutoGen Bench
+    what: бенчмарк агентов
+    artel: done
+    ref: P7-measured-evolution
+- repo: FoundationAgents/MetaGPT
+  name: MetaGPT
+  class: framework
+  origin: originator
+  origin_note: '«Code = SOP(Team)»: компания из ролей пишет репозиторий по одной строке; AFlow'
+  studied: readme
+  metrics:
+    stars: 70760
+    forks: 8990
+    pushed: '2026-01-21'
+    license: mit
+    lists: 1
+  features:
+  - name: Роли компании по SOP
+    what: PM, архитектор, инженер
+    artel: done
+    ref: P4-souls
+  - name: Артефакты требований и архитектуры
+    what: user stories, API, структуры данных
+    artel: gap
+    ref: C-spec-artifacts
+- repo: multica-ai/multica
+  name: Multica
+  class: multi-agent
+  origin: school
+  origin_note: Доска задач, где CLI-агенты — коллеги; отряды, автопилоты по cron, ревью перед main
+  studied: readme
+  metrics:
+    stars: 52091
+    forks: 6780
+    pushed: '2026-10-07'
+    license: other
+    lists: 6
+  features:
+  - name: Агенты как коллеги на доске
+    what: берут задачи, сообщают о блокерах
+    artel: done
+    ref: P6-kanban
+  - name: Вмешательство посреди прогона
+    what: сообщение попадает в текущий прогон
+    artel: done
+    ref: P3-goal-loop
+  - name: Автопилоты по cron
+    what: стендапы, аудиты, отчёты
+    artel: planned
+    ref: W3-automations
+- repo: paperclipai/paperclip
+  name: Paperclip
+  class: multi-agent
+  origin: school
+  origin_note: 'Агенты как компания: оргструктура, бюджеты с жёсткой остановкой, цели-предки, управление с откатом'
+  studied: readme
+  metrics:
+    stars: 95863
+    forks: 16252
+    pushed: '2026-10-02'
+    license: mit
+    lists: 6
+  features:
+  - name: Бюджеты с остановкой
+    what: пауза на лимите
+    artel: done
+    ref: P3-goal-loop
+  - name: Цели-предки в задаче
+    what: агент видит «зачем»
+    artel: done
+    ref: P6-kanban
+  - name: Атомарный захват задачи
+    what: одна задача — один прогон
+    artel: done
+    ref: P6-kanban
+  - name: Экспорт/импорт команды
+    what: шаблоны организаций
+    artel: skip
+    note: не берём — у Artel одна команда на проект, собирается планировщиком под цель; шаблоны организаций не нужны
+- repo: ruvnet/ruflo
+  name: Ruflo (Claude Flow)
+  class: multi-agent
+  origin: derivative
+  origin_note: 'Надстройка над Claude Code/Codex: рои, 100+ агентов, векторная память'
+  studied: readme
+  metrics:
+    stars: 74012
+    forks: 8799
+    pushed: '2026-10-07'
+    license: mit
+    lists: 6
+  features: []
+- repo: Yeachan-Heo/oh-my-claudecode
+  name: oh-my-claudecode
+  class: multi-agent
+  origin: derivative
+  origin_note: Набор режимов поверх Claude Code; уже разобран (волна 4)
+  studied: code
+  metrics:
+    stars: 39572
+    forks: 3538
+    pushed: '2026-10-04'
+    license: mit
+    lists: 6
+  features:
+  - name: Уточнение размытой цели
+    what: до трёх вопросов владельцу
+    artel: planned
+    ref: A-omc-clarify-gate
+- repo: gastownhall/gastown
+  name: Gas Town
+  class: multi-agent
+  origin: school
+  origin_note: 'Город агентов поверх Claude Code: почта, мэр, рабочие в worktree'
+  studied: code
+  metrics:
+    stars: 18247
+    forks: 1679
+    pushed: '2026-09-29'
+    license: mit
+    lists: 6
+  features:
+  - name: Почта агентов
+    what: сообщения между агентами
+    artel: planned
+    ref: W3-mailbox
+  - name: Worktree на работника
+    what: изоляция
+    artel: done
+    ref: W2-worktree-isolation
+- repo: obra/superpowers
+  name: Superpowers
+  class: methodology
+  origin: originator
+  origin_note: 'Методика как скиллы: brainstorm → план из задач на 2–5 минут → TDD → ревью; самый звёздный пакет скиллов'
+  studied: readme
+  metrics:
+    stars: 294444
+    forks: 26318
+    pushed: '2026-09-27'
+    license: mit
+    lists: 5
+  features:
+  - name: Обязательные скиллы-процессы
+    what: brainstorm, план, TDD, ревью
+    artel: gap
+    ref: C-methodology-skills
+    note: импортируются как скиллы (MIT)
+  - name: Субагент на каждую задачу + двухступенчатое ревью
+    what: соответствие спецификации, затем качество
+    artel: done
+    ref: P3-goal-loop
+  - name: Проверка перед заявлением о готовности
+    what: доказательства вместо слов
+    artel: done
+    ref: W1-evidence-window
+- repo: github/spec-kit
+  name: Spec Kit
+  class: methodology
+  origin: originator
+  origin_note: 'Spec-driven development от GitHub: конституция → спецификация → план → задачи → реализация → сходимость'
+  studied: readme
+  metrics:
+    stars: 140382
+    forks: 12555
+    pushed: '2026-10-06'
+    license: mit
+    lists: 6
+  features:
+  - name: Конституция проекта
+    what: принципы, заданные один раз
+    artel: gap
+    ref: C-spec-artifacts
+  - name: Спецификация «что и зачем» до «как»
+    what: spec → plan → tasks
+    artel: partial
+    ref: C-spec-artifacts
+    note: планировщик делает план и задачи, но спецификация не сохраняется отдельным артефактом
+  - name: Цикл сходимости
+    what: implement → converge до «Converged»
+    artel: done
+    ref: P3-goal-loop
+    note: аудит цели повторяется до выполнения
+- repo: Fission-AI/OpenSpec
+  name: OpenSpec
+  class: methodology
+  origin: school
+  origin_note: Изменение = папка с предложением, дельтами спецификаций и задачами; архив вливает дельты в живые спецификации
+  studied: readme
+  metrics:
+    stars: 71107
+    forks: 4873
+    pushed: '2026-10-06'
+    license: mit
+    lists: 0
+  features:
+  - name: Дельты спецификаций
+    what: ADDED / MODIFIED требования
+    artel: gap
+    ref: C-spec-artifacts
+- repo: bmad-code-org/BMAD-METHOD
+  name: BMAD Method
+  class: methodology
+  origin: school
+  origin_note: Agile-персоны (PM, архитектор, QA) и процесс по размеру задачи
+  studied: readme
+  metrics:
+    stars: 53866
+    forks: 6063
+    pushed: '2026-10-07'
+    license: other
+    lists: 0
+  features:
+  - name: Процесс по размеру задачи
+    what: мелкое — сразу в работу
+    artel: planned
+    ref: A-omc-review-tiers
+- repo: garrytan/gstack
+  name: gstack
+  class: methodology
+  origin: school
+  origin_note: Claude Code как команда ролей-слэш-команд со спринтом; браузерный QA, второе мнение другой модели
+  studied: readme
+  metrics:
+    stars: 134710
+    forks: 20061
+    pushed: '2026-10-01'
+    license: mit
+    lists: 4
+  features:
+  - name: Браузерный QA
+    what: агент воспроизводит баг в браузере
+    artel: gap
+    ref: C-mcp-client
+    note: через MCP-сервер Playwright
+  - name: Второе мнение другой модели
+    what: Codex проверяет Claude
+    artel: partial
+    note: ревьюер может работать на другом рантайме
+- repo: affaan-m/ECC
+  name: ECC
+  class: methodology
+  origin: derivative
+  origin_note: Огромный сборник агентов, скиллов и хуков для разных харнессов; уже разобран (волна 4)
+  studied: code
+  metrics:
+    stars: 272327
+    forks: 40666
+    pushed: '2026-10-02'
+    license: mit
+    lists: 6
+  features:
+  - name: Инстинкты → скиллы
+    what: паттерны из сессий с уверенностью
+    artel: partial
+    ref: P2-skills
+- repo: mattpocock/skills
+  name: Matt Pocock skills
+  class: methodology
+  origin: derivative
+  origin_note: Набор небольших инженерных скиллов (grilling, глоссарий, тикеты)
+  studied: readme
+  metrics:
+    stars: 276379
+    forks: 23173
+    pushed: '2026-10-04'
+    license: mit
+    lists: 4
+  features:
+  - name: Grilling — допрос по плану
+    what: вопросы до полной ясности
+    artel: planned
+    ref: A-omc-clarify-gate
+- repo: thedotmack/claude-mem
+  name: claude-mem
+  class: memory
+  origin: school
+  origin_note: 'Память между сессиями через хуки: наблюдения, сжатие, поиск в три слоя'
+  studied: readme
+  metrics:
+    stars: 95027
+    forks: 8410
+    pushed: '2026-09-30'
+    license: apache-2.0
+    lists: 5
+  features:
+  - name: Наблюдения из прогонов + сжатие
+    what: что делал агент, кратко
+    artel: planned
+    ref: W3-two-phase-memory
+  - name: Гибридный поиск FTS + векторы
+    what: ''
+    artel: done
+    ref: D-semantic-retrieval
+- repo: mem0ai/mem0
+  name: Mem0
+  class: memory
+  origin: originator
+  origin_note: Слой памяти для агентов, на который опираются другие проекты
+  studied: none
+  metrics:
+    stars: 66657
+    forks: 7852
+    pushed: '2026-10-06'
+    license: apache-2.0
+    lists: 5
+  features:
+  - name: Слой долгой памяти
+    what: извлечение фактов и поиск
+    artel: planned
+    ref: W3-two-phase-memory
+- repo: PrimeIntellect-ai/prime-agent
+  name: Prime Agent
+  class: self-improvement
+  origin: school
+  origin_note: Цели, работа до готовности, автономный режим — опора цикла Artel
+  studied: code
+  metrics:
+    stars: 21522
+    forks: 2376
+    pushed: '2026-10-04'
+    license: other
+    lists: 1
+  features:
+  - name: Работа до готовности
+    what: продолжения, backoff, доказательства
+    artel: done
+    ref: P3-goal-loop
+- repo: jennyzzt/dgm
+  name: Darwin Gödel Machine
+  class: self-improvement
+  origin: originator
+  origin_note: Агент переписывает свой код и проверяет каждое изменение на бенчмарке; открытая эволюция
+  studied: readme
+  metrics:
+    stars: 2382
+    forks: 451
+    pushed: '2025-08-13'
+    license: apache-2.0
+    lists: 1
+  features:
+  - name: Самоизменение с проверкой на бенчмарке
+    what: ''
+    artel: done
+    ref: P7-measured-evolution
+  - name: Архив вариантов, а не один чемпион
+    what: родитель выбирается из архива
+    artel: gap
+    ref: C-evolution-archive
+- repo: algorithmicsuperintelligence/openevolve
+  name: OpenEvolve
+  class: self-improvement
+  origin: school
+  origin_note: 'Открытая реализация AlphaEvolve: MAP-Elites, острова, каскадная оценка'
+  studied: readme
+  metrics:
+    stars: 7496
+    forks: 1176
+    pushed: '2026-10-06'
+    license: apache-2.0
+    lists: 1
+  features:
+  - name: Каскадная оценка
+    what: плохие варианты отсеиваются рано
+    artel: done
+    ref: P7-measured-evolution
+    note: скрининг на подмножестве задач
+  - name: Разнообразие популяции (MAP-Elites, острова)
+    what: ''
+    artel: gap
+    ref: C-evolution-archive
+- repo: neosigmaai/auto-harness
+  name: auto-harness
+  class: self-improvement
+  origin: derivative
+  origin_note: Автоулучшение харнесса; уже учтён в опоре эволюции
+  studied: code
+  metrics:
+    stars: 545
+    forks: 65
+    pushed: '2026-09-16'
+    license: mit
+    lists: 7
+  features: []
