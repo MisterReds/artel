@@ -271,6 +271,7 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
     <div class="stat" style="font-size:12px">готово ${s.done||0}/${s.tasks||0} · с 1-й попытки ${s.first_pass||0} · отказов ${s.rejections||0} · ${money(s.cost_usd)}</div></div>`}).join('')}</div>
   <h2>Доска</h2>${tasks.length?'':`<p class="stat">${v.live&&v.stage==='planning'?'Задач пока нет: планировщик составляет план — задачи и исполнители появятся здесь, как только он его сдаст.':v.live?'Задач пока нет.':'Задач нет: проект не запущен. Нажмите «Продолжить».'}</p>`}<div class="board">${COLS.map(([s,l])=>`<div class="col"><h3>${l}<span>${by(s).length}</span></h3>${by(s).map(card).join('')}</div>`).join('')}</div>
   ${v.notes?`<h2>Заметки харнесса (refine)</h2><pre>${esc(v.notes)}</pre>`:''}
+  <h2>Доступ к путям</h2><div class="stat">запись: ${v.grants.write.map(esc).join(', ')||'—'}<br>чтение: ${v.grants.read.map(esc).join(', ')}${v.grants.refs.length?`<br>refs (только чтение): ${v.grants.refs.map(esc).join(', ')}`:''}</div>
   <h2>Результаты (shared/)</h2><div id="filesbox" class="files"></div>`;
   document.querySelectorAll('.card,.alert[data-t]').forEach(c=>c.onclick=()=>showTask(c.dataset.t));
   document.querySelectorAll('.worker').forEach(c=>c.onclick=()=>showWorker(c.dataset.w));
@@ -288,14 +289,14 @@ function activeBox(v,tasks){const a=v.active||[];
   if(!v.live&&!pr)return '';
   return `<h2>Сейчас работают${a.length?` <span class="stat">${a.length}</span>`:''}</h2>${banner}${rows?`<div class="team">${rows}</div>`:v.live&&!banner?'<p class="stat">Никто не работает: менеджер ждёт следующего события.</p>':''}${pr?`<details ${a.length?'':'open'}><summary class="stat">Последние сбои и переключения</summary>${pr}</details>`:''}`}
 function card(t){const last=(t.runs||[]).slice(-1)[0];const since=(t.timeline||[]).slice(-1)[0];return `<div class="card ${t.status}" data-t="${t.id}"><div class="t">${esc(t.title)}</div>
-  <div class="m"><span>@${esc(t.assignee||'—')}</span>${t.attempts?`<span>попыток ${t.attempts}</span>`:''}${last&&t.status==='running'?`<span>ход ${last.turns}</span>`:''}${since?`<span>${ago(since.ts)}</span>`:''}${t.needs_human?'<span class="human">нужен человек</span>':''}</div></div>`}
+  <div class="m"><span>@${esc(t.assignee||'—')}</span>${t.attempts?`<span>попыток ${t.attempts}</span>`:''}${last&&t.status==='running'?`<span>ход ${last.turns}</span>`:''}${since?`<span>${ago(since.ts)}</span>`:''}${t.needs_human?'<span class="human">нужен человек</span>':''}${t.risk==='high'?`<span class="badge error" title="${esc(t.risk_reason||'')}">риск</span>`:''}</div></div>`}
 async function listFiles(path){const r=await api(`/api/projects/${encodeURIComponent(state.slug)}/files?path=${encodeURIComponent(path)}`);const box=$('#filesbox');if(!box||!r.items)return;
   box.innerHTML=r.items.length?r.items.map(i=>`<a data-f="${esc(i.path)}" data-d="${i.dir}">${i.dir?'📁 ':''}${esc(i.path.replace(/^shared\//,''))}${i.dir?'':` <span class="stat">${i.size} B</span>`}</a>`).join(''):'<span class="stat">пока пусто</span>';
   box.querySelectorAll('a').forEach(a=>a.onclick=()=>a.dataset.d==='true'?listFiles(a.dataset.f):showFile(a.dataset.f))}
 async function showFile(p){const r=await api(`/api/projects/${encodeURIComponent(state.slug)}/files?path=${encodeURIComponent(p)}`);dlg(`<h3>${esc(r.file)}</h3><pre>${esc(r.text)}</pre>`)}
 const MOVE={todo:'ожидает',ready:'готова к работе',running:'в работе',review:'на ревью',done:'принята',blocked:'заблокирована',cancelled:'отменена'};
 function showTask(id){const t=state.v.board.tasks.find(x=>x.id===id);if(!t)return;
-  dlg(`<h3>${esc(t.title)} <span class="badge">${esc(MOVE[t.status]||t.status)}</span></h3><div class="stat">${t.id} · @${esc(t.assignee||'—')} · попыток ${t.attempts} · зависит от: ${t.depends_on.join(', ')||'—'}</div>
+  dlg(`<h3>${esc(t.title)} <span class="badge">${esc(MOVE[t.status]||t.status)}</span></h3><div class="stat">${t.id} · @${esc(t.assignee||'—')} · попыток ${t.attempts} · зависит от: ${t.depends_on.join(', ')||'—'}${t.risk==='high'?` · <span class="badge error">риск ${t.risk_score}</span> ${esc(t.risk_reason||'')}`:''}</div>
   <h2>Путь задачи</h2><div class="tl">${(t.timeline||[]).map(s=>`<div><span class="ts">${fmtT(s.ts)}</span><span>${esc(MOVE[s.to]||s.to)}</span><span class="stat">${esc(s.actor||'')}</span></div>`).join('')}</div>
   <h2>Задача</h2><pre>${esc(t.body)}</pre><h2>Критерии приёмки</h2><pre>${esc(t.criteria.map(c=>'• '+c).join('\n'))}</pre>
   ${t.checks.length?`<h2>Гейты</h2><pre>${esc(t.checks.join('\n'))}</pre>`:''}

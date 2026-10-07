@@ -30,6 +30,44 @@ class ToolError(Exception):
     """Raised by a tool to return ``is_error`` to the model without crashing the loop."""
 
 
+# roles that never get write grants (the runtimes import it from here)
+READONLY_ROLES = {"planner", "reviewer", "auditor", "manager", "evolver", "absorber"}
+
+
+def _paths(project: Any, values: Any) -> list:
+    out = []
+    for v in values or []:
+        q = Path(str(v)).expanduser()
+        out.append(str((q if q.is_absolute() else project.root / q).resolve()))
+    return out
+
+
+def effective_grants(project: Any, role: str, workspace: Optional[Path] = None,
+                     deliverables: Optional[Path] = None) -> dict:
+    """Resolved path grants as plain string lists: ``{"read": [...], "write": [...]}``.
+
+    Defaults: write = the role's workspace + the deliverables (the task's own worktree under isolation, else the
+    project's shared/); read = write + the project root + refs. Refs are never writable. Extra paths come from
+    ``grants`` in the project meta or config: ``{"read": [..], "write": [..], "roles": {role: {..}}}``; they only
+    add paths, and a write grant also grants read. Relative paths are relative to the project root.
+    """
+    shared = Path(deliverables) if deliverables else project.shared
+    write = [str(Path(workspace if workspace is not None else shared).resolve()), str(shared.resolve())]
+    read = [str(project.root.resolve()), *[str(Path(r).resolve()) for r in getattr(project, "refs", [])]]
+    refs = set(read[1:])
+    for src in (getattr(project, "config", None) or {}, getattr(project, "meta", None) or {}):
+        g = src.get("grants") if isinstance(src, dict) else None
+        if not isinstance(g, dict):
+            continue
+        for layer in (g, (g.get("roles") or {}).get(role) or {}):
+            read += _paths(project, layer.get("read"))
+            write += _paths(project, layer.get("write"))
+    if role in READONLY_ROLES:
+        write = []
+    write = [w for w in dict.fromkeys(write) if w not in refs]
+    return {"read": list(dict.fromkeys(write + read)), "write": write}
+
+
 @dataclass
 class ToolContext:
     kernel: Any
@@ -98,20 +136,24 @@ class ToolContext:
             base = base.resolve()
             return target == base or base in target.parents
 
-        if not inside(root) and not inside(self.project.shared):
-            if not write and any(inside(r) for r in getattr(self.project, "refs", [])):
-                return target  # read-only reference sources
-            raise ToolError(f"path {path!r} is outside the project; use a workspace-relative path or shared/...")
         if write and self.deliverables and not inside(self.shared_dir) and (
                 inside(self.project.shared) or inside(self.project.root / "worktrees")):
             # isolation: the common deliverables change only through an accepted merge
             raise ToolError(f"path {path!r} is the merged deliverables; write to shared/<path> (your task's "
                             "worktree) instead")
+        allowed = self.grants()["write" if write else "read"]
+        if not any(inside(Path(g)) for g in allowed):
+            kind = "write" if write else "read"
+            raise ToolError(f"{kind} to {path!r} denied: not in {kind} grants {allowed}; "
+                            "use a workspace-relative path or shared/...")
         if write:
             protected = {"events.jsonl", "board.db", "project.json"}
             if target.parent == root and target.name in protected:
                 raise ToolError(f"{target.name} is managed by the harness")
         return target
+
+    def grants(self) -> dict:
+        return effective_grants(self.project, self.role, self.workspace, self.deliverables)
 
     def display(self, p: Path) -> str:
         p = p.resolve()

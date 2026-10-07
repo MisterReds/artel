@@ -8,7 +8,7 @@ import shutil
 import subprocess
 from pathlib import Path
 
-from .. import policy, sandbox
+from .. import guardian, policy, sandbox
 from ..kernel import ToolSpec
 from ..tooling import ToolContext, ToolError, window_text
 from ..tools import shell_run
@@ -60,6 +60,11 @@ def _bound(ctx: ToolContext, text: str, tool: str) -> str:
 
 
 def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
+    if ctx.state.get("guardian") == "blocking":
+        denial = guardian.blocking_error(command)
+        if denial:
+            ctx.project.log.append("guardian/denied", task_id=(ctx.task or {}).get("id"), command=command[:500])
+            raise ToolError(denial)
     try:
         verdict = policy.evaluate(command, ctx.project.root)
     except policy.PolicyError as exc:
