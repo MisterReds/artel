@@ -5,20 +5,11 @@
  "push_failures": [],
  "running": {
   "generation": 5,
-  "since": 1791292315.561649,
-  "phase": "implementing 2 candidates, 2 at a time",
+  "since": 1791393763.7214735,
+  "phase": "reopened",
   "plan": {
    "champ": "0f3b1cc7d02743e7131e6d8290d64e7e2948e1f5",
    "kind": "candidate",
-   "branches": {
-    "1": "evolve/g5-1-w2-guardian-asynchronous-traject",
-    "2": "evolve/g5-2-w2-fs-grants-explicit-read-write"
-   },
-   "roadmap": [
-    "W2-guardian",
-    "W2-fs-grants"
-   ],
-   "mode": "adopt",
    "hypotheses": [
     {
      "title": "W2-guardian: Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review",
@@ -48,9 +39,16 @@
      "source": "roadmap:W2-fs-grants",
      "license_note": "Donor: OpenScience \u2014 study first: /tmp/claude-0/artel-evo/evolution/artel/sources/synthetic-sciences__openscience/ARCHITECTURE.md. License Apache-2.0: copying allowed with attribution; keep the notice in a comment."
     }
-   ]
-  },
-  "resumed_at": 1791392490.1887443,
-  "rebased_at": 1791392485.2913353
+   ],
+   "branches": {
+    "1": "evolve/g5-1-w2-guardian-asynchronous-traject",
+    "2": "evolve/g5-2-w2-fs-grants-explicit-read-write"
+   },
+   "roadmap": [
+    "W2-guardian",
+    "W2-fs-grants"
+   ],
+   "mode": "adopt"
+  }
  }
 }
