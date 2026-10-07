@@ -195,8 +195,8 @@ items:
   - id: W2-guardian
     wave: 2
     mode: evolve
-    status: planned
-    result: "gen 5 measurement voided (candidates rejected as empty by an engine bug: their work was already committed on the branch (fixed in 1279093)); remeasuring"
+    status: done
+    result: "evolve/gen-5 (evolve/g5-1-w2-guardian-asynchronous-traject)"
     note: "Study 2026-10: ECC ecc2/src/observability/mod.rs scores each tool call deterministically before any model (base tool risk + secret-file sensitivity + blast radius such as force-push or rm -rf + irreversibility, clamped to 0..1, thresholds review / confirm / block); use it as the cheap first pass and call the model reviewer only above the review threshold."
     title: Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review
     source: {harness: Codex, repo: openai/codex, paths: [codex-rs/prompts/templates/guardian/classifier_instructions.md]}
@@ -218,8 +218,8 @@ items:
   - id: W2-fs-grants
     wave: 2
     mode: evolve
-    status: planned
-    result: "gen 5 measurement voided (candidates rejected as empty by an engine bug: their work was already committed on the branch (fixed in 1279093)); remeasuring"
+    status: done
+    result: "evolve/gen-5 (evolve/g5-2-w2-fs-grants-explicit-read-write)"
     title: Explicit read/write grants per path
     source: {harness: OpenScience, repo: synthetic-sciences/openscience, paths: [ARCHITECTURE.md]}
     target: [artel/tooling.py]

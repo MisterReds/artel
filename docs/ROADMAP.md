@@ -44,15 +44,15 @@
 | W1-compaction | Context compaction for the native runtime — clear old tool outputs, then summarize | Claude Code / OpenCode (`anomalyco/opencode`) | evolve | готово — evolve/gen-3 (evolve/g3-4-w1-compaction-context-compaction) |
 | W1-snapshots | Shadow-git snapshot per run; rejected attempt can be reverted | OpenCode (`anomalyco/opencode`) | evolve | готово — evolve/gen-3 (evolve/g3-5-w1-snapshots-shadow-git-snapshot) |
 
-## Волна 2 — 7/10 готово
+## Волна 2 — 9/10 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
 | W2-worktree-isolation | Worker isolation — git worktree (or container) per task, merge on acceptance | Archon / Gas Town / Qwen Code (`QwenLM/qwen-code`) | design | готово — feat/isolation-sandbox: opt-in `isolation.worktrees` — a git worktree per task (artel/worktree.py), pre-review merge of the base, merge into shared/ on acceptance, discard on START OVER, conflicts go back to the worker as a task comment (never overwritten); containers not done |
 | W2-execpolicy | Command policy rules allow/prompt/forbidden with match/not_match examples validated at load | Codex (`openai/codex`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
-| W2-guardian | Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review | Codex (`openai/codex`) | evolve | план — gen 5 measurement voided (candidates rejected as empty by an engine bug: their work was already committed on the branch (fixed in 1279093)); remeasuring |
+| W2-guardian | Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review | Codex (`openai/codex`) | evolve | готово — evolve/gen-5 (evolve/g5-1-w2-guardian-asynchronous-traject) |
 | W2-sandbox | bubblewrap sandbox for worker bash | Codex (`openai/codex`) | design | готово — feat/isolation-sandbox: opt-in `sandbox.mode` (artel/sandbox.py) — bubblewrap on Linux (verified for real), sandbox-exec profile on macOS (built, not run on a Mac), unsandboxed fallback with a note or `require: true` refusal; gates sandboxed on `sandbox.gates` |
-| W2-fs-grants | Explicit read/write grants per path | OpenScience (`synthetic-sciences/openscience`) | evolve | план — gen 5 measurement voided (candidates rejected as empty by an engine bug: their work was already committed on the branch (fixed in 1279093)); remeasuring |
+| W2-fs-grants | Explicit read/write grants per path | OpenScience (`synthetic-sciences/openscience`) | evolve | готово — evolve/gen-5 (evolve/g5-2-w2-fs-grants-explicit-read-write) |
 | W2-cost-down | Bring cost back down — wave 1 raised the benchmark cost from $4.57 to $5.99 (+31%) | Claude Code / Codex (`anthropics/claude-code`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-ci | CI on Linux, macOS and Windows — tests, installer and a scripted first run on every push | OpenHands / Codex (`openai/codex`) | design | частично — .github/workflows/ci.yml: ubuntu/macos/windows x Python 3.10/3.13 run the full suite, install.sh / install.ps1 into a temporary home cloning the checkout, then scripts/ci_smoke.py (scripted first run ends done, dashboard answers /api/ready). Code made portable (UTF-8 I/O, POSIX shell via Git Bash on Windows, process-tree stop, POSIX paths in journal keys, restart without execv on Windows). Open: a green run on macOS/Windows is not yet observed; blocking merges on CI needs branch protection, and the evolution publish gate is not wired to it. |
 | W2-remote-and-notify | Use from the phone — authenticated remote dashboard and notifications (Telegram / webhook) | Hermes Agent / OpenClaw (`NousResearch/hermes-agent`) | design | готово — Telegram bot (control, answers, notifications, one-time pairing) and `artel web --remote`: token login (scrypt hash only, rotatable), server-side HttpOnly SameSite=Strict sessions, per-IP rate limit, HTTPS recipes (Caddy, Tailscale) with an insecure-connection banner; installable PWA (manifest, icons, shell-only service worker) |
@@ -109,4 +109,4 @@
 | `Yeachan-Heo/oh-my-claudecode` | MIT | 7 | A-omc-clarify-gate, A-omc-review-tiers, A-omc-secret-redaction | Claude Code plugin: team pipeline plan/prd/exec/verify/fix, deep-interview ambiguity gate, verification tiers, notifications with a reply listener and token red |
 | `chaitanyagiri/munder-difflin` | MIT | 6 | A-munder-work-tokens | Electron desktop app wrapping many terminal agent CLIs as an office: git-backed hive mailbox with a single committer, markdown memory, runaway circuit breaker ( |
 
-Итого: 27/54 пунктов готово.
+Итого: 29/54 пунктов готово.
