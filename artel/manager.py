@@ -28,6 +28,7 @@ from typing import Any, Optional
 
 from . import prompts
 from .agent import Outcome
+from . import guardian
 from .runtimes import run_agent
 from .snapshot import Snapshot
 from .tools import shell_run
@@ -87,6 +88,7 @@ class Manager:
                 self.iso = Isolation(project)
             else:
                 self.note("isolation_unavailable", reason="git is not installed; tasks share the deliverables")
+        self.risk: dict[str, str] = {t: r["risk"] for t, r in guardian.latest_risk(project.log.read()).items()}
 
     # --- helpers --------------------------------------------------------
     def note(self, kind: str, **payload: Any) -> None:
@@ -207,6 +209,9 @@ class Manager:
         effort = self.difficulty_effort(task)
         if effort:
             ctx.state["effort"] = effort
+        if self.risk.get(task["id"]) == "high":  # an earlier run was high risk: bash commands get blocking review
+            ctx.state["guardian"] = "blocking"
+        seq0 = self.project.log.seq
         if self.iso is not None:  # the worker writes into its own worktree; shared/ changes only on acceptance
             try:
                 ctx.deliverables = self.iso.ensure(task["id"])
@@ -231,7 +236,22 @@ class Manager:
         self.board.finish_run(run_id, status, summary or "", turns=out.turns, tool_calls=out.tool_calls,
                               tokens_in=out.usage["input_tokens"], tokens_out=out.usage["output_tokens"],
                               cost_usd=round(out.cost_usd, 6))
+        self.assess_run(task, ctx, seq0)
         return out, ctx
+
+    def assess_run(self, task: dict, ctx: ToolContext, seq0: int) -> None:
+        """Guardian: score the finished worker run from its events and remember a high risk for later runs."""
+        try:
+            events = [e for e in self.project.log.read(after=seq0, kinds={"tool/call", "tool/result"})
+                      if e.get("task_id") == task["id"] and e.get("actor") == ctx.actor]
+            res = guardian.refine(self.kernel, self.project, guardian.assess(events, ctx.workspace), events)
+            self.project.log.append("guardian/assessed", task_id=task["id"], run_id=ctx.run_id, **res)
+            if res["risk"] == "high":
+                self.risk[task["id"]] = "high"
+                self.board.comment(task["id"], "guardian", f"HIGH RISK ({res['score']}): {res['reason']}. "
+                                   "Later runs need blocking review of every shell command.")
+        except Exception as exc:  # noqa: BLE001 - the guardian must never break a run
+            self.note("guardian_error", task_id=task["id"], error=repr(exc))
 
     def difficulty_effort(self, task: dict) -> Optional[str]:
         """System One difficulty estimate -> effort for this run (first attempt only)."""
