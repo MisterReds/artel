@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .. import analytics
+from .. import analytics, guardian
 from ..manager import human_comment, new_kernel, resume, run_goal
 from ..project import Project, list_projects
 
@@ -148,8 +148,11 @@ def project_view(project: Project, runner: Runner) -> dict:
                         "done": done, "skills": p.skills})
     events = analytics._events(project)
     timelines = analytics.task_timelines(events)
+    risks = guardian.latest_risk(events)
     for t in snap["tasks"]:
         t["timeline"] = timelines.get(t["id"], [])
+        if t["id"] in risks:
+            t["risk"], t["risk_score"], t["risk_reason"] = (risks[t["id"]][k] for k in ("risk", "score", "reason"))
     stats = analytics.project_stats(project, live=project.slug in runner.active)
     live = project.slug in runner.active
     errors = [e for e in events if e["kind"] in ("llm/error", "manager/escalated", "manager/provider_switch",
