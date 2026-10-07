@@ -698,7 +698,13 @@ class Evolution:
             else:
                 impl = self._implement_on(h, wt, resume=exists)
             unfinished = isinstance(impl, dict) and impl.get("status") not in (None, "done")
+            was_ahead = exists and int(git(self.repo, "rev-list", "--count", f"{champ}..{branch}") or 0) > 0
             commit = self._commit(wt, h) if not ahead else {"changed": False}
+            if not ahead and not commit["changed"] and was_ahead:
+                # resumed on a branch that already carries the work (an interrupted run committed earlier, or it
+                # was carried onto a new champion): the team finished without further edits — that is not "empty"
+                commit = {"changed": True, "commit": git(wt, "rev-parse", "HEAD"),
+                          "diffstat": git(wt, "diff", "--shortstat", champ, "HEAD")}
             if ahead:
                 commit = {"changed": True, "commit": git(wt, "rev-parse", "HEAD"),
                           "diffstat": git(wt, "diff", "--shortstat", champ, "HEAD")}

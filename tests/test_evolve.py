@@ -382,3 +382,34 @@ def test_final_merge_conflict_with_a_moved_main_never_breaks_main(repo, tmp_path
     assert "by hand on main" in (repo / "artel" / "__init__.py").read_text(encoding="utf-8")
     e = next(x for x in ev.ledger() if x["kind"] == "candidate")
     assert e["stage"] == "deferred" and any(x["kind"] == "merge_conflict" for x in ev.ledger())
+
+
+def test_work_already_committed_on_the_branch_is_not_judged_empty_after_resume(repo, tmp_path):
+    """An interrupted candidate whose work was committed onto its branch (e.g. carried onto a new champion) and whose
+    team then finishes without further edits keeps that work: it is tested and measured, not rejected as empty."""
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    calls = []
+
+    def impl(h, wt):
+        calls.append(h.title)
+        if len(calls) == 1:
+            (wt / "feature.txt").write_text("done", encoding="utf-8")
+            raise _Crash()
+        return {"cost_usd": 0.0, "status": "done"}  # resumed: nothing left to do
+
+    def bench_fn(code, label, tasks=None):
+        ok = (Path(code) / "feature.txt").exists()
+        rows = [{"id": "a", "pass": ok, "partial": float(ok), "cost_usd": 0.1}]
+        return {"results": rows, "summary": bench.summarize(rows)}
+
+    ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    with pytest.raises(_Crash):
+        ev.generation(hypotheses=[Hypothesis("feature", "r", "p")])
+    wt = tmp_path / "evo" / "worktrees" / "evolve_g1-1-feature"
+    git(wt, "add", "-A")
+    git(wt, "commit", "-q", "-m", "WIP carried over")
+    ev2 = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=bench_fn, implement_fn=impl)
+    # the team's project is found and continued; it finishes without editing anything more
+    ev2._continue_implementation = lambda h, wt, rt=None: calls.append("continued") or {"status": "done"}
+    s = ev2.resume()
+    assert calls == ["feature", "continued"] and s["accepted"] == ["evolve/g1-1-feature"]

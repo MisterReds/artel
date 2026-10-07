@@ -515,7 +515,10 @@ async function evolution(){$('#view').innerHTML='<div class="wrap" id="evo"><div
     <div class="kpis"><div class="kpi"><b>${ev.state.generation||0}</b><span>поколений</span></div><div class="kpi"><b>${cands.length}</b><span>кандидатов</span></div>
       <div class="kpi"><b style="color:var(--ok)">${cands.filter(c=>c.merged).length}</b><span>влито</span></div><div class="kpi"><b>${esc(ev.state.champion||'—')}</b><span>чемпион</span></div>
       <div class="kpi"><b>${ev.branches.length}</b><span>веток evolve/*</span></div></div>
-    ${run?`<div class="alert" style="border-left-color:var(--run)">▶ идёт поколение ${run.generation}: ${esc(run.phase)} · ${ago(run.since).replace(' назад','')}</div>`:''}
+    ${run?`<div class="alert" style="border-left-color:var(--run)">▶ идёт поколение ${run.generation}: ${esc(run.phase)} · ${ago(run.since).replace(' назад','')}
+      <div class="stat">${run.auto_resume_blocked?'⚠ автоперезапуск остановлен: '+esc(run.auto_resume_blocked)+' — после исправления: <code>artel evolve --resume</code>'
+        :(ev.state.process||{}).alive?'процесс работает (pid '+esc(String(ev.state.process.pid))+')'+((run.supervisor||{}).restarts?` · перезапусков после сбоев: ${run.supervisor.restarts}`:'')
+        :'процесс остановлен — дашборд продолжит поколение автоматически в течение пары минут'}</div></div>`:''}
     <h2>Чемпион по коммитам</h2><div class="tablewrap"><table><tr><th>коммит</th><th class="n">прохождение</th><th class="n">частично</th><th class="n">стоимость</th><th class="n">время/задача</th><th class="n">отказы</th><th class="n">срывы</th></tr>
       ${base.map(b=>`<tr><td>${esc(b.commit.slice(0,10))}</td><td class="n">${pct(b.summary.pass_rate)}</td><td class="n">${b.summary.partial_mean.toFixed(2)}</td><td class="n">${money(b.summary.cost_usd)}</td><td class="n">${b.summary.duration_mean_s} с</td><td class="n">${b.summary.rejections}</td><td class="n">${b.summary.stalls}</td></tr>`).join('')||'<tr><td colspan="7" class="stat">базовый замер идёт…</td></tr>'}</table></div>
     ${gens.map(g=>`<h2>Поколение ${g}</h2>${cands.filter(c=>c.generation===g).map(c=>`<div class="pcard" style="cursor:default">
