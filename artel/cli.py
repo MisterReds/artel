@@ -378,6 +378,39 @@ def cmd_evolve(args) -> int:
     import time as _time
 
     from .evolve.engine import InfraError
+    from .evolve.supervisor import Heartbeat, Supervisor
+    from .project import artel_home
+
+    if args.supervise:  # no dashboard running: keep restarting generations whose process died
+        print("supervising evolution: an interrupted generation is resumed automatically (Ctrl+C to stop)", flush=True)
+        sup = Supervisor(artel_home() / "evolution", interval_s=60)
+        sup.start()
+        try:
+            while True:
+                _time.sleep(3600)
+        except KeyboardInterrupt:
+            sup.stop()
+            return 0
+    from .evolve.supervisor import AlreadyRunning, RepoLock
+
+    try:
+        lock = RepoLock(_repo(args)).acquire()
+    except AlreadyRunning as e:
+        print(f"not started: {e}")
+        return 75
+    hb = Heartbeat(artel_home() / "evolution" / _repo(args).name, ["evolve", *sys.argv[sys.argv.index("evolve") + 1:]]
+                   if "evolve" in sys.argv else ["evolve"]).start()
+    try:
+        return _evolve_loop(args)
+    finally:
+        hb.stop()
+        lock.release()
+
+
+def _evolve_loop(args) -> int:
+    import time as _time
+
+    from .evolve.engine import InfraError
 
     while True:
         try:
@@ -780,6 +813,9 @@ def main(argv=None) -> int:
     ev = sub.add_parser("evolve", help="recursive self-improvement: branches, measurement, selection")
     evo_common(ev)
     ev.add_argument("--generations", type=int, default=1)
+    ev.add_argument("--supervise", action="store_true",
+                    help="keep watching: a generation whose process died is resumed automatically (artel web does "
+                         "this too unless evolve.auto_resume is false)")
     ev.add_argument("--candidates", type=int, default=2, help="hypotheses per generation (10, 20, 100…)")
     ev.add_argument("--parallel-candidates", type=int, default=2, help="candidates implemented at the same time")
     ev.add_argument("--screen-tasks", help="cheap benchmark subset every candidate runs first, e.g. adr-doc,csv-report")

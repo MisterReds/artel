@@ -181,6 +181,11 @@ def evolution_view() -> list[dict]:
             branches = [dict(zip(("name", "sha", "subject"), ln.split("|", 2))) for ln in raw.splitlines() if ln]
             state["champion"] = git(Path(state["repo"]), "rev-parse", "--short", state.get("main", "HEAD"), check=False)
         diag = sorted(d.glob("gen*-diagnosis.md"))
+        from ..evolve.supervisor import STALE_S, pid_alive
+
+        hb = json.loads((d / "heartbeat.json").read_text(encoding="utf-8")) if (d / "heartbeat.json").exists() else {}
+        alive = bool(hb) and (time.time() - float(hb.get("at", 0)) < STALE_S or pid_alive(hb.get("pid")))
+        state["process"] = {"alive": alive, "pid": hb.get("pid"), "beat": hb.get("at")}
         out.append({"name": d.name, "state": state, "ledger": ledger, "absorb": absorb, "branches": branches,
                     "diagnosis": diag[-1].read_text(encoding="utf-8") if diag else ""})
     return out
@@ -610,6 +615,11 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
                              " (see docs/REMOTE.md)")
     runner = Runner(config)
     runner.start_update_loop()
+    if (config.get("evolve") or {}).get("auto_resume", True):
+        from ..evolve.supervisor import Supervisor
+        from ..project import artel_home
+
+        runner.supervisor = Supervisor(artel_home() / "evolution").start()
     from ..telegram import TelegramBot, token
 
     if token():
