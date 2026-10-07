@@ -6,7 +6,7 @@
  "running": {
   "generation": 5,
   "since": 1791292315.561649,
-  "phase": "baseline",
+  "phase": "implementing 2 candidates, 2 at a time",
   "plan": {
    "champ": "0f3b1cc7d02743e7131e6d8290d64e7e2948e1f5",
    "kind": "candidate",
