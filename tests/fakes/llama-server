@@ -1,0 +1,21 @@
+#!/usr/bin/env python3
+"""Stand-in for llama.cpp's llama-server: /health and /v1/embeddings; FAKE_LLAMA_CRASH=1 exits at once."""
+import json, os, sys, zlib
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+if os.environ.get("FAKE_LLAMA_CRASH"):
+    print("error: unknown model architecture: 'gemma-embedding2'", flush=True); sys.exit(1)
+port = int(sys.argv[sys.argv.index("--port") + 1])
+
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def _send(self, obj):
+        b = json.dumps(obj).encode(); self.send_response(200); self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(b))); self.end_headers(); self.wfile.write(b)
+    def do_GET(self): self._send({"status": "ok"})
+    def do_POST(self):
+        inp = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["input"]
+        vec = lambda t: [((zlib.crc32(f"{w}{i}".encode()) % 7) - 3) for i, w in enumerate((t.split() * 8)[:16])] + [0.0] * 752
+        self._send({"data": [{"index": i, "embedding": vec(t)} for i, t in enumerate(inp)]})
+
+HTTPServer(("127.0.0.1", port), H).serve_forever()

@@ -90,8 +90,8 @@ def rank(query: str, docs: list[str], config: Optional[dict] = None, task: str =
         if emb is not None:
             try:
                 sem = _semantic(emb, query, docs, titles, task, order_lex, budget)
-            except embeddings.EmbedError as e:
-                embeddings.failed(config, str(e))
+            except Exception as e:  # noqa: BLE001 - any embedding failure falls back to keywords, never fails the search
+                embeddings.failed(config, str(e) if isinstance(e, embeddings.EmbedError) else repr(e))
                 sem = None
     if sem is None:
         ranked = [(i, lex[i], "lexical") for i in order_lex if lex[i] > 0]

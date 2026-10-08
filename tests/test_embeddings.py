@@ -5,6 +5,7 @@ import math
 import threading
 import time
 import zlib
+from pathlib import Path
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
@@ -151,3 +152,68 @@ def test_chunks_keep_line_ranges_and_skip_junk(tmp_path):
     assert {c["path"] for c in cs} == {"a.py"} and cs[0]["start"] == 1 and cs[-1]["end"] == 100
     assert all(cs[i]["start"] <= cs[i - 1]["end"] for i in range(1, len(cs)))  # overlapping windows
     assert search_files(tmp_path, "line 42")[0]["start"] <= 43
+
+
+@pytest.fixture
+def local_server(tmp_path, monkeypatch):
+    """A 'installed' local model: the fake llama-server in ARTEL_HOME/tools/llama and an empty GGUF file."""
+    import shutil
+    import sys
+
+    if sys.platform == "win32":
+        pytest.skip("the fake llama-server is a shebang script")
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    llama = tmp_path / "home" / "tools" / "llama"
+    llama.mkdir(parents=True)
+    shutil.copy(Path(__file__).parent / "fakes" / "llama-server", llama / "llama-server")
+    (llama / "llama-server").chmod(0o755)
+    (tmp_path / "home" / "tools" / "models").mkdir(parents=True)
+    embeddings.model_path("Q8_0").write_bytes(b"gguf")
+    embeddings.reset()
+    embeddings.LocalServer.stop()
+    yield deep_merge(DEFAULT_CONFIG, {"embeddings": {"backend": "auto"}})
+    embeddings.LocalServer.stop()
+    embeddings.reset()
+
+
+def test_local_server_survives_concurrent_starts_and_stops(local_server):
+    """Dashboard checks, background warming and an uninstall touch the one server from different threads; none of
+    them may crash another (AttributeError: 'NoneType' object has no attribute 'poll')."""
+    import threading
+
+    errors, urls = [], []
+
+    def start():
+        try:
+            urls.append(embeddings.LocalServer.url(local_server))
+        except embeddings.EmbedError:
+            pass  # stopped underneath: a clean, catchable failure is fine
+        except Exception as e:  # noqa: BLE001
+            errors.append(repr(e))
+
+    threads = [threading.Thread(target=start) for _ in range(4)] + [threading.Thread(target=embeddings.LocalServer.stop)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(60)
+    assert errors == []
+    assert embeddings.installed(local_server) and embeddings.backend(local_server) == "local"
+    assert rank("kanban board", DOCS, local_server)[0][2] == "hybrid"
+
+
+def test_a_server_that_dies_at_start_is_reported_and_search_falls_back(local_server, monkeypatch):
+    monkeypatch.setenv("FAKE_LLAMA_CRASH", "1")
+    r = rank("kanban board", DOCS, local_server)
+    assert r[0] == (2, pytest.approx(r[0][1]), "lexical")
+    err = embeddings.last_error(local_server)
+    assert "завершился" in err and "gemma-embedding2" in err  # the server's own last words reach the dashboard
+
+
+def test_any_embedding_failure_never_breaks_a_search(fake, monkeypatch):
+    _, cfg = fake
+
+    def boom(*a, **kw):
+        raise RuntimeError("unexpected")
+
+    monkeypatch.setattr(embeddings.Embedder, "embed", boom)
+    assert rank("kanban board", DOCS, cfg)[0][2] == "lexical"

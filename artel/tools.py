@@ -411,6 +411,10 @@ class Installer:
             try:
                 res = install(name, log=lambda m: st["log"].append(m))
                 st.update(phase="done", path=res.get("path"))
+                if name == "embeddings":  # an error cached before the install must not outlive it
+                    from .embeddings import reset
+
+                    reset()
             except Exception as e:  # noqa: BLE001 - shown in the dashboard
                 st.update(phase="error", error=str(e)[:500] or repr(e)[:500])
 

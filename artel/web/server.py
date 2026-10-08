@@ -555,6 +555,9 @@ def make_handler(runner: Runner, auth=None):
                 if parts == ["api", "providers", "embeddings"]:
                     from ..providers import save_embeddings
 
+                    from .. import embeddings
+
+                    embeddings.reset()
                     try:
                         return self._json(save_embeddings(runner.config, data))
                     except (ValueError, TypeError) as e:
@@ -567,9 +570,12 @@ def make_handler(runner: Runner, auth=None):
                     import time as _t
 
                     t0 = _t.time()
+                    from .. import embeddings
+
+                    embeddings.reset()  # a manual check always tries again
                     r = rank("как переключить провайдера при лимите", docs, runner.config)
                     return self._json({"how": r[0][2] if r else "lexical", "top": docs[r[0][0]] if r else "",
-                                       "seconds": round(_t.time() - t0, 2)})
+                                       "seconds": round(_t.time() - t0, 2), "error": embeddings.last_error(runner.config)})
                 if parts == ["api", "providers", "timezone"]:
                     from ..providers import save_timezone
 

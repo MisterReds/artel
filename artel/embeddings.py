@@ -117,12 +117,21 @@ class Cache:
             self.db.commit()
 
 
+def _log_tail(n: int = 400) -> str:
+    try:
+        text = (model_dir() / "llama-server.log").read_bytes()[-4000:].decode("utf-8", "replace")
+    except OSError:
+        return "журнала нет"
+    lines = [ln for ln in text.splitlines() if ln.strip()]
+    return " | ".join(lines[-4:])[-n:] or "журнал пуст"
+
+
 # --- the managed local server ----------------------------------------------------------------------------------------
 
 class LocalServer:
     """One llama-server per Artel process, started on first use and stopped at exit."""
 
-    _lock = threading.Lock()
+    _lock = threading.RLock()  # url() and stop() from any thread (dashboard requests, warming, uninstall, exit)
     _proc: Optional[subprocess.Popen] = None
     _url = ""
     _model = ""
@@ -143,16 +152,16 @@ class LocalServer:
             log = open(model_dir() / "llama-server.log", "ab")
             env = dict(os.environ)
             env["LD_LIBRARY_PATH"] = os.pathsep.join([str(Path(binary).parent), env.get("LD_LIBRARY_PATH", "")])
-            cls._proc = subprocess.Popen(
+            proc = subprocess.Popen(
                 [binary, "-m", str(model), "--embedding", "--pooling", "mean", "--host", "127.0.0.1",
                  "--port", str(port), "-c", "8192", "-ub", "8192", "-b", "8192", "--no-webui"],
                 stdout=log, stderr=subprocess.STDOUT, env=env)
+            cls._proc = proc
             cls._url, cls._model = f"http://127.0.0.1:{port}", str(model)
             deadline = time.time() + 90
             while time.time() < deadline:
-                if cls._proc.poll() is not None:
-                    raise EmbedError(f"llama-server завершился (код {cls._proc.returncode}); журнал: "
-                                     f"{model_dir() / 'llama-server.log'}")
+                if proc.poll() is not None:  # this process, whatever another thread did to cls._proc meanwhile
+                    raise EmbedError(f"llama-server завершился (код {proc.returncode}): {_log_tail()}")
                 try:
                     with urllib.request.urlopen(cls._url + "/health", timeout=2) as r:
                         if r.status == 200:
@@ -165,15 +174,16 @@ class LocalServer:
 
     @classmethod
     def stop(cls) -> None:
-        if cls._proc and cls._proc.poll() is None:
+        with cls._lock:
+            proc, cls._proc = cls._proc, None
+        if proc is not None and proc.poll() is None:
             from .tools import terminate_tree
 
-            terminate_tree(cls._proc)
+            terminate_tree(proc)
             try:
-                cls._proc.wait(10)
+                proc.wait(10)
             except subprocess.TimeoutExpired:
-                terminate_tree(cls._proc, force=True)
-        cls._proc = None
+                terminate_tree(proc, force=True)
 
     @classmethod
     def running(cls) -> bool:
@@ -209,7 +219,14 @@ class Embedder:
         self.cache = Cache(artel_home() / "embeddings.sqlite")
 
     def _url(self) -> str:
-        return LocalServer.url(self.config) if self.kind == "local" else self.cfg["url"].rstrip("/")
+        if self.kind != "local":
+            return self.cfg["url"].rstrip("/")
+        try:
+            return LocalServer.url(self.config)
+        except EmbedError:
+            raise
+        except Exception as e:  # noqa: BLE001 - a broken local server means "no embeddings", never a crash
+            raise EmbedError(f"локальный сервер эмбеддингов не запустился: {e!r}") from e
 
     def _call(self, texts: list[str]) -> list[list[float]]:
         body = {"input": texts}
@@ -318,6 +335,12 @@ def failed(config: dict, error: str) -> None:
     key = json.dumps(settings(config), sort_keys=True)
     _embedders.pop(key, None)
     _failures[key] = (error, time.time())
+
+
+def reset() -> None:
+    """Forget cached embedders and failures (after an install, a settings change or a manual check)."""
+    _embedders.clear()
+    _failures.clear()
 
 
 def last_error(config: dict) -> str:
