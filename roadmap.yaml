@@ -623,6 +623,24 @@ items:
       mounted, image configurable), ssh (a remote host with a synced worktree). Chosen per project; grants and the
       command policy apply in every backend.
     acceptance: [the same scripted task passes on local and docker backends, grants enforced inside the container]
+  - id: C-bot-screen
+    wave: 3
+    priority: core
+    mode: design
+    status: planned
+    title: Each bot has its own screen — a private virtual display in its workspace, never the owner's screen
+    source: {harness: Anthropic computer-use reference / OpenClaw, repo: anthropics/claude-quickstarts, paths: [computer-use-demo], license: MIT}
+    target: [artel/screen.py, artel/plugins/builtin_tools.py, artel/project.py, artel/web/index.html]
+    after: [C-exec-backends]
+    plan: >-
+      Part of a bot's workspace, like its folder and memory: when a bot needs to see or operate something visual,
+      Artel starts a virtual display for that bot only (Linux: Xvfb per bot; macOS and Windows: inside the bot's
+      container from C-exec-backends) with its own browser and apps. Tools: screenshot, click, type, key, scroll,
+      open URL/app — all bound to that display; screenshots go to a vision-capable model. Never attaches to the
+      owner's display: no DISPLAY / Wayland / desktop session is inherited, and starting a screen fails rather than
+      fall back to the real one. The dashboard shows each bot's screen live (read-only view, take-over on request)
+      and keeps the screenshots in the bot's folder; the screen stops when the bot is idle.
+    acceptance: [two bots in one project get different displays and cannot see each other's windows (test), the owner's DISPLAY is never used even when set (test), a bot finds a button by screenshot and clicks it on its own display (scripted), live view in the dashboard]
   - id: C-best-of-n
     wave: 3
     priority: core

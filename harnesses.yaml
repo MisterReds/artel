@@ -530,6 +530,11 @@ harnesses:
     what: Claude, Codex, локальные
     artel: done
     ref: P1-modularity
+  - name: Свой экран у агента
+    what: Canvas, экран и камера как узлы устройства агента
+    artel: gap
+    ref: C-bot-screen
+    note: в Artel — свой виртуальный экран у каждого бота, не экран владельца
 - repo: NousResearch/hermes-agent
   name: Hermes Agent
   class: personal-agent
