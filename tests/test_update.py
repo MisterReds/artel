@@ -97,3 +97,18 @@ def test_dashboard_update_endpoints(repos, tmp_path, monkeypatch):
     out = runner.update_apply()
     assert out["ok"] and runner.restart_pending and runner.update_state["phase"] == "restart_pending"
     assert g(inst, "rev-parse", "HEAD") == v2
+
+
+def test_without_pytest_the_update_is_smoke_checked_not_refused(repos, monkeypatch):
+    """Installations made by the installer had no pytest, so every update was refused. pytest is installed on
+    first use; when even that is impossible (offline), the new version must at least import and start its CLI."""
+    dev, inst, up = repos
+    monkeypatch.setattr(Updater, "_ensure_pytest", staticmethod(lambda: False))
+    cli = "def main(argv=None):\n    raise SystemExit(0)\n"
+    v2 = publish(dev, "v2", {"artel/__init__.py": "", "artel/cli.py": cli}) if (dev / "artel").mkdir() is None else None
+    up.status(fetch=True)
+    assert up.verify(v2)["mode"].startswith("smoke") and up.apply()["updated"]
+    publish(dev, "v3 breaks the import", {"artel/cli.py": "import no_such_module\n" + cli})
+    with pytest.raises(UpdateError, match="smoke"):
+        up.apply()
+    assert g(inst, "rev-parse", "HEAD") == v2

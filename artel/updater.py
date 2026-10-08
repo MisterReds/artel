@@ -23,6 +23,10 @@ from typing import Optional
 
 import yaml
 
+SMOKE = ("import importlib, pkgutil, artel, artel.cli\n"
+         "for m in pkgutil.walk_packages(artel.__path__, 'artel.'):\n"
+         "    if '.web.static' not in m.name: importlib.import_module(m.name)\n"
+         "try:\n    artel.cli.main(['--help'])\nexcept SystemExit as e:\n    assert not e.code, e.code\n")
 DEFAULTS = {"remote": "origin", "branch": "master", "verify": "invariants", "check_interval_min": 30}
 
 
@@ -126,6 +130,13 @@ class Updater:
                 else ["tests"]
             env = {**os.environ, "PYTHONPATH": str(wt), "PYTHONDONTWRITEBYTECODE": "1",
                    "ARTEL_HOME": str(tmp / "home")}
+            if not self._ensure_pytest():
+                # no test runner and none could be installed (offline): at least prove the new version imports and
+                # its CLI starts, instead of refusing every update
+                p = subprocess.run([sys.executable, "-c", SMOKE], cwd=wt, capture_output=True, text=True,
+                                   timeout=300, env=env, encoding="utf-8", errors="replace")
+                return {"ok": p.returncode == 0, "mode": "smoke (pytest unavailable)",
+                        "output": (p.stdout + p.stderr)[-2000:]}
             p = subprocess.run([sys.executable, "-m", "pytest", "-q", "-x", "-p", "no:cacheprovider", *target],
                                cwd=wt, capture_output=True, text=True, timeout=1800, env=env, encoding="utf-8", errors="replace")
             return {"ok": p.returncode == 0, "mode": mode, "output": (p.stdout + p.stderr)[-2000:]}
@@ -164,6 +175,19 @@ class Updater:
         self._git("reset", "--hard", "--quiet", last["from"])
         entry = self._record({"action": "rollback", "from": cur, "to": last["from"]})
         return {"rolled_back": True, **entry, "restart_required": True}
+
+    @staticmethod
+    def _ensure_pytest() -> bool:
+        """The checks need pytest; installations made by the installer do not have it. Install it into Artel's
+        own environment on first use (small, no other effect); False when that is impossible (e.g. offline)."""
+        import importlib.util
+
+        if importlib.util.find_spec("pytest") is not None:
+            return True
+        p = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "pytest>=8"], capture_output=True,
+                           text=True, timeout=600, encoding="utf-8", errors="replace")
+        importlib.invalidate_caches()
+        return p.returncode == 0 and importlib.util.find_spec("pytest") is not None
 
     def _reinstall_deps(self) -> dict:
         p = subprocess.run([sys.executable, "-m", "pip", "install", "--quiet", "-e", str(self.root)],

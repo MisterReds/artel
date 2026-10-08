@@ -67,7 +67,7 @@ else { New-Item -ItemType Directory -Force -Path (Split-Path $Dir) | Out-Null; g
 Step "Python environment → $Venv"
 if (-not (Test-Path "$Venv\Scripts\python.exe")) { Py -m venv $Venv; Check "python -m venv" }
 & "$Venv\Scripts\python.exe" -m pip install --quiet --upgrade pip; Check "pip upgrade"
-& "$Venv\Scripts\python.exe" -m pip install --quiet -e $Dir; Check "pip install"
+& "$Venv\Scripts\python.exe" -m pip install --quiet -e "${Dir}[dev]"; Check "pip install"  # [dev] = pytest for the updater's checks
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
 if ($userPath -notlike "*$Venv\Scripts*") {
   [Environment]::SetEnvironmentVariable("Path", "$userPath;$Venv\Scripts", "User"); Refresh-Path

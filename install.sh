@@ -122,7 +122,7 @@ fi
 step "Python environment → $VENV"
 [ -x "$VENV/bin/python" ] || "$PY" -m venv "$VENV"
 "$VENV/bin/python" -m pip install --quiet --upgrade pip
-"$VENV/bin/python" -m pip install --quiet -e "$DIR"
+"$VENV/bin/python" -m pip install --quiet -e "$DIR[dev]"  # [dev] = pytest: the updater checks a new version before installing it
 mkdir -p "$BIN"
 ln -sf "$VENV/bin/artel" "$BIN/artel"
 case ":$PATH:" in *":$BIN:"*) ;; *)
