@@ -74,9 +74,13 @@ def test_codex_without_terminal_tool_is_resumed_and_readonly_roles_get_readonly_
     assert any(e["kind"] == "agent/continuation" and e.get("runtime") == "codex" for e in project.log.read())
     from artel.runtimes.codex import build_args, codex_settings
 
-    a = build_args(codex_settings(cfg), workspace=tmp, shared=tmp, role="reviewer", bridge_url="u", bridge_token="t",
-                   effort="high", thread_id=None, last_message=tmp / "m")
-    assert a[a.index("-s") + 1] == "read-only" and 'model_reasoning_effort="high"' in a
+    scratch = tmp / "scratch"
+    a = build_args(codex_settings(cfg), workspace=scratch, shared=tmp, role="reviewer", bridge_url="u",
+                   bridge_token="t", effort="high", thread_id=None, last_message=tmp / "m")
+    # judges: workspace-write rooted at a scratch dir, deliverables never a writable root, network on
+    assert a[a.index("-s") + 1] == "workspace-write" and a[a.index("-C") + 1] == str(scratch)
+    assert "--add-dir" not in a and "sandbox_workspace_write.network_access=true" in a
+    assert 'model_reasoning_effort="high"' in a
 
 
 def test_codex_usage_limit_is_a_provider_failure(env, monkeypatch):
@@ -169,7 +173,7 @@ def test_bots_never_get_the_owners_apps_or_screen_and_have_network(env, tmp_path
     assert "--dangerously-bypass-approvals-and-sandbox" in none
     ro = codex.build_args(cc, workspace=tmp_path, shared=tmp_path, role="reviewer", bridge_url="u", bridge_token="t",
                           effort=None, thread_id=None, last_message=tmp_path / "m", mode="none")
-    assert ro[ro.index("-s") + 1] == "read-only"  # judges stay read-only even without the sandbox
+    assert "--dangerously-bypass-approvals-and-sandbox" in ro  # judges are then guarded by a snapshot instead
 
 
 def test_a_sandbox_that_fails_mid_run_is_dropped_and_the_bot_continues(env, monkeypatch):
@@ -185,3 +189,23 @@ def test_a_sandbox_that_fails_mid_run_is_dropped_and_the_bot_continues(env, monk
     calls = [json.loads(ln) for ln in (tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
     assert "--dangerously-bypass-approvals-and-sandbox" in calls[-1] and "resume" in calls[-1]
     _reset_sandbox()
+
+
+def test_a_judge_cannot_change_the_deliverables_even_without_a_sandbox(env, monkeypatch):
+    """A reviewer runs from a scratch directory; if the sandbox is unusable and it writes into the deliverables
+    anyway, Artel restores them after the run and records the violation."""
+    from artel.runtimes import codex
+
+    cfg, project, tmp = env
+    (project.shared / "spec.md").write_text("original\n", encoding="utf-8")
+    codex._sandbox_mode.clear()
+    monkeypatch.setenv("FAKE_CODEX_SANDBOX", "broken")
+    monkeypatch.setenv("FAKE_CODEX_WRITE", str(project.shared / "spec.md"))
+    monkeypatch.setenv("FAKE_CODEX_LAZY", "1")  # one short run, no terminal tool needed
+    out, _ = _run(deep_merge(cfg, {"codex": {"max_resumes": 0}}), project, role="reviewer")
+    assert (project.shared / "spec.md").read_text(encoding="utf-8") == "original\n"
+    ev = [e for e in project.log.read() if e["kind"] == "codex/readonly_violation"]
+    assert ev and ev[0]["files"] == ["spec.md"]
+    calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert calls[-1][calls[-1].index("-C") + 1].endswith("reviewer-scratch")
+    codex._sandbox_mode.clear()

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 import os
 import subprocess
 import tempfile
@@ -151,9 +152,15 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
                grants: Optional[dict] = None, mode: str = "sandbox") -> list:
     pkg_root = str(Path(__file__).resolve().parents[2])
     no_write = role in READONLY_ROLES or (grants is not None and not grants["write"])
-    sandbox = "read-only" if no_write else cc["sandbox"]
-    if mode == "none" and sandbox != "read-only":
-        sandbox = "danger-full-access"
+    sandbox = cc["sandbox"]
+    if no_write and sandbox != "danger-full-access":
+        # Judges must not change what they judge. Codex's own read-only mode always cuts the network, which on some
+        # machines breaks its sandbox entirely (bwrap cannot set up a loopback). Instead they get workspace-write
+        # rooted at a private scratch directory (the caller passes it as `workspace`): the deliverables are outside
+        # every writable root, so they stay read-only, and commands (tests, builds) can run.
+        sandbox = "workspace-write"
+    if mode == "none":
+        sandbox = "danger-full-access"  # read-only roles are then guarded by a snapshot of the deliverables
     from ..tools import resolve
 
     args = [resolve(cc["binary"]) or cc["binary"], "exec", "--json", "--skip-git-repo-check", "--color", "never", "-C", str(workspace),
@@ -175,7 +182,7 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
         args += ["-s", sandbox]
         if sandbox == "workspace-write" and (mode == "sandbox+network" or cc.get("network", True)):
             args += ["-c", "sandbox_workspace_write.network_access=true"]
-        if sandbox == "workspace-write":
+        if sandbox == "workspace-write" and not no_write:
             # one --add-dir per write grant other than the workspace itself (never refs: those stay read-only)
             extra = [str(shared)] if grants is None else grants["write"]
             ws = {str(workspace), str(Path(workspace).resolve())}
@@ -216,6 +223,9 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
             f"coordination tools come from the MCP server `artel`: {', '.join(s.name for s in bridge.specs)}. The "
             f"ONLY way to finish is calling {' or '.join(terminal_names)} on that server. Your working directory "
             f"is your workspace; the team's shared deliverables directory is {ctx.shared_dir}.{ctx.shared_note}"
+            + (" Your role is read-only: read and run checks on the deliverables by their absolute path, never change "
+               "them; your working directory is a private scratch space for temporary files."
+               if role in READONLY_ROLES else "")
             + (f" Read-only reference sources: {', '.join(map(str, project.refs))}." if project.refs else ""))
     model_label = f"codex:{cc.get('model') or 'default'}"
     thread_id: Optional[str] = None
@@ -227,6 +237,19 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
     budget = kernel.get("budget")
     last_msg = project.root / ".cc" / f"codex-last-{uuid.uuid4().hex[:8]}.txt"
     last_msg.parent.mkdir(exist_ok=True)
+    grants = ctx.grants()
+    judge = role in READONLY_ROLES or not grants["write"]
+    run_dir = Path(ctx.workspace)
+    guard = guard_tree = None
+    if judge:
+        # a private scratch directory as cwd: the deliverables are outside every writable root of the sandbox
+        run_dir = project.root / ".cc" / f"{role}-scratch"
+        run_dir.mkdir(parents=True, exist_ok=True)
+        # and a snapshot of the deliverables: whatever happens to the sandbox, a judge's edits are undone
+        from ..snapshot import Snapshot
+
+        guard = Snapshot(project.root / ".cc" / f"guard-{uuid.uuid4().hex[:8]}.git", ctx.shared_dir)
+        guard_tree = guard.track()
     try:
         for attempt in range(1 + int(cc["max_resumes"])):
             if stop_event is not None and stop_event.is_set():
@@ -242,10 +265,10 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                 project.log.append("codex/sandbox", actor=actor, task_id=task_id, mode=mode, reason=sandbox_note(cc),
                                    note="Codex's sandbox cannot start commands on this machine; running without it — "
                                         "Artel's file grants and command policy still apply")
-            args = build_args(cc, workspace=Path(ctx.workspace), shared=ctx.shared_dir, role=role,
+            args = build_args(cc, workspace=run_dir, shared=ctx.shared_dir, role=role,
                               bridge_url=bridge.url, bridge_token=bridge.token, effort=ctx.state.get("effort"),
-                              thread_id=thread_id, last_message=last_msg, grants=ctx.grants(), mode=mode)
-            proc = subprocess.Popen(args, cwd=ctx.workspace, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
+                              thread_id=thread_id, last_message=last_msg, grants=grants, mode=mode)
+            proc = subprocess.Popen(args, cwd=run_dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, text=True, env=codex_env(cc), bufsize=1,
                                     encoding="utf-8", errors="replace")
             proc.stdin.write(prompt)
@@ -353,6 +376,13 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
     finally:
         bridge.close()
         last_msg.unlink(missing_ok=True)
+        if guard is not None:
+            changed = guard.diff_files(guard_tree) if guard_tree else None
+            if changed:
+                guard.restore(guard_tree)
+                project.log.append("codex/readonly_violation", actor=actor, task_id=task_id, role=role,
+                                   files=changed[:50], note="a read-only role changed the deliverables; restored")
+            shutil.rmtree(guard.git_dir, ignore_errors=True)
     out.tool_calls += bridge.calls
     project.log.append("agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
                        terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage,

@@ -60,6 +60,8 @@ if os.environ.get("FAKE_CODEX_SANDBOX") == "exec-broken" and "--dangerously-bypa
 emit({"type": "item.completed", "item": {"id": "i1", "type": "agent_message", "text": "Writing the file." if not resumed else "Finishing."}})
 emit({"type": "item.completed", "item": {"id": "i2", "type": "file_change", "status": "completed", "changes": [{"path": "hello.py", "kind": "add"}]}})
 Path("hello.py").write_text("print('hi')\n")
+if os.environ.get("FAKE_CODEX_WRITE"):  # a misbehaving agent writing outside its own directory
+    Path(os.environ["FAKE_CODEX_WRITE"]).write_text("changed by the agent\n")
 emit({"type": "item.completed", "item": {"id": "i3", "type": "command_execution", "command": "python hello.py", "aggregated_output": "hi\n", "exit_code": 0, "status": "completed"}})
 if os.environ.get("FAKE_CODEX_LAZY") and not resumed:  # first run ends without a terminal tool -> Artel resumes
     emit({"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 10, "output_tokens": 20}}); sys.exit(0)
