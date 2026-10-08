@@ -11,7 +11,7 @@
 | P1-modularity | Everything is a plugin — manifests, reversible effects, hot reload, swappable runtimes | DeepSeek Harness | готово |
 | P2-skills | Self-improving skill library — create/patch after hard tasks, read-before-write, ledger, lifecycle, guard | Hermes Agent | готово |
 | P3-goal-loop | Work until done — continuation, no-progress backoff, evidence, reviewer and auditor decide | Prime Agent | готово |
-| P4-souls | Bots with souls — SOUL/IDENTITY/RULES/MEMORY and a private workspace | OpenClaw | готово |
+| P4-souls | Workers with souls — SOUL/IDENTITY/RULES/MEMORY and a private workspace | OpenClaw | готово |
 | P5-transparency | Append-only event log; every model and tool call recorded; live dashboard | DeepSeek Harness | готово |
 | P6-kanban | Kanban DAG with compare-and-swap claims | Hermes Agent | готово |
 | P7-measured-evolution | Evolution through branches, tests, hidden-check benchmark, population screening and stacking | auto-harness / Gear / Ouroboros | готово |
@@ -30,7 +30,7 @@
 | D-provider-failover | Provider failover on limits, disabling runtimes, model lists from the CLIs, Claude and Codex sign-in from the dashboard, live agents panel | Artel (`MisterReds/artel`) | design | готово |
 | D-semantic-retrieval | Meaning-based search, local and private: EmbeddingGemma 2 via llama.cpp, hybrid with BM25, skills by relevance, `search` tool | Google EmbeddingGemma 2 (`google/embeddinggemma-2`) | design | готово |
 | D-multimodal-retrieval | Multimodal memory: images, audio and video in deliverables and across projects; fully local RAG with Gemma 4 | Google EmbeddingGemma 2 (`google/embeddinggemma-2`) | design | план |
-| D-doctor | Diagnostician: when something fails, a read-only bot on an available model (not the failing one) explains the cause and the steps; rules without a model; automatic note in tasks that stop for a person; 'Почему?' buttons and artel why | Artel (`MisterReds/artel`) | design | готово |
+| D-doctor | Diagnostician: when something fails, a read-only worker on an available model (not the failing one) explains the cause and the steps; rules without a model; automatic note in tasks that stop for a person; 'Почему?' buttons and artel why | Artel (`MisterReds/artel`) | design | готово |
 | D-failure-reports | Failure reports: every failure is a redacted text report with the diagnosis — to the owner's Telegram, to the developers as a GitHub issue (one per failure, repeats as comments) | Artel (`MisterReds/artel`) | design | готово |
 
 ## Волна 1 — 8/8 готово
@@ -91,11 +91,11 @@
 | C-user-profile | Owner profile (USER.md) — what the team knows about the person it works for, learned and editable | OpenClaw / Hermes Agent (`NousResearch/hermes-agent`) | evolve | план |
 | C-channels | More channels — Slack and Discord next to Telegram, one channel interface | OpenClaw / Hermes Agent (`openclaw/openclaw`) | evolve | план |
 | C-exec-backends | Execution backends — Docker container and SSH host per task next to the local sandbox | OpenHands / Hermes Agent / DeerFlow (`OpenHands/OpenHands`) | design | план |
-| C-bot-screen | Each bot has its own screen — a private virtual display in its workspace, never the owner's screen | Anthropic computer-use reference / OpenClaw (`anthropics/claude-quickstarts`) | design | план |
+| C-worker-screen | Each worker has its own screen — a private virtual display in its workspace, never the owner's screen | Anthropic computer-use reference / OpenClaw (`anthropics/claude-quickstarts`) | design | план |
 | C-best-of-n | Best of N for hard tasks — several workers (or runtimes) on one task in separate worktrees, the reviewer picks | Orca / Qwen Code Agent Arena (`stablyai/orca`) | design | план |
 | C-evolution-archive | Evolution keeps an archive of variants, not only a champion — parents sampled for diversity | Darwin Gödel Machine / OpenEvolve (`jennyzzt/dgm`) | design | план |
 | C-acp-server | Artel as an ACP agent — drive the whole team from Zed, JetBrains or any ACP client | Gemini CLI / Claude Code / goose (IDE integration) (`agentclientprotocol/agent-client-protocol`) | design | план |
-| C-rea-pack | Reverse-engineering pack (REA) — bots can investigate binaries, JS/Electron bundles, .NET, APKs and websites | REA (Reverse Engineer Anything) (`morluto/rea`) | evolve | план |
+| C-rea-pack | Reverse-engineering pack (REA) — workers can investigate binaries, JS/Electron bundles, .NET, APKs and websites | REA (Reverse Engineer Anything) (`morluto/rea`) | evolve | план |
 
 ## Волна 4 (найдено разбором проектов) — 0/14 готово
 

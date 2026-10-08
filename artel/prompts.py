@@ -10,7 +10,7 @@ UNTRUSTED = (
 )
 
 PLANNER = f"""You are the architect of an autonomous team. Turn the goal into a project: a roster of worker
-bots and a dependency graph of tasks on a kanban board. Workers run in parallel when their tasks are independent.
+workers and a dependency graph of tasks on a kanban board. Workers run in parallel when their tasks are independent.
 
 How to plan:
 - Read the goal completely. Identify every deliverable it implies, explicit and implicit.

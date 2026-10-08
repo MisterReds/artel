@@ -34,9 +34,9 @@ TERMINAL_GRACE_S = 0.5  # after a terminal tool: how long to wait for the turn's
 DEFAULTS = {"binary": "codex", "model": None, "sandbox": "workspace-write", "max_resumes": 3, "timeout_s": 2400,
             "home": None, "reasoning_effort": None, "extra_args": [],
             "network": True,          # agents install packages; files stay confined by the sandbox and grants
-            "sandbox_fallback": True,  # sandbox unusable on this machine: run without it instead of blocking every bot
-            # Codex features that reach outside the bot's workspace — the owner's connected apps, the owner's screen
-            # and browser — are off for Artel's bots (each bot gets its own screen: roadmap C-bot-screen)
+            "sandbox_fallback": True,  # sandbox unusable on this machine: run without it instead of blocking every worker
+            # Codex features that reach outside the worker's workspace — the owner's connected apps, the owner's screen
+            # and browser — are off for Artel's workers (each worker gets its own screen: roadmap C-worker-screen)
             "disable_features": ["apps", "computer_use", "browser_use", "browser_use_external"]}
 # Signs that Codex's own sandbox could not even start a command (not that the command failed)
 SANDBOX_BROKEN = re.compile(r"bwrap: |landlock|Failed RTM_NEWADDR|setting up uid map|unshare.*Operation not permitted|"
@@ -405,7 +405,7 @@ def _item(project, ctx, out, detector, item: dict, actor: str, task_id, model: s
         cmd = item.get("command", "")
         output = item.get("aggregated_output", "") or ""
         if item.get("exit_code") not in (0, None) and SANDBOX_BROKEN.search(output):
-            # the command never ran: Codex's sandbox itself failed. Stop now, before the bot gives up on its tools.
+            # the command never ran: Codex's sandbox itself failed. Stop now, before the worker gives up on its tools.
             ctx.state["codex_sandbox_broken"] = output[-300:]
         out.turns += 1
         out.tool_calls += 1

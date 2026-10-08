@@ -1,4 +1,4 @@
-"""The diagnostician: when something does not work, a bot on whatever model is available explains why and what to do.
+"""The diagnostician: when something does not work, a worker on whatever model is available explains why and what to do.
 
 `diagnose()` collects the facts a person would otherwise dig out by hand — the error, the project's recent
 failures and the task's history, provider and sandbox state, the embeddings server log, proxy settings — matches

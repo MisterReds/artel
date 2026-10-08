@@ -25,7 +25,7 @@
 | Continual Harness: правки промптов/правил со снапшотами и откатом | Prime Agent `/refine` | `refine.py` | ✅ |
 | Микроядро: сервисы, хуки, waterfall, плагины из конфига | DeepSeek Harness (Cordis) | `kernel.py`, `plugins/` | ✅ манифесты, обратимые эффекты, выгрузка и горячая перезагрузка, рантаймы — плагины; инварианты в `tests/test_invariants.py` |
 | Append-only журнал, «всё, что видит модель, записано» | DeepSeek Harness | `events.jsonl` | ✅ |
-| Бот с душой: SOUL / IDENTITY / RULES / MEMORY + свой workspace | OpenClaw | `project.py` | ✅ |
+| Воркер с душой: SOUL / IDENTITY / RULES / MEMORY + свой workspace | OpenClaw | `project.py` | ✅ |
 | Аудит цели, недостающее → новые задачи | Hermes (root wake-up), LongHorizon-Harness | аудитор | ✅ |
 | Портфель проектов, «требует внимания» | Gas Town, Munder Difflin, Agent Deck, Maestro | дашборд | ✅ |
 | Аналитика агентов по моделям/ролям, $ на задачу, бюджетные алерты | agent-teams-ai, Agent Deck | `analytics.py` | ✅ |

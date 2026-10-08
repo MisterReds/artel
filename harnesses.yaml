@@ -533,8 +533,8 @@ harnesses:
   - name: Свой экран у агента
     what: Canvas, экран и камера как узлы устройства агента
     artel: gap
-    ref: C-bot-screen
-    note: в Artel — свой виртуальный экран у каждого бота, не экран владельца
+    ref: C-worker-screen
+    note: в Artel — свой виртуальный экран у каждого воркера, не экран владельца
 - repo: NousResearch/hermes-agent
   name: Hermes Agent
   class: personal-agent
@@ -1174,7 +1174,7 @@ harnesses:
   - name: Демо-сессии на приватном виртуальном экране
     what: Xvfb, рабочий стол владельца не трогается
     artel: planned
-    ref: C-bot-screen
+    ref: C-worker-screen
   - name: rea doctor — проверка готовности
     what: хост, зависимости, регистрации агентов, JSON
     artel: done
