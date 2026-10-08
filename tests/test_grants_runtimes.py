@@ -47,7 +47,8 @@ def test_codex_no_write_grants_is_read_only(env, tmp_path):
     project, ws, *_ = env
     g = {"read": [str(project.root)], "write": []}
     a, dirs = codex(project, ws, tmp_path, grants=g)
-    assert a[a.index("-s") + 1] == "read-only" and dirs == []
+    # no write grant: the sandbox's only writable root is the scratch cwd; no deliverable is ever an --add-dir
+    assert a[a.index("-s") + 1] == "workspace-write" and dirs == []
 
 
 def test_claude_dirs_include_refs_and_extras(env):

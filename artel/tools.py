@@ -43,6 +43,14 @@ CODEX_RELEASE = "https://github.com/openai/codex/releases/latest/download"
 CLAUDE_RELEASES = "https://downloads.claude.ai/claude-code-releases"
 
 
+def is_local_url(url: str) -> bool:
+    """127.0.0.1 / localhost / ::1: reached directly, never through a system HTTP proxy."""
+    from urllib.parse import urlsplit
+
+    host = urlsplit(url or "").hostname or ""
+    return host in ("127.0.0.1", "localhost", "::1", "0.0.0.0") or host.endswith(".localhost")
+
+
 def tools_dir() -> Path:
     from .project import artel_home
 

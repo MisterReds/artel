@@ -10,13 +10,16 @@ import sys
 import urllib.request
 
 PROTOCOL = "2025-06-18"
+# The bridge is always on 127.0.0.1: never route it through a system http_proxy (offices, schools), or every Artel
+# tool call of a CLI agent fails — including submitting its work.
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
 
 def _http(url: str, token: str, path: str, body: dict | None = None) -> dict:
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(url + path, data=data, method="POST" if data else "GET",
                                  headers={"Content-Type": "application/json", "X-Artel-Token": token})
-    with urllib.request.urlopen(req, timeout=3600) as r:
+    with _DIRECT.open(req, timeout=3600) as r:
         return json.loads(r.read())
 
 

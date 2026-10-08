@@ -45,7 +45,10 @@ class HttpSystemOne:
         self.url = cfg.get("url", "")
         self.key = os.environ.get(cfg.get("api_key_env") or "", "")
         self.model = cfg.get("model")
-        self.client = httpx.Client(timeout=float(cfg.get("timeout_s", 10)))
+        from .tools import is_local_url
+
+        # a local System One must not go through a system http_proxy
+        self.client = httpx.Client(timeout=float(cfg.get("timeout_s", 10)), trust_env=not is_local_url(self.url))
         self.name = f"http:{self.url}"
 
     def ask(self, state: dict, questions: dict) -> dict:

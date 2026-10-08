@@ -108,7 +108,11 @@ class OpenAICompatProvider:
         oc = config.get("openai_compat", {})
         self.base_url = oc.get("base_url", "https://api.deepseek.com/v1").rstrip("/")
         key = os.environ.get(oc.get("api_key_env", "OPENAI_API_KEY"), "")
-        self.client = httpx.Client(timeout=600, headers={"Authorization": f"Bearer {key}"} if key else {})
+        from ..tools import is_local_url
+
+        # a local model server (Ollama, vLLM, llama-server) must not go through a system http_proxy
+        self.client = httpx.Client(timeout=600, headers={"Authorization": f"Bearer {key}"} if key else {},
+                                   trust_env=not is_local_url(self.base_url))
 
     @staticmethod
     def _to_openai(system: str, messages: list) -> list:

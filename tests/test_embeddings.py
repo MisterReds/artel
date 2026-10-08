@@ -217,3 +217,12 @@ def test_any_embedding_failure_never_breaks_a_search(fake, monkeypatch):
 
     monkeypatch.setattr(embeddings.Embedder, "embed", boom)
     assert rank("kanban board", DOCS, cfg)[0][2] == "lexical"
+
+
+def test_a_system_http_proxy_never_hides_the_local_server(local_server, monkeypatch):
+    """Offices and schools set http_proxy; requests to 127.0.0.1 must still reach the local llama-server."""
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")  # a proxy that does not exist
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    assert rank("kanban board", DOCS, local_server)[0][2] == "hybrid"

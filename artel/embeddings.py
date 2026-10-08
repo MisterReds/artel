@@ -30,6 +30,7 @@ import subprocess
 import threading
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 from typing import Optional
@@ -117,6 +118,19 @@ class Cache:
             self.db.commit()
 
 
+_DIRECT = urllib.request.build_opener(urllib.request.ProxyHandler({}))  # never through http_proxy
+
+
+def _open(url_or_req, timeout: float):
+    """Local servers are reached directly: a system HTTP proxy (http_proxy, common in offices and schools) would
+    swallow requests to 127.0.0.1 and make a running server look dead."""
+    url = url_or_req.full_url if isinstance(url_or_req, urllib.request.Request) else url_or_req
+    host = urllib.parse.urlsplit(url).hostname or ""
+    if host in ("127.0.0.1", "localhost", "::1") or host.endswith(".localhost"):
+        return _DIRECT.open(url_or_req, timeout=timeout)
+    return urllib.request.urlopen(url_or_req, timeout=timeout)
+
+
 def _log_tail(n: int = 400) -> str:
     try:
         text = (model_dir() / "llama-server.log").read_bytes()[-4000:].decode("utf-8", "replace")
@@ -163,14 +177,14 @@ class LocalServer:
                 if proc.poll() is not None:  # this process, whatever another thread did to cls._proc meanwhile
                     raise EmbedError(f"llama-server завершился (код {proc.returncode}): {_log_tail()}")
                 try:
-                    with urllib.request.urlopen(cls._url + "/health", timeout=2) as r:
+                    with _open(cls._url + "/health", timeout=2) as r:
                         if r.status == 200:
                             return cls._url
                 except (urllib.error.URLError, OSError):
                     pass
                 time.sleep(0.3)
             cls.stop()
-            raise EmbedError("llama-server не ответил за 90 с")
+            raise EmbedError(f"llama-server не ответил за 90 с: {_log_tail()}")
 
     @classmethod
     def stop(cls) -> None:
@@ -240,7 +254,7 @@ class Embedder:
         url = base if base.endswith("/embeddings") else base + ("/embeddings" if base.endswith("/v1") else "/v1/embeddings")
         req = urllib.request.Request(url, json.dumps(body).encode("utf-8"), headers)
         try:
-            with urllib.request.urlopen(req, timeout=float(self.cfg["timeout_s"])) as r:
+            with _open(req, timeout=float(self.cfg["timeout_s"])) as r:
                 data = json.loads(r.read())
         except (urllib.error.URLError, OSError, ValueError) as e:
             raise EmbedError(f"сервер эмбеддингов не ответил: {e}") from e

@@ -209,3 +209,18 @@ def test_a_judge_cannot_change_the_deliverables_even_without_a_sandbox(env, monk
     calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
     assert calls[-1][calls[-1].index("-C") + 1].endswith("reviewer-scratch")
     codex._sandbox_mode.clear()
+
+
+def test_artel_tools_reach_the_bridge_even_with_a_system_http_proxy(env, monkeypatch):
+    """With http_proxy set (offices, schools) the MCP proxy must still reach Artel's bridge on 127.0.0.1,
+    otherwise a CLI bot cannot even submit its work."""
+    cfg, project, _ = env
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:9")
+    monkeypatch.delenv("no_proxy", raising=False)
+    monkeypatch.delenv("NO_PROXY", raising=False)
+    from artel.runtimes import mcp_proxy
+
+    assert mcp_proxy._DIRECT.handlers and all(not getattr(h, "proxies", None) for h in mcp_proxy._DIRECT.handlers)
+    out, _ = _run(cfg, project)
+    assert out.status == "terminal" and out.name == "task_submit", out.error
