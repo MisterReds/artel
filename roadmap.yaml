@@ -81,6 +81,7 @@ items:
       With a local Gemma 4 served through the openai_compat provider, the whole loop — model and retrieval — can run
       on the machine. Verify llama-server's multimodal embedding endpoint before building on it.
     acceptance: [an image in shared/ is found by a text description, media encoders are loaded only when needed]
+  - {id: D-doctor, wave: 0, mode: design, status: done, title: "Diagnostician: when something fails, a read-only bot on an available model (not the failing one) explains the cause and the steps; rules without a model; automatic note in tasks that stop for a person; 'Почему?' buttons and artel why", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/doctor.py, artel/manager.py, artel/web/index.html]}
   # ---- wave 1: loop reliability (cheap, directly moves pass rate and cost) ----
   - id: W1-loop-detector
     wave: 1

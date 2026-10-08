@@ -192,6 +192,15 @@ class ScriptedProvider:
             "name": "marker", "description": "a marker feature", "source_files": ["README.md"],
             "value": "demonstrates absorb", "fit": 0.9, "target": "artel/", "port_plan": "write ABSORBED.md"}])]
 
+    def _diagnose(self, messages, system):
+        text = _first_text(messages)
+        if _tool_rounds(messages) == 0 and "llama-server.log" in text:
+            return [_use("list_files", path=".")]  # look before answering, like a model would
+        m = re.search(r"Подсказки по известным причинам:\n- (.+?) \(исправляет: (\w+)\)", text)
+        cause, who = (m.group(1), m.group(2)) if m else ("Причина не найдена в фактах.", "unknown")
+        return [_text("Diagnosing."), _use("diagnosis_report", cause=cause, who=who,
+                                           steps=["шаг из сценарного провайдера"], evidence="scripted", confidence=0.7)]
+
     def _replan(self, messages, system):
         return [_use("replan_decision", action="retry", rationale="transient failure",
                      guidance="Re-read the criteria and verify each with a command.")]

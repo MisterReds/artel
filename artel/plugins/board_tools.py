@@ -87,6 +87,16 @@ def audit_verdict(ctx: ToolContext, complete: bool, summary: str, missing: list 
     return _terminal(ctx, "audit_verdict", {"complete": bool(complete), "summary": summary, "missing": missing})
 
 
+def diagnosis_report(ctx: ToolContext, cause: str, who: str, steps: list, evidence: str = "",
+                     confidence: float = 0.5) -> str:
+    if who not in ("artel", "owner", "provider", "unknown"):
+        raise ToolError("who must be artel | owner | provider | unknown")
+    if not cause.strip() or not steps:
+        raise ToolError("a diagnosis needs the cause and at least one step")
+    return _terminal(ctx, "diagnosis_report", {"cause": cause.strip(), "who": who, "steps": [str(s) for s in steps],
+                                               "evidence": evidence.strip(), "confidence": float(confidence)})
+
+
 def replan_decision(ctx: ToolContext, action: str, rationale: str, guidance: str = "", assignee: str = "",
                     new_worker: dict = None, subtasks: list = None) -> str:
     if action not in ("retry", "reassign", "split", "cancel", "escalate"):
@@ -220,6 +230,14 @@ def setup(kernel) -> None:
         {**S, "properties": {"complete": {"type": "boolean"}, "summary": {"type": "string"},
                              "missing": {"type": "array", "items": TASK_ITEM}},
          "required": ["complete", "summary"]}, audit_verdict, roles=("auditor",), terminal=True))
+    kernel.register_tool(ToolSpec(
+        "diagnosis_report", "Deliver the diagnosis: the actual cause (Russian), who fixes it (artel / owner / "
+        "provider / unknown), concrete steps for the person, the evidence line, your confidence 0..1.",
+        {**S, "properties": {"cause": {"type": "string"}, "who": {"type": "string",
+                                                                   "enum": ["artel", "owner", "provider", "unknown"]},
+                             "steps": {"type": "array", "items": {"type": "string"}}, "evidence": {"type": "string"},
+                             "confidence": {"type": "number"}},
+         "required": ["cause", "who", "steps"]}, diagnosis_report, roles=("doctor",), terminal=True))
     kernel.register_tool(ToolSpec(
         "replan_decision", "Decide how to unstick a task: retry (with guidance), reassign (to an existing or new "
         "worker), split (into subtasks), cancel (not needed for the goal), escalate (human required).",

@@ -103,6 +103,34 @@ class Manager:
     def _bg(self, fn, *args) -> None:
         self.background.append(self.pool.submit(fn, *args))
 
+    def ask_doctor(self, task_id: Optional[str], problem: str) -> None:
+        """A task (or the project) stopped for a person: the diagnostician explains why, on an available model,
+        and writes the answer into the task — so the person sees a cause and steps, not only an error."""
+        if not (self.cfg.get("doctor") or {}).get("auto", True):
+            return
+        key = (task_id, (self.board.get(task_id) or {}).get("attempts") if task_id else None)
+        seen = self.__dict__.setdefault("_doctor_seen", set())
+        if key in seen:
+            return
+        seen.add(key)
+
+        def run():
+            from .doctor import diagnose, format_report
+            from .runtimes import runtime_for
+
+            rep = diagnose(self.cfg, problem, self.project, task_id, exclude_runtime=runtime_for(self.cfg, "worker"))
+            self.project.log.append("doctor/report", task_id=task_id, cause=rep.get("cause"), who=rep.get("who"),
+                                    steps=rep.get("steps"), by=rep.get("by"), report_id=rep.get("id"))
+            if task_id:
+                self.board.comment(task_id, "Диагност", format_report(rep))
+            else:
+                self.project.set_meta(diagnosis=rep)
+
+        if task_id:
+            self._bg(run)
+        else:
+            threading.Thread(target=run, daemon=True, name="doctor").start()
+
     def _roster(self) -> list[Persona]:
         return self.project.personas()
 
@@ -449,6 +477,8 @@ class Manager:
             self.board.comment(task_id, task["assignee"], f"BLOCKED: {p['reason']}\nEvidence:\n{p['evidence']}")
             self.board.update(task_id, status="blocked", needs_human=1 if p.get("needs_human") else 0,
                               actor=task["assignee"])
+            if p.get("needs_human"):
+                self.ask_doctor(task_id, f"Исполнитель {task['assignee']} заблокирован: {p['reason']}\n{p['evidence']}")
             self.failures_since_refine += 1
             self.run_failures += 1
         elif out.status in ("stopped", "budget"):
@@ -465,6 +495,7 @@ class Manager:
             self.board.update(task["id"], status="blocked", needs_human=1, actor="manager")
             self.board.comment(task["id"], "manager", f"Нужна настройка, повтор не поможет: {reason}")
             self.note("escalated", task_id=task["id"], rationale=f"setup: {reason}")
+            self.ask_doctor(task["id"], reason)
             return
         if kind == "limit":  # the provider's limit: switch executor if auto has another one, else wait for the reset
             from . import limits
@@ -594,6 +625,8 @@ class Manager:
             self.board.comment(task_id, "manager", f"Перепланирование {limit} раз не помогло — нужна помощь человека. "
                                                     f"Последняя причина: {window_text(task.get('result') or '', 300)}")
             self.note("escalated", task_id=task_id, rationale=f"{limit} replans without progress")
+            self.ask_doctor(task_id, f"Задача не сдвинулась после {limit} перепланирований: "
+                                     f"{window_text(task.get('result') or '', 600)}")
             return
         if out.name != "replan_decision":
             if out.status in ("stopped", "budget"):
@@ -631,6 +664,7 @@ class Manager:
         elif action == "escalate":
             self.board.update(task_id, status="blocked", needs_human=1)
             self.note("escalated", task_id=task_id, rationale=d["rationale"])
+            self.ask_doctor(task_id, f"Менеджер передал задачу человеку: {d['rationale']}")
 
     def is_easy_run(self) -> bool:
         """Gating rule for the goal audit: only a small run with no trouble at all is "easy".
@@ -778,6 +812,7 @@ class Manager:
                 status = "waiting_human" if kind in ("setup", "limit") else "error"
                 self.project.set_meta(status=status, blocked_reason=reason[:1000])
                 self.note("escalated", rationale=f"planning: {reason[:500]}")
+                self.ask_doctor(None, f"Проект не смог начаться (планирование): {reason}")
                 self.project.log.append("project/status", status=status)
                 self.kernel.emit("project_end", project=self.project, status=status, usage=self.project.meta["usage"])
                 return status

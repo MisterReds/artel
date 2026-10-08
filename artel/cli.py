@@ -569,6 +569,21 @@ def cmd_providers(args) -> int:
     return 0
 
 
+def cmd_why(args) -> int:
+    """Ask the diagnostician why something does not work."""
+    from .doctor import diagnose, format_report
+    from .project import Project
+
+    cfg = _cfg(args)
+    project = Project.open(args.project, cfg) if args.project else None
+    problem = args.problem or (project.meta.get("blocked_reason") if project else "") or ""
+    if not problem:
+        print("опишите проблему: artel why \"текст ошибки\" [--project slug] [--task id]")
+        return 2
+    print(format_report(diagnose(cfg, problem, project, args.task, use_model=not args.no_model)))
+    return 0
+
+
 def cmd_telegram(args) -> int:
     from .brand import banner
     from .telegram import TOKEN_ENV, Store, TelegramBot, token
@@ -861,6 +876,14 @@ def main(argv=None) -> int:
     pv.add_argument("--role", help="for `use`: set the runtime of one role only (empty runtime 'default' clears it)")
     pv.add_argument("--config")
     pv.set_defaults(fn=cmd_providers)
+
+    wy = sub.add_parser("why", help="the diagnostician: why does it not work and what to do (on an available model)")
+    wy.add_argument("problem", nargs="?", help="the error text (default: the project's stop reason)")
+    wy.add_argument("--project")
+    wy.add_argument("--task")
+    wy.add_argument("--no-model", action="store_true", help="only the built-in known-cause rules")
+    wy.add_argument("--config")
+    wy.set_defaults(fn=cmd_why)
 
     tg = sub.add_parser("telegram", help="Telegram bot: control Artel and get notifications on the phone")
     tg.add_argument("action", nargs="?", default="run", choices=["run", "pair"])

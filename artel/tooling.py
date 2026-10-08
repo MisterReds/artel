@@ -31,7 +31,7 @@ class ToolError(Exception):
 
 
 # roles that never get write grants (the runtimes import it from here)
-READONLY_ROLES = {"planner", "reviewer", "auditor", "manager", "evolver", "absorber"}
+READONLY_ROLES = {"planner", "reviewer", "auditor", "manager", "evolver", "absorber", "doctor"}
 
 
 def _paths(project: Any, values: Any) -> list:

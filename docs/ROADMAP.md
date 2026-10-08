@@ -16,7 +16,7 @@
 | P6-kanban | Kanban DAG with compare-and-swap claims | Hermes Agent | готово |
 | P7-measured-evolution | Evolution through branches, tests, hidden-check benchmark, population screening and stacking | auto-harness / Gear / Ouroboros | готово |
 
-## Волна 0 — 9/10 готово
+## Волна 0 — 10/11 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
@@ -30,6 +30,7 @@
 | D-provider-failover | Provider failover on limits, disabling runtimes, model lists from the CLIs, Claude and Codex sign-in from the dashboard, live agents panel | Artel (`MisterReds/artel`) | design | готово |
 | D-semantic-retrieval | Meaning-based search, local and private: EmbeddingGemma 2 via llama.cpp, hybrid with BM25, skills by relevance, `search` tool | Google EmbeddingGemma 2 (`google/embeddinggemma-2`) | design | готово |
 | D-multimodal-retrieval | Multimodal memory: images, audio and video in deliverables and across projects; fully local RAG with Gemma 4 | Google EmbeddingGemma 2 (`google/embeddinggemma-2`) | design | план |
+| D-doctor | Diagnostician: when something fails, a read-only bot on an available model (not the failing one) explains the cause and the steps; rules without a model; automatic note in tasks that stop for a person; 'Почему?' buttons and artel why | Artel (`MisterReds/artel`) | design | готово |
 
 ## Волна 1 — 8/8 готово
 
@@ -127,4 +128,4 @@
 | `Yeachan-Heo/oh-my-claudecode` | MIT | 7 | A-omc-clarify-gate, A-omc-review-tiers, A-omc-secret-redaction | Claude Code plugin: team pipeline plan/prd/exec/verify/fix, deep-interview ambiguity gate, verification tiers, notifications with a reply listener and token red |
 | `chaitanyagiri/munder-difflin` | MIT | 6 | A-munder-work-tokens | Electron desktop app wrapping many terminal agent CLIs as an office: git-backed hive mailbox with a single committer, markdown memory, runaway circuit breaker ( |
 
-Итого: 29/72 пунктов готово.
+Итого: 30/73 пунктов готово.

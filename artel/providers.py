@@ -28,7 +28,7 @@ from .runtimes.codex import codex_env, codex_settings
 from .tools import installed_by_artel, resolve, terminate_tree
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
-ROLES = ["manager", "planner", "worker", "tester", "reviewer", "auditor", "librarian", "refiner", "evolver", "absorber"]
+ROLES = ["manager", "planner", "worker", "tester", "reviewer", "auditor", "librarian", "refiner", "evolver", "absorber", "doctor"]
 RUNTIMES = ["auto", "native", "claude_code", "codex", "dsh", "acp"]
 KEY_VARS = {"ANTHROPIC_API_KEY": "Anthropic API", "OPENAI_API_KEY": "OpenAI API", "OPENROUTER_API_KEY": "OpenRouter",
             "DEEPSEEK_API_KEY": "DeepSeek"}

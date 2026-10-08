@@ -198,6 +198,16 @@ let timer=null, es=null, state={};
 try{const t=localStorage.getItem('artel-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
 $('#theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';try{localStorage.setItem('artel-theme',r.dataset.theme)}catch(e){}};
 const dlgEl=$('#dlg');dlgEl.addEventListener('click',e=>{if(e.target===dlgEl)dlgEl.close()});
+/* Диагност: «Почему?» — объяснение сбоя на доступной модели */
+async function why(problem,slug,task){dlg('<h3>Диагност</h3><p class="stat">Собираю факты и разбираю причину на доступной модели… обычно до минуты.</p>');
+  const j=await post('/api/doctor',{problem,slug:slug||'',task_id:task||''});if(!j||!j.id){$('#dlgbody').querySelector('p').textContent='Не удалось запустить диагноста.';return}
+  const WHO={artel:'Artel',owner:'владелец — на этой машине или в аккаунте',provider:'провайдер модели',unknown:'неизвестно'};
+  for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,2000));const s=await api('/api/doctor/'+j.id);if(s.phase!=='done')continue;const r=s.report;
+    dlg(`<h3>Диагност</h3><p><b>Причина:</b> ${esc(r.cause||'')}</p><p><b>Исправляет:</b> ${esc(WHO[r.who]||r.who||'')}</p>
+      ${(r.steps||[]).length?`<h2>Что сделать</h2><ol>${r.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}
+      ${r.evidence?`<h2>Доказательство</h2><pre>${esc(r.evidence)}</pre>`:''}
+      <p class="stat">${r.by==='rules'?'Ответ по встроенным правилам'+(r.model_error?' (модель недоступна: '+esc(r.model_error)+')':''):'Разобрано моделью: '+esc(r.by)}</p>`);return}
+  $('#dlgbody').querySelector('p').textContent='Диагност не успел ответить; повторите позже.'}
 function dlg(html){$('#dlgbody').innerHTML=html+'<div style="text-align:right;margin-top:12px"><button onclick="dlgEl.close()">Закрыть</button></div>';dlgEl.showModal()}
 $('#newbtn').onclick=()=>{dlg(`<h3>Новая цель → новый проект</h3><p class="stat">Архитектор соберёт команду, разложит цель на задачи и запустит работу. Проект появится в портфеле.</p>
   <textarea id="goal" rows="5" placeholder="Например: Сделай CLI-утилиту на Python, которая конвертирует CSV в JSON, с тестами и README"></textarea>
@@ -256,7 +266,7 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
   state.v=v;const m=v.meta,st=v.stats,u=m.usage;const tasks=v.board.tasks.filter(t=>t.kind!=='goal'),root=v.board.tasks.find(t=>t.kind==='goal');
   const by=s=>tasks.filter(t=>t.status===s);const si=STEPS.indexOf(st.stage);
   $('#pm').innerHTML=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><a href="#/portfolio">← Портфель</a></div>
-  ${m.blocked_reason?`<div class="alert"><b>Проект не может продолжить:</b> ${esc(m.blocked_reason)} <a href="#/providers">Провайдеры →</a> · после исправления нажмите «Продолжить».</div>`:''}
+  ${m.blocked_reason?`<div class="alert"><b>Проект не может продолжить:</b> ${esc(m.blocked_reason)} <a href="#/providers">Провайдеры →</a> · после исправления нажмите «Продолжить». <button id="why-proj">Почему?</button>${m.diagnosis?`<div class="stat" style="margin-top:6px"><b>Диагност:</b> ${esc(m.diagnosis.cause||'')}${(m.diagnosis.steps||[]).length?' — '+esc(m.diagnosis.steps[0]):''}</div>`:''}</div>`:''}
   <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px"><div style="font-size:20px;font-weight:600;flex:1;min-width:200px">${esc(m.name)}</div>
     <span class="badge ${st.stage}">${esc(STAGE[st.stage]||st.stage)}</span>
     ${v.live?'<button id="stop">Стоп</button>':m.status==='done'?'':'<button id="resume">Продолжить</button>'}<button class="feedbtn" id="openfeed">Лента</button></div>
@@ -275,6 +285,7 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
   <h2>Результаты (shared/)</h2><div id="filesbox" class="files"></div>`;
   document.querySelectorAll('.card,.alert[data-t]').forEach(c=>c.onclick=()=>showTask(c.dataset.t));
   document.querySelectorAll('.worker').forEach(c=>c.onclick=()=>showWorker(c.dataset.w));
+  const wp=$('#why-proj');if(wp)wp.onclick=()=>why(m.blocked_reason,state.slug,'');
   const sp=$('#stop');if(sp)sp.onclick=()=>post(`/api/projects/${state.slug}/stop`).then(()=>setTimeout(refresh,800));
   const rs=$('#resume');if(rs)rs.onclick=()=>post(`/api/projects/${state.slug}/resume`).then(()=>setTimeout(refresh,800));
   const of=$('#openfeed');if(of)of.onclick=()=>$('#feed').classList.add('show');
@@ -303,7 +314,9 @@ function showTask(id){const t=state.v.board.tasks.find(x=>x.id===id);if(!t)retur
   ${t.result?`<h2>Результат</h2><pre>${esc(t.result)}</pre>`:''}${t.evidence?`<h2>Доказательства</h2><pre>${esc(t.evidence)}</pre>`:''}
   <h2>Обсуждение</h2>${t.comments.map(c=>`<div class="ev"><span class="a">${esc(c.author)}</span>: ${esc(c.body)}</div>`).join('')||'<div class="stat">нет</div>'}
   <h2>Запуски</h2>${t.runs.map(r=>`<div class="ev">#${r.id} ${esc(r.worker)} — ${esc(r.status)} · ходов ${r.turns} · тулов ${r.tool_calls} · ${num(r.tokens_in+r.tokens_out)} ток. · ${esc((r.summary||'').slice(0,300))}</div>`).join('')||'<div class="stat">нет</div>'}
+  ${t.status==='blocked'||t.needs_human?'<p><button id="why-task">Почему не работает?</button> <span class="stat">диагност разберёт причину на доступной модели</span></p>':''}
   <h2>Сообщение исполнителю</h2><textarea id="cmt" rows="3" placeholder="Подсказка, решение или доступ. Снимает блок «нужен человек»."></textarea><div style="margin-top:6px"><button class="primary" id="send">Отправить</button></div>`);
+  const wt=$('#why-task');if(wt)wt.onclick=()=>why(`Задача «${t.title}» остановлена (${t.status}). ${(t.comments.slice(-1)[0]||{}).body||''}`,state.slug,id);
   $('#send').onclick=async()=>{const b=$('#cmt').value.trim();if(!b)return;await post(`/api/projects/${state.slug}/tasks/${id}/comment`,{body:b});dlgEl.close();refresh()}}
 function showWorker(name){const w=state.v.workers.find(x=>x.name===name);const f=w.files;let tab='SOUL.md';
   const render=()=>{$('#wtab').innerHTML=`<pre>${esc(f[tab]||'')}</pre>`;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.f===tab))};
@@ -408,7 +421,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       ${em.installed?`<span>режим</span><span><select id="em-backend">${[['auto','автоматически (локально, если установлена)'],['local','локально'],['http','свой сервер (OpenAI-совместимый)'],['off','выключено — поиск по словам']].map(([v,l])=>`<option value="${v}" ${v===em.backend?'selected':''}>${l}</option>`).join('')}</select></span>
       <span>размерность</span><span><select id="em-dim">${[768,512,256,128].map(d=>`<option ${d===em.dim?'selected':''}>${d}</option>`).join('')}</select></span>
       <span>сервер</span><span>${em.running?'<span style="color:var(--ok)">запущен</span>':'запускается при первом поиске'}</span>`:''}</div>
-      ${em.error?`<pre>${esc(em.error)}</pre>`:''}
+      ${em.error?`<pre>${esc(em.error)}</pre><p><button data-why="${esc('Эмбеддинги: '+em.error)}">Почему?</button></p>`:''}
       ${em.installed?'<p><button id="em-save">Сохранить</button> <button id="em-test">Проверить</button> <span class="stat" id="em-msg"></span></p>':''}
       ${inst('embeddings',{installed:em.installed,by_artel:em.installed},'EmbeddingGemma 2','Ставится сервер llama.cpp (~45 МБ) и модель EmbeddingGemma 2 Q8_0 (~310 МБ) в папку Artel; контрольная сумма модели сверяется с Hugging Face. Без модели поиск работает по словам.')}</div>
     <div class="pvc"><h3>${ri('librarian')}Ключи API</h3><div class="kv">${o.keys.map(k=>`<span>${esc(k.label)}</span><span>${k.set?'<span style="color:var(--ok)">задан</span>':'не задан'} · <code>${esc(k.env)}</code></span>`).join('')}</div>
@@ -442,6 +455,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    document.querySelectorAll('[data-use]').forEach(b=>b.onchange=async()=>{const d=[...document.querySelectorAll('[data-use]')].filter(x=>!x.checked).map(x=>x.dataset.use);
      await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({disabled_runtimes:d})});draw()});
    document.querySelectorAll('[data-unlim]').forEach(b=>b.onclick=async()=>{await api('/api/providers/unlimit/'+b.dataset.unlim,{method:'POST'});draw()});
+   document.querySelectorAll('[data-why]').forEach(b=>b.onclick=()=>why(b.dataset.why));
    on('em-save',async()=>{const j=await api('/api/providers/embeddings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backend:$('#em-backend').value,dim:+$('#em-dim').value})});$('#em-msg').textContent=j.error?'Не сохранено: '+j.error:'Сохранено.'});
    on('em-test',async()=>{$('#em-msg').textContent='Проверяю (первый запуск сервера — до минуты)…';const j=await api('/api/providers/embeddings/test',{method:'POST'});
      $('#em-msg').textContent=j.how==='hybrid'?`Работает: запрос по-русски нашёл английский текст о лимитах за ${j.seconds} с.`:'Модель не ответила — поиск идёт по словам. '+(j.error||'')});

@@ -304,7 +304,7 @@ def setup(kernel) -> None:
     kernel.register_tool(ToolSpec(
         "read_file", "Read a text file. Paths: workspace-relative, or shared/<path> for project deliverables.",
         {**S, "properties": {"path": {"type": "string"}, "offset": {"type": "integer"}, "limit": {"type": "integer"}},
-         "required": ["path"]}, read_file, roles=EXEC_ROLES + ("librarian", "refiner", "manager")))
+         "required": ["path"]}, read_file, roles=EXEC_ROLES + ("librarian", "refiner", "manager", "doctor")))
     kernel.register_tool(ToolSpec(
         "write_file", "Create or overwrite a file. Put deliverables under shared/ so teammates and reviewers see them.",
         {**S, "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]},
@@ -316,14 +316,14 @@ def setup(kernel) -> None:
     kernel.register_tool(ToolSpec(
         "list_files", "List files under a directory (workspace-relative or shared/).",
         {**S, "properties": {"path": {"type": "string"}, "depth": {"type": "integer"}}, "required": []},
-        list_files, roles=EXEC_ROLES + ("librarian", "refiner", "manager")))
+        list_files, roles=EXEC_ROLES + ("librarian", "refiner", "manager", "doctor")))
     kernel.register_tool(ToolSpec(
         "search", "Find code, docs or results by what they do or mean, not only by exact words (e.g. 'where are "
         "provider limits handled'); returns file:line ranges with snippets. For code, phrase the query in the code's language (usually English). kind: code | search | qa.",
         {**S, "properties": {"query": {"type": "string"}, "path": {"type": "string"},
                              "kind": {"type": "string", "enum": ["code", "search", "qa"]},
                              "top": {"type": "integer"}}, "required": ["query"]},
-        search, roles=EXEC_ROLES + ("librarian", "refiner", "manager", "auditor")))
+        search, roles=EXEC_ROLES + ("librarian", "refiner", "manager", "auditor", "doctor")))
 
     kernel.register_tool(ToolSpec(
         "memory_write", "Persist a durable note to your MEMORY.md (facts, decisions, lessons about this project). "

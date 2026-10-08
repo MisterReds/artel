@@ -45,6 +45,9 @@ class Runner:
 
         self.codex_login = CodexLogin(config)
         self.claude_login = ClaudeLogin(config)
+        from ..doctor import Jobs
+
+        self.doctor = Jobs()
         from ..tools import Installer
 
         self.installer = Installer()
@@ -405,6 +408,8 @@ def make_handler(runner: Runner, auth=None):
                     self._json(info(runner.config))
                 elif parts == ["api", "providers", "codex", "login"]:
                     self._json(runner.codex_login.state)
+                elif len(parts) == 3 and parts[:2] == ["api", "doctor"]:
+                    self._json(runner.doctor.get(parts[2]))
                 elif parts == ["api", "providers", "claude", "login"]:
                     self._json(runner.claude_login.state)
                 elif parts == ["api", "update"]:
@@ -517,6 +522,13 @@ def make_handler(runner: Runner, auth=None):
                     return self._json(uninstall(parts[3]) if parts[3] in TOOLS else {"ok": False})
                 if parts == ["api", "providers", "codex", "login"]:
                     return self._json(runner.codex_login.start())
+                if parts == ["api", "doctor"]:
+                    problem = (data.get("problem") or "").strip()
+                    if not problem:
+                        return self._json({"error": "problem required"}, 400)
+                    proj = self._project(data["slug"]) if data.get("slug") else None
+                    return self._json(runner.doctor.start(runner.config, problem, proj, data.get("task_id") or None,
+                                                          data.get("exclude_runtime") or None))
                 if parts == ["api", "providers", "claude", "login"]:
                     return self._json(runner.claude_login.start())
                 if parts == ["api", "providers", "claude", "code"]:
