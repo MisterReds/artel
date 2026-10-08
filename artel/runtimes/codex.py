@@ -12,8 +12,10 @@ terminal tool, the thread is resumed (``codex exec resume <thread>``) with the c
 from __future__ import annotations
 
 import json
+import re
 import os
 import subprocess
+import tempfile
 import sys
 import threading
 import uuid
@@ -29,7 +31,16 @@ from .claude_code import READONLY_ROLES, ToolBridge, child_env
 TERMINAL_GRACE_S = 0.5  # after a terminal tool: how long to wait for the turn's closing usage event
 
 DEFAULTS = {"binary": "codex", "model": None, "sandbox": "workspace-write", "max_resumes": 3, "timeout_s": 2400,
-            "home": None, "reasoning_effort": None, "extra_args": []}
+            "home": None, "reasoning_effort": None, "extra_args": [],
+            "network": True,          # agents install packages; files stay confined by the sandbox and grants
+            "sandbox_fallback": True,  # sandbox unusable on this machine: run without it instead of blocking every bot
+            # Codex features that reach outside the bot's workspace — the owner's connected apps, the owner's screen
+            # and browser — are off for Artel's bots (each bot gets its own screen: roadmap C-bot-screen)
+            "disable_features": ["apps", "computer_use", "browser_use", "browser_use_external"]}
+# Signs that Codex's own sandbox could not even start a command (not that the command failed)
+SANDBOX_BROKEN = re.compile(r"bwrap: |landlock|Failed RTM_NEWADDR|setting up uid map|unshare.*Operation not permitted|"
+                            r"Sandbox(?:ing)? (?:is )?not supported|seccomp", re.I)
+_sandbox_mode: dict = {}  # (binary, home) -> "sandbox" | "sandbox+network" | "none", decided once per process
 EFFORT = {"low": "low", "medium": "medium", "high": "high"}
 
 
@@ -91,12 +102,58 @@ def _toml(value) -> str:
     return json.dumps(value)  # JSON strings and arrays of strings are valid TOML
 
 
+def sandbox_mode(cc: dict, refresh: bool = False) -> str:
+    """How Codex's own sandbox can run on this machine, probed once with `codex sandbox -- true`:
+    "sandbox" (as configured), "sandbox+network" (works only with network on — e.g. bubblewrap may not set up a
+    loopback in a new network namespace), or "none" (unusable; Artel's grants and command policy still apply)."""
+    from ..tools import resolve
+
+    key = (cc.get("binary"), cc.get("home"))
+    if key in _sandbox_mode and not refresh:
+        return _sandbox_mode[key]
+    binary = resolve(cc.get("binary", "codex"))
+    if not binary or cc.get("sandbox") != "workspace-write":
+        _sandbox_mode[key] = "sandbox"
+        return "sandbox"
+
+    def works(network: bool) -> tuple[bool, str]:
+        cfg = ["-c", 'sandbox_mode="workspace-write"']
+        if network:
+            cfg += ["-c", "sandbox_workspace_write.network_access=true"]
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                p = subprocess.run([binary, "sandbox", *cfg, "--", "sh", "-c", "echo ok > probe && cat probe"],
+                                   cwd=tmp, capture_output=True, text=True, timeout=60, env=codex_env(cc),
+                                   encoding="utf-8", errors="replace")
+        except (OSError, subprocess.SubprocessError) as e:
+            return False, str(e)
+        text = p.stdout + p.stderr
+        return p.returncode == 0 and "ok" in p.stdout and not SANDBOX_BROKEN.search(p.stderr), text[-300:]
+
+    ok, why = works(bool(cc.get("network", True)))
+    if ok:
+        mode = "sandbox+network" if cc.get("network", True) else "sandbox"
+    elif not cc.get("network", True) and works(True)[0]:
+        mode = "sandbox+network"
+    else:
+        mode = "none" if cc.get("sandbox_fallback", True) else "sandbox"
+    _sandbox_mode[key] = mode
+    _sandbox_mode[(key, "why")] = "" if ok else why
+    return mode
+
+
+def sandbox_note(cc: dict) -> str:
+    return _sandbox_mode.get(((cc.get("binary"), cc.get("home")), "why"), "")
+
+
 def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url: str, bridge_token: str,
                effort: Optional[str], thread_id: Optional[str], last_message: Path,
-               grants: Optional[dict] = None) -> list:
+               grants: Optional[dict] = None, mode: str = "sandbox") -> list:
     pkg_root = str(Path(__file__).resolve().parents[2])
     no_write = role in READONLY_ROLES or (grants is not None and not grants["write"])
     sandbox = "read-only" if no_write else cc["sandbox"]
+    if mode == "none" and sandbox != "read-only":
+        sandbox = "danger-full-access"
     from ..tools import resolve
 
     args = [resolve(cc["binary"]) or cc["binary"], "exec", "--json", "--skip-git-repo-check", "--color", "never", "-C", str(workspace),
@@ -110,10 +167,14 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
             # otherwise the planner cannot even submit its plan.
             "-c", 'approval_policy="never"',
             "-c", 'mcp_servers.artel.default_tools_approval_mode="approve"']
+    for feature in cc.get("disable_features") or []:
+        args += ["-c", f"features.{feature}=false"]
     if sandbox == "danger-full-access":
         args += ["--dangerously-bypass-approvals-and-sandbox"]
     else:
         args += ["-s", sandbox]
+        if sandbox == "workspace-write" and (mode == "sandbox+network" or cc.get("network", True)):
+            args += ["-c", "sandbox_workspace_write.network_access=true"]
         if sandbox == "workspace-write":
             # one --add-dir per write grant other than the workspace itself (never refs: those stay read-only)
             extra = [str(shared)] if grants is None else grants["write"]
@@ -175,9 +236,15 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
             if reason:
                 out.status, out.error = "budget", reason
                 break
+            mode = sandbox_mode(cc)
+            if mode == "none" and not ctx.state.get("codex_sandbox_noted"):
+                ctx.state["codex_sandbox_noted"] = True
+                project.log.append("codex/sandbox", actor=actor, task_id=task_id, mode=mode, reason=sandbox_note(cc),
+                                   note="Codex's sandbox cannot start commands on this machine; running without it — "
+                                        "Artel's file grants and command policy still apply")
             args = build_args(cc, workspace=Path(ctx.workspace), shared=ctx.shared_dir, role=role,
                               bridge_url=bridge.url, bridge_token=bridge.token, effort=ctx.state.get("effort"),
-                              thread_id=thread_id, last_message=last_msg, grants=ctx.grants())
+                              thread_id=thread_id, last_message=last_msg, grants=ctx.grants(), mode=mode)
             proc = subprocess.Popen(args, cwd=ctx.workspace, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, text=True, env=codex_env(cc), bufsize=1,
                                     encoding="utf-8", errors="replace")
@@ -248,6 +315,23 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                     stopped_by_us = True
                 proc.wait()
             stderr = proc.stderr.read() if proc.stderr else ""
+            broken = ctx.state.pop("codex_sandbox_broken", None)
+            if broken and not ctx.terminal:
+                key = (cc.get("binary"), cc.get("home"))
+                if not cc.get("sandbox_fallback", True) or _sandbox_mode.get(key) == "none":
+                    out.status = "error"
+                    out.error = ("setup: Codex's sandbox cannot start commands on this machine (" + broken.strip()[-200:]
+                                 + "). Allow it (unprivileged user namespaces) or set codex.sandbox_fallback: true")
+                    project.log.append("llm/error", actor=actor, task_id=task_id, error=out.error, runtime="codex")
+                    break
+                _sandbox_mode[key] = "none"
+                _sandbox_mode[(key, "why")] = broken.strip()[-300:]
+                project.log.append("codex/sandbox", actor=actor, task_id=task_id, mode="none", reason=broken[-300:],
+                                   note="Codex's sandbox failed to start a command; continuing without it — Artel's "
+                                        "file grants and command policy still apply")
+                prompt = ("Your last command did not run: the sandbox on this machine failed to start it. That is "
+                          "fixed now — shell commands and file edits work. Repeat the step and continue the task.")
+                continue
             if ctx.terminal:
                 out.status, out.terminal = "terminal", ctx.terminal
                 break
@@ -290,6 +374,9 @@ def _item(project, ctx, out, detector, item: dict, actor: str, task_id, model: s
     elif kind == "command_execution":
         cmd = item.get("command", "")
         output = item.get("aggregated_output", "") or ""
+        if item.get("exit_code") not in (0, None) and SANDBOX_BROKEN.search(output):
+            # the command never ran: Codex's sandbox itself failed. Stop now, before the bot gives up on its tools.
+            ctx.state["codex_sandbox_broken"] = output[-300:]
         out.turns += 1
         out.tool_calls += 1
         project.log.append("tool/call", actor=actor, task_id=task_id, tool="shell", input={"command": cmd},
@@ -298,6 +385,8 @@ def _item(project, ctx, out, detector, item: dict, actor: str, task_id, model: s
                            is_error=item.get("exit_code") not in (0, None), output=output[:4000], runtime="codex")
         out.digest.append(f"TOOL shell({_short(cmd)}) -> {_short(output, 300)}")
         ctx.outputs.append(f"$ {cmd}\n{output[:3000]}")
+        if ctx.state.get("codex_sandbox_broken"):
+            return True
         verdict = detector.observe_tool("shell", {"command": cmd})
         if verdict:
             project.log.append("agent/loop", actor=actor, task_id=task_id, loop_kind="tool", stage=verdict,

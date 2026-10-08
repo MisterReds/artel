@@ -15,7 +15,8 @@ LIMIT = re.compile(r"session limit|usage limit|rate limit|hit your [a-z ]*limit|
                    r"\b429\b|\b529\b", re.I)
 SETUP = re.compile(r"не установлен|not installed|command not found|no such file or directory|not logged in|"
                    r"invalid api key|authentication_error|authentication failed|unauthorized|\b401\b|"
-                   r"api key .*not set|missing api key|no api key|MISSING_CREDENTIAL|INVALID_CREDENTIAL", re.I)
+                   r"api key .*not set|missing api key|no api key|MISSING_CREDENTIAL|INVALID_CREDENTIAL|"
+                   r"sandbox cannot start commands|bwrap: .*Operation not permitted", re.I)
 
 
 def retry_at(text: str) -> Optional[float]:

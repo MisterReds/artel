@@ -29,6 +29,14 @@ if args[:2] == ["login", "--device-auth"]:
             home.mkdir(parents=True, exist_ok=True); (home / "auth.json").write_text("{}"); print("Successfully logged in"); sys.exit(0)
         time.sleep(0.05)
     sys.exit(1)
+BWRAP = "bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted"
+if args[:1] == ["sandbox"]:  # FAKE_CODEX_SANDBOX: nonet = works only with network on, broken = never works
+    mode = os.environ.get("FAKE_CODEX_SANDBOX", "")
+    net = "sandbox_workspace_write.network_access=true" in args
+    if mode == "broken" or (mode == "nonet" and not net):
+        print(BWRAP, file=sys.stderr); sys.exit(1)
+    cmd = args[args.index("--") + 1:]
+    os.execvp(cmd[0], cmd)
 assert args[0] == "exec", args
 cfg = {}
 for i, a in enumerate(args):
@@ -45,6 +53,9 @@ if os.environ.get("FAKE_CODEX_LIMIT"):
     emit({"type": "turn.failed", "error": {"message": "You've hit your usage limit. Try again at 4:20 PM."}}); sys.exit(1)
 if os.environ.get("FAKE_CODEX_CMD"):  # a command about to run: Artel's policy must stop the process
     emit({"type": "item.started", "item": {"id": "c1", "type": "command_execution", "command": os.environ["FAKE_CODEX_CMD"], "status": "in_progress"}})
+    time.sleep(5); sys.exit(0)
+if os.environ.get("FAKE_CODEX_SANDBOX") == "exec-broken" and "--dangerously-bypass-approvals-and-sandbox" not in args:
+    emit({"type": "item.completed", "item": {"id": "s1", "type": "command_execution", "command": "ls -la", "aggregated_output": BWRAP, "exit_code": 1, "status": "failed"}})
     time.sleep(5); sys.exit(0)
 emit({"type": "item.completed", "item": {"id": "i1", "type": "agent_message", "text": "Writing the file." if not resumed else "Finishing."}})
 emit({"type": "item.completed", "item": {"id": "i2", "type": "file_change", "status": "completed", "changes": [{"path": "hello.py", "kind": "add"}]}})

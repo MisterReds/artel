@@ -377,7 +377,8 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    <div class="pv">
     <div class="pvc"><h3>${ri('worker')}Codex${st(cx.logged_in,'подключён',cx.installed?'не подключён':'не установлен')}</h3>
       <div class="kv"><span>вход</span><span>${cx.logged_in?esc(cx.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка ChatGPT (device code) или ключ API</span>${cx.installed?`<span>CLI</span><span>${esc(cx.version)}${cx.by_artel?' · в папке Artel':''}</span><span>модель</span><span>${esc(cx.model||'')}</span>`:''}</div>
-      <p class="stat">Работает автономно: Codex ничего не спрашивает (approval_policy=never — спрашивать некого), его команды ограничены песочницей <code>workspace-write</code> (только папка задачи) и политикой команд Artel; инструменты Artel (канбан, сообщения, отчёты) одобрены заранее.</p>
+      <p class="stat">Работает автономно: Codex ничего не спрашивает (approval_policy=never — спрашивать некого), его команды ограничены песочницей <code>workspace-write</code> (папка бота и результаты) и политикой команд Artel; инструменты Artel (канбан, сообщения, отчёты) одобрены заранее. Приложения аккаунта ChatGPT, управление экраном и браузер владельца для ботов отключены.</p>
+      ${cx.sandbox?`<p class="stat">Песочница: ${esc(cx.sandbox)}</p>`:''}
       ${use('codex')}
       ${login}
       ${cx.installed&&!cx.logged_in&&L.phase!=='waiting'?'<button class="primary" id="cx-login">Войти через device code</button>':''}

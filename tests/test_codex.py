@@ -133,3 +133,55 @@ def test_codex_policy_stops_disallowed_commands(env, monkeypatch):
     out, ctx = _run(cfg, project)
     calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
     assert ctx.terminal is None and calls[-1][-3:] == ["resume", "th-1", "-"]
+
+
+def _reset_sandbox():
+    from artel.runtimes import codex
+
+    codex._sandbox_mode.clear()
+
+
+def test_sandbox_probe_picks_the_mode_that_runs_commands(env, monkeypatch):
+    from artel.runtimes.codex import codex_settings, sandbox_mode
+
+    cfg, _, _ = env
+    cc = codex_settings(cfg)
+    for fake, network, want in (("", True, "sandbox+network"), ("nonet", False, "sandbox+network"),
+                                ("broken", True, "none")):
+        _reset_sandbox()
+        monkeypatch.setenv("FAKE_CODEX_SANDBOX", fake)
+        assert sandbox_mode({**cc, "network": network}) == want, fake
+    _reset_sandbox()
+    assert sandbox_mode({**cc, "sandbox_fallback": False}) == "sandbox"  # no fallback: keep it, fail loudly later
+
+
+def test_bots_never_get_the_owners_apps_or_screen_and_have_network(env, tmp_path):
+    from artel.runtimes import codex
+
+    cc = {**codex.DEFAULTS, "binary": fake_codex(tmp_path)}
+    args = codex.build_args(cc, workspace=tmp_path, shared=tmp_path, role="worker", bridge_url="u", bridge_token="t",
+                            effort=None, thread_id=None, last_message=tmp_path / "m", mode="sandbox+network")
+    for f in ("apps", "computer_use", "browser_use", "browser_use_external"):
+        assert f"features.{f}=false" in args
+    assert "sandbox_workspace_write.network_access=true" in args and args[args.index("-s") + 1] == "workspace-write"
+    none = codex.build_args(cc, workspace=tmp_path, shared=tmp_path, role="worker", bridge_url="u", bridge_token="t",
+                            effort=None, thread_id=None, last_message=tmp_path / "m", mode="none")
+    assert "--dangerously-bypass-approvals-and-sandbox" in none
+    ro = codex.build_args(cc, workspace=tmp_path, shared=tmp_path, role="reviewer", bridge_url="u", bridge_token="t",
+                          effort=None, thread_id=None, last_message=tmp_path / "m", mode="none")
+    assert ro[ro.index("-s") + 1] == "read-only"  # judges stay read-only even without the sandbox
+
+
+def test_a_sandbox_that_fails_mid_run_is_dropped_and_the_bot_continues(env, monkeypatch):
+    """The bot must not end up 'BLOCKED: commands are blocked by the sandbox' — Artel notices the failed command,
+    switches the sandbox off for this machine and resumes the same thread."""
+    cfg, project, tmp = env
+    _reset_sandbox()
+    monkeypatch.setenv("FAKE_CODEX_SANDBOX", "exec-broken")
+    out, ctx = _run(cfg, project)
+    assert out.status == "terminal" and out.name == "task_submit", out.error
+    kinds = [e["kind"] for e in project.log.read()]
+    assert "codex/sandbox" in kinds
+    calls = [json.loads(ln) for ln in (tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert "--dangerously-bypass-approvals-and-sandbox" in calls[-1] and "resume" in calls[-1]
+    _reset_sandbox()

@@ -203,7 +203,18 @@ def codex_status(config: dict) -> dict:
     ver = next((ln for ln in ver.splitlines() if ln.lower().startswith("codex")), ver.splitlines()[-1] if ver else "")
     return {"installed": True, "by_artel": installed_by_artel("codex"), "version": ver, "logged_in": logged,
             "method": method,
-            "detail": next((ln for ln in reversed(text.splitlines()) if "WARNING" not in ln), ""), "model": cfg.get("model") or "по умолчанию аккаунта"}
+            "detail": next((ln for ln in reversed(text.splitlines()) if "WARNING" not in ln), ""), "model": cfg.get("model") or "по умолчанию аккаунта",
+            "sandbox": _codex_sandbox(cfg) if logged else ""}
+
+
+def _codex_sandbox(cfg: dict) -> str:
+    from .runtimes.codex import sandbox_mode, sandbox_note
+
+    mode = sandbox_mode(cfg)
+    return {"sandbox": "песочница Codex работает",
+            "sandbox+network": "песочница Codex работает (с доступом к сети)",
+            "none": "песочница Codex на этой машине не запускается — команды идут без неё, действуют права и политика "
+                    "команд Artel" + (f" ({sandbox_note(cfg)[-160:]})" if sandbox_note(cfg) else "")}.get(mode, mode)
 
 
 def logout_codex(config: dict) -> dict:
