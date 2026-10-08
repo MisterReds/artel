@@ -682,6 +682,23 @@ items:
       file edits are reported as diffs, permission requests map to Artel's human questions.
     acceptance: [an ACP test client starts a goal and receives plan and completion updates]
 
+  - id: C-rea-pack
+    wave: 3
+    mode: evolve
+    status: planned
+    after: [C-mcp-client]
+    title: Reverse-engineering pack (REA) — bots can investigate binaries, JS/Electron bundles, .NET, APKs and websites
+    source: {harness: REA (Reverse Engineer Anything), repo: morluto/rea, paths: [README.md, docs/mcp-contracts.md], license: MIT}
+    target: [artel/packs/rea.py, artel/providers.py, artel/web/index.html]
+    plan: >-
+      An optional capability pack on top of C-mcp-client: installed on demand (it needs Node.js 22+, so Node is
+      installed only when this pack is turned on), registered as an MCP server for the roles that get it, its
+      investigation skill imported into the library, `rea doctor --json` readiness shown on the Providers page.
+      Native analysis uses an existing Ghidra/Hopper/IDA; static JavaScript analysis needs none. Planner and workers
+      see the pack only when a goal calls for it ("understand how this app works"). Its findings are evidence
+      records, so the reviewer checks them like command output. Use only on software the owner has the right to
+      analyse — never on closed harnesses to copy them; the pack's description says so to every agent.
+    acceptance: [a worker answers a question about a sample JS bundle through REA's MCP tools (integration test with a fixture), the pack is invisible to roles without it, nothing is installed until the pack is enabled]
   # ---- wave 4: studied affaan-m/ECC (2026-10) ----
   - id: A-ecc-paired-promotion
     wave: 4

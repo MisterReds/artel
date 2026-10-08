@@ -61,7 +61,7 @@
 | W2-timezone | User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin | Artel (`MisterReds/artel`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-evolve-two-subscriptions | Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it | Artel (`MisterReds/artel`) | design | готово — evolve.runtimes [claude_code, codex]: a limit moves implementation and benchmark to the next runtime, pause only when all are limited; baselines per (commit, runtime) (tests/test_evolve_runtimes.py) |
 
-## Волна 3 — 3/30 готово
+## Волна 3 — 3/31 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
@@ -95,6 +95,7 @@
 | C-best-of-n | Best of N for hard tasks — several workers (or runtimes) on one task in separate worktrees, the reviewer picks | Orca / Qwen Code Agent Arena (`stablyai/orca`) | design | план |
 | C-evolution-archive | Evolution keeps an archive of variants, not only a champion — parents sampled for diversity | Darwin Gödel Machine / OpenEvolve (`jennyzzt/dgm`) | design | план |
 | C-acp-server | Artel as an ACP agent — drive the whole team from Zed, JetBrains or any ACP client | Gemini CLI / Claude Code / goose (IDE integration) (`agentclientprotocol/agent-client-protocol`) | design | план |
+| C-rea-pack | Reverse-engineering pack (REA) — bots can investigate binaries, JS/Electron bundles, .NET, APKs and websites | REA (Reverse Engineer Anything) (`morluto/rea`) | evolve | план |
 
 ## Волна 4 (найдено разбором проектов) — 0/14 готово
 
@@ -129,4 +130,4 @@
 | `Yeachan-Heo/oh-my-claudecode` | MIT | 7 | A-omc-clarify-gate, A-omc-review-tiers, A-omc-secret-redaction | Claude Code plugin: team pipeline plan/prd/exec/verify/fix, deep-interview ambiguity gate, verification tiers, notifications with a reply listener and token red |
 | `chaitanyagiri/munder-difflin` | MIT | 6 | A-munder-work-tokens | Electron desktop app wrapping many terminal agent CLIs as an office: git-backed hive mailbox with a single committer, markdown memory, runaway circuit breaker ( |
 
-Итого: 31/74 пунктов готово.
+Итого: 31/75 пунктов готово.

@@ -1148,3 +1148,34 @@ harnesses:
     license: mit
     lists: 7
   features: []
+- repo: morluto/rea
+  name: REA
+  class: tool
+  origin: school
+  origin_note: 'Реверс-инжиниринг для агентов: один MCP-сервер к Hopper/Ghidra/IDA, JS/Electron, .NET, APK и сайтам; выводы
+    — воспроизводимые доказательства'
+  studied: readme
+  metrics:
+    stars: 6355
+    forks: 707
+    pushed: '2026-10-06'
+    license: mit
+    lists: 0
+  features:
+  - name: Реверс-инжиниринг как инструменты агента
+    what: MCP-сервер + навык расследования
+    artel: planned
+    ref: C-rea-pack
+  - name: Записи-доказательства у каждого вывода
+    what: что наблюдалось и чего не удалось установить
+    artel: partial
+    ref: W1-evidence-window
+    note: в Artel доказательства — вывод команд и проверок
+  - name: Демо-сессии на приватном виртуальном экране
+    what: Xvfb, рабочий стол владельца не трогается
+    artel: planned
+    ref: C-bot-screen
+  - name: rea doctor — проверка готовности
+    what: хост, зависимости, регистрации агентов, JSON
+    artel: done
+    ref: D-doctor

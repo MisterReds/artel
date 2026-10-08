@@ -14,7 +14,7 @@ FEATURE = {"done": ("есть", "ok"), "partial": ("частично", "warn"), 
 ITEM = {"done": "ok", "partial": "warn", "in_progress": "run", "planned": "todo"}
 CLASSES = {"coding-agent": "Coding-агент", "personal-agent": "Личный агент", "multi-agent": "Мультиагентный",
            "framework": "Фреймворк", "methodology": "Методика / скиллы", "memory": "Память",
-           "self-improvement": "Самоулучшение"}
+           "self-improvement": "Самоулучшение", "tool": "Инструмент для агентов"}
 OPEN = {"open": "открытый код", "restricted": "ограниченная лицензия", "closed": "код закрыт"}
 PART_COLORS = {"adoption": "var(--c1)", "community": "var(--c2)", "curation": "var(--c3)", "activity": "var(--c4)",
                "origin": "var(--brand)"}
