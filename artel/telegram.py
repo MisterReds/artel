@@ -142,7 +142,19 @@ class TelegramBot:
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 60)
 
+    def on_report(self, rep: dict) -> None:
+        """A failure report was recorded: tell the owner at once (reports.telegram, on by default)."""
+        from . import reports
+
+        if not reports.settings(self.runner.config).get("telegram", True):
+            return
+        for chat in list(self.store.data["paired"]):
+            self.send(chat, reports.telegram_text(rep))
+
     def start(self) -> "TelegramBot":
+        from . import reports
+
+        reports._listeners.append(self.on_report)
         if not self.store.data["paired"] and not self.store.data.get("pair"):
             self.store.new_code()
         threading.Thread(target=self.run, daemon=True, name="telegram").start()

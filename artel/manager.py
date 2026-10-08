@@ -857,6 +857,13 @@ class Manager:
                 fut.result(timeout=900)
             except Exception as exc:  # noqa: BLE001
                 self.note("background_error", error=repr(exc))
+                try:
+                    from . import reports
+
+                    reports.record("exception", f"фоновая ошибка менеджера: {exc!r}"[:200], repr(exc),
+                                   project=self.project.slug, config=self.cfg)
+                except Exception:  # noqa: BLE001
+                    pass
         self.pool.shutdown(wait=True)
         self.project.set_meta(status=final)
         self.note("finished", status=final, usage=self.project.meta["usage"])

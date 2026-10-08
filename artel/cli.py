@@ -569,6 +569,33 @@ def cmd_providers(args) -> int:
     return 0
 
 
+def cmd_report(args) -> int:
+    """Failure reports: list, show the exact text, send one to the developers."""
+    from . import reports
+
+    if args.action == "list":
+        for r in reports.load(args.n):
+            d = r.get("diagnosis") or {}
+            sent = " · отправлен" if r.get("sent") else ""
+            print(f"{r['id']}  {fmt_ts(r['ts'])}  {r['kind']:<9} {r['title'][:70]}{sent}")
+            if d.get("cause"):
+                print(f"            причина: {d['cause'][:110]}")
+        return 0
+    if not args.id:
+        print("укажите id отчёта: artel report list")
+        return 2
+    rep = reports.get(args.id)
+    if not rep:
+        print("нет такого отчёта")
+        return 1
+    if args.action == "show":
+        print(reports.markdown(rep))
+        return 0
+    res = reports.send_github(args.id)
+    print(res.get("url") if res.get("ok") else f"не отправлено: {res.get('error')}")
+    return 0 if res.get("ok") else 1
+
+
 def cmd_why(args) -> int:
     """Ask the diagnostician why something does not work."""
     from .doctor import diagnose, format_report
@@ -876,6 +903,12 @@ def main(argv=None) -> int:
     pv.add_argument("--role", help="for `use`: set the runtime of one role only (empty runtime 'default' clears it)")
     pv.add_argument("--config")
     pv.set_defaults(fn=cmd_providers)
+
+    rp = sub.add_parser("report", help="failure reports: list, show the text, send to the developers (GitHub issue)")
+    rp.add_argument("action", nargs="?", default="list", choices=["list", "show", "send"])
+    rp.add_argument("id", nargs="?")
+    rp.add_argument("-n", type=int, default=20)
+    rp.set_defaults(fn=cmd_report)
 
     wy = sub.add_parser("why", help="the diagnostician: why does it not work and what to do (on an available model)")
     wy.add_argument("problem", nargs="?", help="the error text (default: the project's stop reason)")

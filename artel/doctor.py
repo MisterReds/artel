@@ -164,9 +164,22 @@ def _store(report: dict) -> dict:
 def diagnose(config: dict, problem: str, project=None, task_id: Optional[str] = None,
              exclude_runtime: Optional[str] = None, use_model: bool = True) -> dict:
     """Explain a failure: {cause, evidence, who, steps, confidence, by, hints}. Never raises."""
+    brief, readable = facts(config, problem, project, task_id)
+    rep = _diagnose(config, problem, brief, readable, project, task_id, exclude_runtime, use_model)
+    try:  # every diagnosed failure is also a failure report (owner's Telegram, optionally the developers)
+        from . import reports
+
+        reports.record("failure", problem.strip().splitlines()[0][:200] if problem.strip() else "сбой",
+                       problem + "\n\n--- факты ---\n" + brief, diagnosis=rep, project=getattr(project, "slug", None),
+                       task_id=task_id, config=config)
+    except Exception:  # noqa: BLE001
+        pass
+    return rep
+
+
+def _diagnose(config, problem, brief, readable, project, task_id, exclude_runtime, use_model) -> dict:
     from .project import Project, artel_home, deep_merge
 
-    brief, readable = facts(config, problem, project, task_id)
     proxies = any(os.environ.get(k) for k in ("http_proxy", "https_proxy", "HTTP_PROXY", "HTTPS_PROXY", "all_proxy"))
     # what the problem itself says comes first; causes seen only in the collected facts follow
     hints = known_causes(problem, proxies)

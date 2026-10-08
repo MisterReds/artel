@@ -143,6 +143,7 @@ button:disabled{opacity:.45;cursor:default}
     <a href="#/skills" data-v="skills">Скиллы</a>
     <a href="#/plugins" data-v="plugins">Плагины</a>
     <a href="#/providers" data-v="providers">Провайдеры</a>
+    <a href="#/failures" data-v="failures">Сбои</a>
   </nav>
   <button id="updbtn" style="display:none" title="Доступно обновление Artel"></button>
   <button class="primary" id="newbtn">+ Новая цель</button>
@@ -217,8 +218,29 @@ $('#newbtn').onclick=()=>{dlg(`<h3>Новая цель → новый проек
 function route(){clearInterval(timer);if(es){es.close();es=null}
   const h=location.hash.slice(2)||'portfolio';const [v,arg]=h.split('/');
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-  ({portfolio,agents,registry,skills,evolution,providers,plugins,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
+  ({portfolio,agents,registry,skills,evolution,providers,plugins,failures,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
 window.addEventListener('hashchange',route);
+
+/* ---------- Сбои ---------- */
+async function failures(){$('#view').innerHTML='<div class="wrap" id="fl"><div class="empty">Загрузка…</div></div>';
+  const draw=async()=>{const d=await api('/api/reports');const gh=d.github||{},st=d.settings||{};
+    const WHO={artel:'Artel',owner:'владелец',provider:'провайдер',unknown:'неизвестно'};
+    $('#fl').innerHTML=`<p class="stat">Каждый сбой — текстовый отчёт: что сломалось, причина и шаги от Диагноста, версия и система. Ключи, токены, e-mail и пути пользователя вырезаются до сохранения.</p>
+    <div class="kv" style="max-width:640px"><span>в Telegram</span><span><label><input type="checkbox" id="rp-tg" style="width:auto" ${st.telegram!==false?'checked':''}> сообщать о каждом сбое (если бот привязан)</label></span>
+      <span>разработчикам</span><span><select id="rp-gh">${[['ask','по кнопке у отчёта'],['auto','автоматически — каждый новый вид сбоя'],['off','никогда']].map(([v,l])=>`<option value="${v}" ${st.github===v?'selected':''}>${l}</option>`).join('')}</select>
+      <div class="stat">${gh.ok?'issue в репозитории <code>'+esc(gh.repo)+'</code> через GitHub CLI; одинаковые сбои — комментарием к одному issue':'недоступно: '+esc(gh.reason||'')}</div></span></div>
+    <h2>Отчёты <span class="stat">${(d.reports||[]).length}</span></h2>
+    ${(d.reports||[]).map(r=>{const g=r.diagnosis||{};return `<div class="card" style="margin:8px 0;cursor:default"><div class="t">${esc(r.title)}</div>
+      <div class="m"><span>${fmtT(r.ts)}</span><span>${esc(r.kind)}</span>${r.project?`<span>${esc(r.project)}</span>`:''}<span>v ${esc(r.version)}</span></div>
+      ${g.cause?`<p style="margin:6px 0"><b>Причина:</b> ${esc(g.cause)} <span class="stat">· исправляет: ${esc(WHO[g.who]||g.who||'')}</span></p>${(g.steps||[]).length?`<ol style="margin:4px 0">${g.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}`:''}
+      <p>${r.sent?`<span class="stat">отправлено разработчикам: <a href="${esc(r.sent.url)}" target="_blank" rel="noopener">${esc(r.sent.url)}</a></span>`:gh.ok?`<button data-send="${r.id}">Отправить разработчикам…</button>`:''} <button data-show="${r.id}">Текст отчёта</button></p></div>`}).join('')||'<div class="empty">Сбоев нет.</div>'}`;
+    $('#rp-gh').onchange=$('#rp-tg').onchange=async()=>{await post('/api/reports/settings',{github:$('#rp-gh').value,telegram:$('#rp-tg').checked});draw()};
+    document.querySelectorAll('[data-show]').forEach(b=>b.onclick=async()=>{const r=await api('/api/reports/'+b.dataset.show);dlg(`<h3>Отчёт о сбое</h3><pre>${esc(r.markdown||'')}</pre>`)});
+    document.querySelectorAll('[data-send]').forEach(b=>b.onclick=async()=>{const r=await api('/api/reports/'+b.dataset.send);
+      dlg(`<h3>Отправить разработчикам</h3><p class="stat">Будет создан issue (или комментарий к такому же сбою) в репозитории <code>${esc(gh.repo)}</code>. Вот точный текст:</p><pre>${esc(r.markdown||'')}</pre><p><button class="primary" id="rp-go">Отправить</button> <span class="stat" id="rp-msg"></span></p>`);
+      $('#rp-go').onclick=async()=>{$('#rp-go').disabled=true;$('#rp-msg').textContent='Отправляю…';const x=await post('/api/reports/'+b.dataset.send+'/send');
+        $('#rp-msg').innerHTML=x.ok?`Готово: <a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.url)}</a>`:'Не отправлено: '+esc(x.error||'');draw()}})};
+  await draw()}
 
 /* ---------- Портфель ---------- */
 async function portfolio(){

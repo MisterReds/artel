@@ -408,6 +408,16 @@ def make_handler(runner: Runner, auth=None):
                     self._json(info(runner.config))
                 elif parts == ["api", "providers", "codex", "login"]:
                     self._json(runner.codex_login.state)
+                elif parts == ["api", "reports"]:
+                    from .. import reports
+
+                    self._json({"reports": reports.load(100), "settings": reports.settings(runner.config),
+                                "github": reports.github_ready()})
+                elif len(parts) == 3 and parts[:2] == ["api", "reports"]:
+                    from .. import reports
+
+                    rep = reports.get(parts[2])
+                    self._json({**rep, "markdown": reports.markdown(rep)} if rep else {"error": "not found"}, 200 if rep else 404)
                 elif len(parts) == 3 and parts[:2] == ["api", "doctor"]:
                     self._json(runner.doctor.get(parts[2]))
                 elif parts == ["api", "providers", "claude", "login"]:
@@ -522,6 +532,26 @@ def make_handler(runner: Runner, auth=None):
                     return self._json(uninstall(parts[3]) if parts[3] in TOOLS else {"ok": False})
                 if parts == ["api", "providers", "codex", "login"]:
                     return self._json(runner.codex_login.start())
+                if len(parts) == 4 and parts[:2] == ["api", "reports"] and parts[3] == "send":
+                    from .. import reports
+
+                    return self._json(reports.send_github(parts[2]))
+                if parts == ["api", "reports", "settings"]:
+                    from .. import reports
+                    from ..project import artel_home, deep_merge
+
+                    if data.get("github") not in ("ask", "auto", "off") or not isinstance(data.get("telegram", True), bool):
+                        return self._json({"error": "github: ask | auto | off"}, 400)
+                    upd = {"github": data["github"], "telegram": bool(data.get("telegram", True))}
+                    path = artel_home() / "artel.yaml"
+                    import yaml as _yaml
+
+                    cur = (_yaml.safe_load(path.read_text(encoding="utf-8")) if path.exists() else {}) or {}
+                    cur = deep_merge(cur, {"reports": upd})
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_text(_yaml.safe_dump(cur, allow_unicode=True, sort_keys=False), encoding="utf-8")
+                    runner.config["reports"] = {**(runner.config.get("reports") or {}), **upd}
+                    return self._json(reports.settings(runner.config))
                 if parts == ["api", "doctor"]:
                     problem = (data.get("problem") or "").strip()
                     if not problem:
@@ -653,7 +683,20 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
         code = (runner.telegram.store.data.get("pair") or {}).get("code")
         if code:
             print(f"Telegram: отправьте боту /pair {code} (код действует 15 минут)", flush=True)
-    httpd = ThreadingHTTPServer((host, port), make_handler(runner, auth))
+    class Server(ThreadingHTTPServer):
+        def handle_error(self, request, client_address):  # an unhandled dashboard error becomes a report too
+            import traceback
+
+            tb = traceback.format_exc()
+            super().handle_error(request, client_address)
+            try:
+                from .. import reports
+
+                reports.record("exception", tb.strip().splitlines()[-1][:200], tb, config=runner.config)
+            except Exception:  # noqa: BLE001
+                pass
+
+    httpd = Server((host, port), make_handler(runner, auth))
     httpd.daemon_threads = True
     from ..brand import banner
 
