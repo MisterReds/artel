@@ -15,14 +15,17 @@ from __future__ import annotations
 
 import json
 import os
+import hmac
 import secrets
 import shlex
 import subprocess
+import tempfile
 import sys
 import threading
 import time
 import uuid
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import Optional
 
 from .. import policy
@@ -66,6 +69,15 @@ class ToolBridge:
         self.kernel, self.project, self.ctx, self.actor, self.runtime = kernel, project, ctx, actor, runtime
         self.specs = [s for s in kernel.tools_for(role, tool_names) if s.name not in NATIVE_DUPLICATES]
         self.token = secrets.token_hex(16)
+        # the MCP proxy gets the token from a file only its owner can read, never on its command line (`ps` shows
+        # every user the command lines of every process)
+        cc_dir = Path(project.root) / ".cc"
+        cc_dir.mkdir(parents=True, exist_ok=True)
+        fd, path = tempfile.mkstemp(prefix="bridge-", suffix=".token", dir=cc_dir)  # mode 0600
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(self.token)
+        self.token_file = Path(path)
+        self.token_arg = "@" + path
         self.calls = 0
         self.lock = threading.Lock()
         bridge = self
@@ -83,13 +95,13 @@ class ToolBridge:
                 self.wfile.write(body)
 
             def do_GET(self):  # noqa: N802
-                if self.headers.get("X-Artel-Token") != bridge.token:
+                if not hmac.compare_digest(self.headers.get("X-Artel-Token") or "", bridge.token):
                     return self._reply({"error": "forbidden"}, 403)
                 self._reply({"tools": [{"name": s.name, "description": s.description, "inputSchema": s.input_schema}
                                        for s in bridge.specs]})
 
             def do_POST(self):  # noqa: N802
-                if self.headers.get("X-Artel-Token") != bridge.token:
+                if not hmac.compare_digest(self.headers.get("X-Artel-Token") or "", bridge.token):
                     return self._reply({"error": "forbidden"}, 403)
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 self._reply(bridge.call(req["name"], req.get("args") or {}))
@@ -115,6 +127,7 @@ class ToolBridge:
     def close(self) -> None:
         self.httpd.shutdown()
         self.httpd.server_close()
+        self.token_file.unlink(missing_ok=True)
 
 
 def build_dir_args(grants: Optional[dict]) -> list:
@@ -175,7 +188,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
     cfg_dir.mkdir(exist_ok=True)
     cfg_path = cfg_dir / f"mcp-{uuid.uuid4().hex[:8]}.json"
     cfg_path.write_text(json.dumps({"mcpServers": {"artel": {
-        "command": sys.executable, "args": ["-m", "artel.runtimes.mcp_proxy", bridge.url, bridge.token]}}}), encoding="utf-8")
+        "command": sys.executable, "args": ["-m", "artel.runtimes.mcp_proxy", bridge.url, bridge.token_arg]}}}), encoding="utf-8")
     terminal_names = [s.name for s in bridge.specs if s.terminal]
     note = (f"\n\n## Runtime\nYou run inside Claude Code. Use your built-in tools for files and shell. Artel "
             f"coordination tools are MCP tools named {MCP_PREFIX}<name>: "

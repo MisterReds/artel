@@ -10,7 +10,7 @@ from pathlib import Path
 
 from .. import guardian, policy, sandbox
 from ..kernel import ToolSpec
-from ..tooling import ToolContext, ToolError, window_text
+from ..tooling import READONLY_ROLES, ToolContext, ToolError, window_text
 from ..tools import shell_env, shell_run
 
 PLUGIN = {"name": "artel.plugins.builtin_tools", "version": "1",
@@ -77,7 +77,10 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
     timeout = int(timeout or ctx.kernel.config.get("tool_timeout_s", 300))
     env = {**os.environ, "ARTEL_SHARED": str(ctx.shared_dir), "ARTEL_WORKSPACE": str(ctx.workspace)}
     # OS sandbox (W2-sandbox): writes only to the deliverables this agent works on, its workspace and temp
-    run = sandbox.plan(ctx.kernel.config, command, cwd=ctx.workspace, writable=[ctx.shared_dir, ctx.workspace])
+    # judges (read-only roles) write only to their own workspace; run_agent's judge_guard undoes the rest
+    judge = ctx.role in READONLY_ROLES or not ctx.grants()["write"]
+    writable = [ctx.workspace] if judge else [ctx.shared_dir, ctx.workspace]
+    run = sandbox.plan(ctx.kernel.config, command, cwd=ctx.workspace, writable=writable)
     if run.note and not ctx.state.get("sandbox_noted"):
         ctx.state["sandbox_noted"] = True
         ctx.project.log.append("sandbox/unavailable", actor=ctx.actor, note=run.note)

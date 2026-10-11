@@ -13,7 +13,11 @@ instead of a crash.
 from __future__ import annotations
 
 import os
+import shutil
 import time
+import uuid
+from contextlib import contextmanager
+from pathlib import Path
 
 NO_EXECUTOR = ("Нет подключённого исполнителя (not installed): откройте «Провайдеры» и подключите Codex, "
                "Claude Code или DeepSeek Harness, или задайте ключ API в переменной окружения (ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY для DeepSeek Harness)")
@@ -112,7 +116,8 @@ def run_agent(kernel, project, *, role: str, **kw):
         base, variant = name.split(":", 1)
         fn = kernel.get(f"runtime:{base}")
         if fn is not None:
-            out = fn(kernel, project, role=role, variant=variant, **kw)
+            with judge_guard(project, role, kw.get("ctx"), name):
+                out = fn(kernel, project, role=role, variant=variant, **kw)
             _note_limit(name, out, project)
             return out
     if fn is None:
@@ -120,7 +125,8 @@ def run_agent(kernel, project, *, role: str, **kw):
                            f"{sorted(k[8:] for k in kernel.services if k.startswith('runtime:'))}")
     hooks = kernel.hooks
     if not (hooks.get("before_agent_start") or hooks.get("agent_end")):  # fast path: no lifecycle observers
-        out = fn(kernel, project, role=role, **kw)
+        with judge_guard(project, role, kw.get("ctx"), name):
+            out = fn(kernel, project, role=role, **kw)
         _note_limit(name, out, project)
         return out
     ctx = kw.get("ctx")
@@ -134,10 +140,50 @@ def run_agent(kernel, project, *, role: str, **kw):
         kw["system"], kw["first_user"] = agent["system"], agent["first_user"]
         if agent["tool_names"] is not None or kw.get("tool_names") is not None:
             kw["tool_names"] = agent["tool_names"]
-    out = fn(kernel, project, role=role, **kw)
+    with judge_guard(project, role, ctx, name):
+        out = fn(kernel, project, role=role, **kw)
     _note_limit(name, out, project)
     kernel.emit("agent_end", outcome=out, **info)
     return out
+
+
+@contextmanager
+def judge_guard(project, role: str, ctx, runtime: str):
+    """Judges (reviewer, auditor, planner…) must not change what they judge. Their file tools are read-only, but
+    every runtime also gives them a shell (to run tests), and a prompt injection in a deliverable can make that shell
+    write. So the deliverables are snapshotted — ignored files such as node_modules/ and .env included — and the
+    project's command policy saved; whatever a judge's run changed there is restored and recorded."""
+    from ..tooling import READONLY_ROLES
+
+    shared = getattr(ctx, "shared_dir", None) or getattr(project, "shared", None)
+    judge = role in READONLY_ROLES or (ctx is not None and not ctx.grants()["write"])
+    if not judge or shared is None or not Path(shared).is_dir():
+        yield
+        return
+    from ..snapshot import Snapshot
+
+    guard = Snapshot(Path(project.root) / ".cc" / f"guard-{uuid.uuid4().hex[:8]}.git", shared, ignores=False)
+    tree = guard.track()
+    policy_file = Path(project.root) / "policy.yaml"
+    policy_before = policy_file.read_bytes() if policy_file.is_file() else None
+    try:
+        yield
+    finally:
+        changed = guard.diff_files(tree) if tree else None
+        if changed:
+            guard.restore(tree)
+        now = policy_file.read_bytes() if policy_file.is_file() else None
+        if now != policy_before:
+            changed = [*(changed or []), "../policy.yaml"]
+            if policy_before is None:
+                policy_file.unlink(missing_ok=True)
+            else:
+                policy_file.write_bytes(policy_before)
+        if changed:
+            project.log.append("agent/readonly_violation", actor=role, role=role, runtime=runtime,
+                               task_id=((getattr(ctx, "task", None) or {}).get("id")), files=changed[:50],
+                               note="a judge changed what it judges; restored")
+        shutil.rmtree(guard.git_dir, ignore_errors=True)
 
 
 def _note_limit(name: str, out, project) -> None:

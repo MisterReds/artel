@@ -152,3 +152,24 @@ def test_full_run_with_isolation_delivers_into_shared(cfg):
     kinds = [e["kind"] for e in project.log.read()]
     assert "manager/worktree" in kinds and "manager/merged" in kinds
     assert not any((project.root / "worktrees").iterdir())  # every accepted worktree was merged and removed
+
+
+def test_a_worker_cannot_point_its_worktree_at_a_repository_of_its_own(cfg, tmp_path):
+    """The worktree's .git file is writable by the (sandboxed) worker. If the manager's git discovered the repository
+    through it, a worker-made repository with core.fsmonitor would run a command outside the sandbox on `add -A`."""
+    import subprocess
+
+    project = _project(cfg, tmp_path)
+    iso = Isolation(project)
+    wt = iso.ensure("A")
+    evil = wt / "evil"
+    subprocess.run(["git", "init", "-q", str(evil)], check=True)
+    subprocess.run(["git", "-C", str(evil), "-c", "user.name=w", "-c", "user.email=w@x", "commit", "-q",
+                    "--allow-empty", "-m", "x"], check=True)
+    marker = tmp_path / "pwned"
+    subprocess.run(["git", "-C", str(evil), "config", "core.fsmonitor", f"touch {marker}; false"], check=True)
+    (wt / ".git").write_text(f"gitdir: {evil / '.git'}\n")
+    (wt / "a.txt").write_text("work")
+    iso.commit("A")
+    assert not marker.exists()
+    assert iso.accept("A") == (True, []) and (project.shared / "a.txt").read_text() == "work"

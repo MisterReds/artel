@@ -60,7 +60,8 @@ class Isolation:
     def _run(self, args: list, cwd: Path, check: bool = True) -> subprocess.CompletedProcess:
         cmd = ["git", "-c", "user.name=artel", "-c", "user.email=artel@localhost", "-c", "core.autocrlf=false",
                "-c", "core.quotepath=false", "-c", "gc.auto=0", "-c", "commit.gpgsign=false",
-               "-c", "core.hooksPath=/dev/null", "-c", "advice.detachedHead=false", *args]
+               "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false", "-c", "advice.detachedHead=false",
+               *args]
         try:
             p = subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=300,
                                env={**_clean_git_env(), "GIT_TERMINAL_PROMPT": "0"})
@@ -78,7 +79,25 @@ class Isolation:
         return self._run([f"--git-dir={self.git_dir}", *args], self.git_dir, check)
 
     def _wt(self, task_id: str, *args: str, check: bool = True) -> subprocess.CompletedProcess:
-        return self._run(list(args), self.path(task_id), check)
+        """git in a task's worktree with its git dir named explicitly. The worktree's own ``.git`` file is writable
+        by the (sandboxed) worker; git must never discover the repository through it, or a worker could point it at
+        a repository of its own whose config runs commands outside the sandbox."""
+        wt = self.path(task_id)
+        admin = self._admin(task_id)
+        if admin is None:
+            raise IsolationError(f"task {task_id}: its worktree is not registered in isolation.git")
+        return self._run([f"--git-dir={admin}", f"--work-tree={wt}", *args], wt, check)
+
+    def _admin(self, task_id: str) -> Optional[Path]:
+        """isolation.git/worktrees/<name> of this task's worktree (found by its recorded path, not the .git file)."""
+        want = self.path(task_id).resolve()  # the directory, not .git: the worker may replace .git with a link
+        for d in sorted((self.git_dir / "worktrees").glob("*")):
+            try:
+                if Path((d / "gitdir").read_text(encoding="utf-8").strip()).parent.resolve() == want:
+                    return d
+            except OSError:
+                continue
+        return None
 
     def path(self, task_id: str) -> Path:
         return self.base_dir / task_id
@@ -115,7 +134,7 @@ class Isolation:
             return self._rev(MAIN) or ""
 
     def exists(self, task_id: str) -> bool:
-        return (self.path(task_id) / ".git").exists()
+        return (self.path(task_id) / ".git").exists() and self._admin(task_id) is not None
 
     def ensure(self, task_id: str) -> Path:
         """The task's worktree, created from the current main on first use and reused by later attempts."""

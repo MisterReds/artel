@@ -275,7 +275,10 @@ def test_evolve_items_picks_exact_items_and_rejects_unknown_ids(tmp_path, monkey
     from artel import cli
     from artel.evolve.engine import Evolution
 
+    from artel.evolve import supervisor
+
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(supervisor, "evolve_process_running", lambda **kw: False)  # a real evolution may be running
     donor = tmp_path / "donor"
     donor.mkdir()
     repo = _selfrepo(tmp_path, str(donor))

@@ -58,12 +58,17 @@ def test_restart_starts_resume_and_records_it(tmp_path, monkeypatch):
 
     monkeypatch.setattr(sv, "_spawn", lambda args, **kw: calls.append((args, kw)) or P())
     d = _home(tmp_path, hb={"pid": _dead_pid(), "at": time.time() - 600, "started": time.time() - 7200,
-                            "argv": ["evolve", "--resume", "--budget", "30"], "cwd": str(tmp_path),
-                            "artel_home": str(tmp_path)})
+                            "argv": ["evolve", "--resume", "--budget", "30"], "cwd": str(tmp_path / "planted"),
+                            "artel_home": str(tmp_path / "elsewhere")})
+    (tmp_path / "planted" / "artel").mkdir(parents=True)  # a package that would shadow artel from the cwd
     assert sv.check(tmp_path / "evolution", log=lambda m: None) == [4242]
     args, kw = calls[0]
-    assert args[1:4] == ["-m", "artel.cli", "evolve"] and "--resume" in args and "--budget" in args
+    assert args[args.index("-m"):args.index("-m") + 3] == ["-m", "artel.cli", "evolve"]
+    assert "--resume" in args and "--budget" in args
+    # heartbeat.json never chooses where or as what the resume runs
     assert "--repo" in args and kw["env"]["ARTEL_HOME"] == str(tmp_path)
+    assert kw["cwd"] != str(tmp_path / "planted")
+    assert sys.version_info < (3, 11) or args[1] == "-P"
     st = json.loads((d / "state.json").read_text())
     assert st["running"]["supervisor"]["restarts"] == 1
     assert any(json.loads(ln)["kind"] == "auto_resume" for ln in (d / "ledger.jsonl").read_text().splitlines())

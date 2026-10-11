@@ -118,7 +118,7 @@ def facts(config: dict, problem: str, project=None, task_id: Optional[str] = Non
         lines += ["", f"Проект «{meta.get('name')}»: статус={meta.get('status')} "
                       f"причина остановки={meta.get('blocked_reason') or '—'}"]
         kinds = ("llm/error", "agent/end", "codex/sandbox", "policy/blocked", "provider/limited", "manager/escalated",
-                 "manager/provider_switch", "codex/readonly_violation", "gate/result")
+                 "manager/provider_switch", "agent/readonly_violation", "gate/result")
         recent = [e for e in project.log.read() if e["kind"] in kinds and (not task_id or e.get("task_id") in (task_id, None))]
         for e in recent[-25:]:
             detail = e.get("error") or e.get("reason") or e.get("rationale") or e.get("status") or ""

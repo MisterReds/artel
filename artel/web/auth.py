@@ -22,6 +22,8 @@ COOKIE = "artel_session"
 SCRYPT = {"n": 2 ** 14, "r": 8, "p": 1}
 MAX_FAILS = 5                # failed logins per client address...
 FAIL_WINDOW_S = 600          # ...within this window, then 429 until the oldest failure ages out
+MAX_TRACKED = 10_000         # client addresses remembered for rate limiting (oldest dropped first)
+_SCRYPT_SLOTS = threading.BoundedSemaphore(4)  # ~16 MiB each: a flood of logins cannot exhaust memory
 
 
 class RateLimited(Exception):
@@ -120,9 +122,17 @@ class Auth:
             q = self._fails(ip)
             if len(q) >= MAX_FAILS:
                 raise RateLimited(int(FAIL_WINDOW_S - (self.clock() - q[0])) + 1)
-        if not self.check_token(token):
-            with self.lock:
-                self._fails(ip).append(self.clock())
+            # counted as a failure before hashing: parallel attempts cannot all pass the check above
+            q.append(self.clock())
+            while len(self.fails) > MAX_TRACKED:
+                self.fails.pop(next(iter(self.fails)))
+        if not _SCRYPT_SLOTS.acquire(timeout=30):
+            raise RateLimited(5)
+        try:
+            ok = self.check_token(token)
+        finally:
+            _SCRYPT_SLOTS.release()
+        if not ok:
             return None
         sid = secrets.token_urlsafe(32)
         now = self.clock()

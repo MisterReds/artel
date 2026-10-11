@@ -204,7 +204,7 @@ def test_a_judge_cannot_change_the_deliverables_even_without_a_sandbox(env, monk
     monkeypatch.setenv("FAKE_CODEX_LAZY", "1")  # one short run, no terminal tool needed
     out, _ = _run(deep_merge(cfg, {"codex": {"max_resumes": 0}}), project, role="reviewer")
     assert (project.shared / "spec.md").read_text(encoding="utf-8") == "original\n"
-    ev = [e for e in project.log.read() if e["kind"] == "codex/readonly_violation"]
+    ev = [e for e in project.log.read() if e["kind"] == "agent/readonly_violation"]
     assert ev and ev[0]["files"] == ["spec.md"]
     calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
     assert calls[-1][calls[-1].index("-C") + 1].endswith("reviewer-scratch")

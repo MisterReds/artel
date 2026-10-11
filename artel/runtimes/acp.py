@@ -560,7 +560,7 @@ class AcpRun:
         params: dict[str, Any] = {
             "cwd": str(Path(self.ctx.workspace).resolve()),
             "mcpServers": [{"name": "artel", "command": sys.executable,
-                            "args": ["-m", "artel.runtimes.mcp_proxy", self.bridge.url, self.bridge.token],
+                            "args": ["-m", "artel.runtimes.mcp_proxy", self.bridge.url, self.bridge.token_arg],
                             "env": [{"name": "PYTHONPATH", "value": pkg_root}]}]}
         if (self.agent_caps.get("sessionCapabilities") or {}).get("additionalDirectories") is not None:
             extra = [str(r) for r in self.write_roots[1:] + self.refs if r != self.write_roots[0]]

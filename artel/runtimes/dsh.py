@@ -326,7 +326,7 @@ def run_dsh(kernel, project, *, role: str, system: str, first_user: str, ctx: To
     _, user_patches = _split_plugins(cfg)
     patch_path = project.root / ".cc" / f"dsh-{uuid.uuid4().hex[:8]}.patch.yml"
     patch_path.parent.mkdir(exist_ok=True)
-    patch_path.write_text(json.dumps(artel_patch(cfg, bridge_url=bridge.url, bridge_token=bridge.token), indent=1))
+    patch_path.write_text(json.dumps(artel_patch(cfg, bridge_url=bridge.url, bridge_token=bridge.token_arg), indent=1))
     project.log.append("agent/start", actor=actor, role=role, purpose=purpose, task_id=task_id, model=model,
                        effort=cfg.get("reasoning_effort") or "default", system=system + note,
                        user=first_user, tools=[MCP_PREFIX + s.name for s in bridge.specs],

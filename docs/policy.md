@@ -21,9 +21,16 @@ rules:
     not_match: ["terraform plan"]                # must NOT match
 ```
 
-`prefix` is matched against each segment of a compound command (`;`, `&&`, `||`, `|`); `regex` is searched in the
-whole command string. Exactly one of the two is required. A rule whose examples fail, an unknown decision or an
-invalid regex is a load error (`PolicyError`): `bash` then fails with a clear tool error and runs nothing.
+`prefix` is matched against every simple command the line runs: segments of a compound command (`;`, `&&`, `||`,
+`|`, newlines), commands inside `$( )`, backticks, `( )`, `<( )` and `{ }` (also inside double quotes), the script of
+`sh -c` / `bash -c` / `eval`, with leading `VAR=value` assignments and wrappers (`sudo`, `env`, `nice`, `timeout`,
+`nohup`, `command`, `exec`…) removed. `regex` is searched in the command as written, in a normalised copy (quotes
+removed, `/./` and `//` collapsed) and in each simple command. Exactly one of the two is required. A rule whose examples
+fail, an unknown decision or an invalid regex is a load error (`PolicyError`): `bash` then fails with a clear tool
+error and runs nothing, and the Claude Code hook blocks every shell command until the file is fixed.
+
+The policy is a guard rail, not a boundary: a shell can always hide a command (variables, here-documents, a script
+written to disk and run). What a command can reach is limited by the OS sandbox (`sandbox.mode`).
 
 ## Decisions
 

@@ -161,6 +161,16 @@ class Hypothesis:
         return cls(**{k: v for k, v in {**d, **extra}.items() if k in keys})
 
 
+JOURNAL_FILES = ("ledger.jsonl", "state.json", "baseline/*.json", "*-diagnosis.md", "absorb/*.json")
+_JOURNAL_RE = re.compile(r"^(?:ledger\.jsonl|state\.json|baseline/[^/]+\.json|[^/]+-diagnosis\.md|absorb/[^/]+\.json|"
+                         r"projects/[^/]+/events\.jsonl\.gz|bench/(?:[^/]+/)*(?:events\.jsonl\.gz|suite\.json))$")
+
+
+def journal_path(name: str) -> bool:
+    """A path the journal branch may carry (see Evolution._journal_files)."""
+    return bool(_JOURNAL_RE.match(name)) and ".." not in name.split("/")
+
+
 class Evolution:
     def __init__(self, repo: Path, home: Path, config: dict, bench_config: dict, tasks: Optional[list] = None,
                  policy: Optional[Policy] = None, parallel: int = 2,
@@ -235,10 +245,21 @@ class Evolution:
         tar = subprocess.run(["git", "archive", "--format=tar", self.JOURNAL_BRANCH], cwd=self.repo,
                              capture_output=True, check=True).stdout
         with tarfile.open(fileobj=io.BytesIO(tar)) as tf:
+            # only what _journal_files publishes: anyone who can push to the remote writes this branch, and files
+            # such as heartbeat.json decide what an automatic resume runs
+            members = [m for m in tf.getmembers() if m.isfile() and journal_path(m.name)]
             try:
-                tf.extractall(self.home, filter="data")
+                tf.extractall(self.home, members=members, filter="data")
             except TypeError:  # Python without extraction filters
-                tf.extractall(self.home)
+                tf.extractall(self.home, members=members)
+        st = self.home / "state.json"
+        try:
+            data = json.loads(st.read_text(encoding="utf-8"))
+            if isinstance(data, dict) and data.get("repo") != str(self.repo):
+                data["repo"] = str(self.repo)  # the journal never chooses which repository is evolved
+                st.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        except (OSError, ValueError):
+            pass
         return True
 
     def _has_remote(self) -> bool:
@@ -264,7 +285,7 @@ class Evolution:
         import gzip
 
         out = {}
-        for pat in ("ledger.jsonl", "state.json", "baseline/*.json", "*-diagnosis.md", "absorb/*.json"):
+        for pat in JOURNAL_FILES:
             for f in self.home.glob(pat):
                 out[f.relative_to(self.home).as_posix()] = f.read_bytes()
         for f in list(self.home.glob("projects/*/events.jsonl")) + list(self.home.glob("bench/**/events.jsonl")):

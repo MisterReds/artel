@@ -31,13 +31,21 @@ DEFAULTS = {"telegram": True, "github": "ask"}  # github: ask | auto | off
 LABEL = "artel-report"
 
 SECRET_PATTERNS = [
+    (re.compile(r"-----BEGIN[^-\n]*PRIVATE KEY-----[\s\S]*?(?:-----END[^-\n]*-----|$)"), "<закрытый ключ>"),
     (re.compile(r"\b(sk-(?:ant-|proj-)?[A-Za-z0-9_\-]{12,})"), "<ключ>"),
-    (re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{20,})"), "<токен GitHub>"),
+    (re.compile(r"\b(github_pat_[A-Za-z0-9_]{20,}|gh[pousr]_[A-Za-z0-9]{20,})"), "<токен GitHub>"),
     (re.compile(r"\b(xox[abpr]-[A-Za-z0-9\-]{10,})"), "<токен Slack>"),
+    (re.compile(r"\bAIza[0-9A-Za-z_\-]{35}"), "<ключ Google>"),
+    (re.compile(r"\bhf_[A-Za-z0-9]{30,}"), "<токен Hugging Face>"),
+    (re.compile(r"\b(?:AKIA|ASIA)[0-9A-Z]{16}\b"), "<ключ AWS>"),
     (re.compile(r"\b\d{6,12}:[A-Za-z0-9_\-]{30,}\b"), "<токен Telegram>"),
-    (re.compile(r"(?i)(bearer\s+)[A-Za-z0-9._\-]{12,}"), r"\1<скрыто>"),
-    (re.compile(r"(?i)\b([A-Z0-9_]*(?:KEY|TOKEN|SECRET|PASSWORD|PASSWD)[A-Z0-9_]*\s*[=:]\s*)\S+"), r"\1<скрыто>"),
+    (re.compile(r"(?i)\b(bearer|basic)(\s+)[A-Za-z0-9._~+/=\-]{8,}"), r"\1\2<скрыто>"),
     (re.compile(r"(?i)(x-artel-token[\"']?\s*[:=]\s*[\"']?)[0-9a-f]{16,}"), r"\1<скрыто>"),
+    # NAME=value, "api_key": "value", 'token': '…' — a name that ends in key/token/secret/password, any quoting
+    (re.compile(r"""(?ix)
+        (\b[\w.\-]*(?:key|token|secret|passw(?:or)?d|passwd|credentials?)["']?\s*[:=]\s*)
+        (?:"[^"\n]*"|'[^'\n]*'|[^\s,;}\]"']+)"""), r"\1<скрыто>"),
+    (re.compile(r"""(?i)\b(passw(?:or)?d|passwd|secret)(\s+)(?:"[^"\n]*"|'[^'\n]*')"""), r"\1\2<скрыто>"),
     (re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+"), "<e-mail>"),
 ]
 

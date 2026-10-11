@@ -261,7 +261,9 @@ def _pip(spec: str, target: Path, runner: Runner, local: bool = False) -> None:
 
         if iu.find_spec("setuptools") and iu.find_spec("wheel"):  # offline-friendly first try
             attempts.append(base + ["--no-build-isolation", spec])
-    attempts.append(base + [spec])
+    # a PyPI package comes as a wheel only: an sdist would run its setup.py on install, before the person has read
+    # the manifest and agreed to enable it. Source trees (git, a folder) build here, by the person's explicit choice.
+    attempts.append(base + ([spec] if local else ["--only-binary=:all:", spec]))
     err = ""
     for cmd in attempts:
         p = runner(cmd)

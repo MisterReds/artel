@@ -240,16 +240,11 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
     grants = ctx.grants()
     judge = role in READONLY_ROLES or not grants["write"]
     run_dir = Path(ctx.workspace)
-    guard = guard_tree = None
     if judge:
         # a private scratch directory as cwd: the deliverables are outside every writable root of the sandbox
+        # (and run_agent's judge_guard restores them whatever happens to the sandbox)
         run_dir = project.root / ".cc" / f"{role}-scratch"
         run_dir.mkdir(parents=True, exist_ok=True)
-        # and a snapshot of the deliverables: whatever happens to the sandbox, a judge's edits are undone
-        from ..snapshot import Snapshot
-
-        guard = Snapshot(project.root / ".cc" / f"guard-{uuid.uuid4().hex[:8]}.git", ctx.shared_dir)
-        guard_tree = guard.track()
     try:
         for attempt in range(1 + int(cc["max_resumes"])):
             if stop_event is not None and stop_event.is_set():
@@ -266,7 +261,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                                    note="Codex's sandbox cannot start commands on this machine; running without it — "
                                         "Artel's file grants and command policy still apply")
             args = build_args(cc, workspace=run_dir, shared=ctx.shared_dir, role=role,
-                              bridge_url=bridge.url, bridge_token=bridge.token, effort=ctx.state.get("effort"),
+                              bridge_url=bridge.url, bridge_token=bridge.token_arg, effort=ctx.state.get("effort"),
                               thread_id=thread_id, last_message=last_msg, grants=grants, mode=mode)
             proc = subprocess.Popen(args, cwd=run_dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
                                     stderr=subprocess.PIPE, text=True, env=codex_env(cc), bufsize=1,
@@ -376,13 +371,6 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
     finally:
         bridge.close()
         last_msg.unlink(missing_ok=True)
-        if guard is not None:
-            changed = guard.diff_files(guard_tree) if guard_tree else None
-            if changed:
-                guard.restore(guard_tree)
-                project.log.append("codex/readonly_violation", actor=actor, task_id=task_id, role=role,
-                                   files=changed[:50], note="a read-only role changed the deliverables; restored")
-            shutil.rmtree(guard.git_dir, ignore_errors=True)
     out.tool_calls += bridge.calls
     project.log.append("agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
                        terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage,

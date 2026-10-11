@@ -67,8 +67,9 @@ if os.environ.get("FAKE_CODEX_LAZY") and not resumed:  # first run ends without 
     emit({"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 10, "output_tokens": 20}}); sys.exit(0)
 def call(name, a):  # through Artel's real MCP proxy code, like the real Codex
     sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # this checkout's artel (Artel sets PYTHONPATH)
-    from artel.runtimes.mcp_proxy import _http
-    return _http(url, token, "", {"name": name, "args": a})
+    from artel.runtimes.mcp_proxy import _http, read_token
+    assert token.startswith("@"), "the bridge token must not be on the command line"
+    return _http(url, read_token(token), "", {"name": name, "args": a})
 r = call("task_submit", {"summary": "hello.py prints hi", "evidence": "$ python hello.py\nhi"})
 emit({"type": "item.completed", "item": {"id": "i4", "type": "mcp_tool_call", "server": "artel", "tool": "task_submit", "arguments": {}, "status": "completed"}})
 emit({"type": "turn.completed", "usage": {"input_tokens": 1000, "cached_input_tokens": 400, "output_tokens": 200}})

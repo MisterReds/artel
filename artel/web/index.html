@@ -178,7 +178,7 @@ const authed=r=>{if(r.status===401){location.replace('/login');throw new Error('
 const api=(p,o)=>fetch(p,o).then(authed).then(r=>r.json());
 fetch('/api/auth/status').then(r=>r.json()).then(s=>{
   if(s.insecure&&location.protocol!=='https:'&&!/^(localhost|127\.|\[::1\])/.test(location.hostname))$('#netwarn').classList.add('show');
-  if(s.remote){$('#logout').style.display='inline-block';$('#logout').onclick=async()=>{await fetch('/api/auth/logout',{method:'POST'});location.replace('/login')}}
+  if(s.remote){$('#logout').style.display='inline-block';$('#logout').onclick=async()=>{await fetch('/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'}});location.replace('/login')}}
 }).catch(()=>{});
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
@@ -470,26 +470,26 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    <p><button class="primary" id="rt-save">Сохранить</button> <span class="stat" id="rt-msg"></span></p>
    <p class="stat">Сохраняется в ARTEL_HOME/artel.yaml и действует для новых запусков. Разные подписки на разных ролях разносят нагрузку по лимитам.</p>`;
    const on=(id,fn)=>{const el=$('#'+id);if(el)el.onclick=fn};
-   document.querySelectorAll('[data-inst]').forEach(b=>b.onclick=async()=>{b.disabled=true;await api('/api/providers/install/'+b.dataset.inst,{method:'POST'});state.inst=true;draw()});
-   document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!confirm('Удалить из папки Artel?'))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST'});draw()});
+   document.querySelectorAll('[data-inst]').forEach(b=>b.onclick=async()=>{b.disabled=true;await api('/api/providers/install/'+b.dataset.inst,{method:'POST',headers:{'Content-Type':'application/json'}});state.inst=true;draw()});
+   document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!confirm('Удалить из папки Artel?'))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    ['m-cc','m-cx'].forEach(id=>{const el=$('#'+id);if(el&&el.tagName==='SELECT'){let prev=el.value;el.onchange=()=>{if(el.value!=='__other'){prev=el.value;return}
      const v=(prompt('Полное имя модели:')||'').trim();if(!v){el.value=prev;return}const op=document.createElement('option');op.value=v;op.textContent=v+' (своя)';el.insertBefore(op,el.lastElementChild);el.value=prev=v}}});
    document.querySelectorAll('[data-use]').forEach(b=>b.onchange=async()=>{const d=[...document.querySelectorAll('[data-use]')].filter(x=>!x.checked).map(x=>x.dataset.use);
      await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({disabled_runtimes:d})});draw()});
-   document.querySelectorAll('[data-unlim]').forEach(b=>b.onclick=async()=>{await api('/api/providers/unlimit/'+b.dataset.unlim,{method:'POST'});draw()});
+   document.querySelectorAll('[data-unlim]').forEach(b=>b.onclick=async()=>{await api('/api/providers/unlimit/'+b.dataset.unlim,{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    document.querySelectorAll('[data-why]').forEach(b=>b.onclick=()=>why(b.dataset.why));
    on('em-save',async()=>{const j=await api('/api/providers/embeddings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backend:$('#em-backend').value,dim:+$('#em-dim').value})});$('#em-msg').textContent=j.error?'Не сохранено: '+j.error:'Сохранено.'});
-   on('em-test',async()=>{$('#em-msg').textContent='Проверяю (первый запуск сервера — до минуты)…';const j=await api('/api/providers/embeddings/test',{method:'POST'});
+   on('em-test',async()=>{$('#em-msg').textContent='Проверяю (первый запуск сервера — до минуты)…';const j=await api('/api/providers/embeddings/test',{method:'POST',headers:{'Content-Type':'application/json'}});
      $('#em-msg').textContent=j.how==='hybrid'?`Работает: запрос по-русски нашёл английский текст о лимитах за ${j.seconds} с.`:'Модель не ответила — поиск идёт по словам. '+(j.error||'')});
-   on('tg-pair',async()=>{await api('/api/telegram/pair',{method:'POST'});draw()});
-   on('cx-login',async()=>{$('#cx-login').disabled=true;await api('/api/providers/codex/login',{method:'POST'});draw()});
-   on('cl-login',async()=>{$('#cl-login').disabled=true;await api('/api/providers/claude/login',{method:'POST'});draw()});
-   on('cl-cancel',async()=>{await api('/api/providers/claude/cancel',{method:'POST'});draw()});
+   on('tg-pair',async()=>{await api('/api/telegram/pair',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+   on('cx-login',async()=>{$('#cx-login').disabled=true;await api('/api/providers/codex/login',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+   on('cl-login',async()=>{$('#cl-login').disabled=true;await api('/api/providers/claude/login',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+   on('cl-cancel',async()=>{await api('/api/providers/claude/cancel',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('cl-send',async()=>{$('#cl-send').disabled=true;const j=await api('/api/providers/claude/code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:$('#cl-code').value})});
      if(j.error&&j.phase==='waiting'){alert(j.error);$('#cl-send').disabled=false;return}draw()});
-   on('cl-logout',async()=>{if(!confirm('Выйти из Claude Code? Artel перестанет использовать подписку Claude, пока вы не войдёте снова.'))return;await api('/api/providers/claude/logout',{method:'POST'});draw()});
-   on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST'});draw()});
-   on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST'});draw()});
+   on('cl-logout',async()=>{if(!confirm('Выйти из Claude Code? Artel перестанет использовать подписку Claude, пока вы не войдёте снова.'))return;await api('/api/providers/claude/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+   on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+   on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});
      const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value,dsh:$('#m-ds').value},acp_agent:$('#acp-agent').value};
      const tzr=await fetch('/api/providers/timezone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timezone:$('#tz').value})});
@@ -596,7 +596,7 @@ async function plugins(){$('#view').innerHTML='<div class="wrap plg" id="plg"><d
       ${r.error?`<div class="errbox">${esc(r.error)}</div>`:''}
       ${plgManifest(r,perms)}<div class="acts">${acts}</div></div>`};
    const pk=o.plugins.filter(r=>r.kind==='package'),bi=o.plugins.filter(r=>r.kind!=='package');
-   box.innerHTML=`<p class="stat">Каждая способность Artel — плагин с манифестом. Пакеты ставятся в ARTEL_HOME/plugins выключенными: код пакета не запускается, пока вы не прочтёте манифест и не включите его. Плагин работает внутри Artel с его правами — ставьте только то, чему доверяете. Плагин, который не загрузился, выключается с ошибкой; Artel продолжает работу.</p>
+   box.innerHTML=`<p class="stat">Каждая способность Artel — плагин с манифестом. Пакеты ставятся в ARTEL_HOME/plugins выключенными: плагин не работает, пока вы не прочтёте манифест и не включите его. Пакет из PyPI ставится только готовым колесом и папка с artel-plugin.toml копируется — их код при установке не запускается; пакет из git или папки с pyproject.toml/setup.py собирается, и его сценарий сборки выполняется уже при установке. Плагин работает внутри Artel с его правами — ставьте только то, чему доверяете. Плагин, который не загрузился, выключается с ошибкой; Artel продолжает работу.</p>
    <h2>Установить</h2><div class="inst"><input id="plg-src" placeholder="git URL (https://github.com/…), пакет pip (artel-plugin-x==1.0) или путь к папке"><button class="primary" id="plg-go">Установить</button></div>
    <p class="stat" id="plg-msg"></p>
    <h2>Пакеты</h2>${pk.length?`<div class="pv">${pk.map(card).join('')}</div>`:'<p class="stat">Пакетов нет. Пример: examples/artel-plugin-hello.</p>'}
@@ -640,9 +640,9 @@ function updDialog(u){const st=u.state||{};const when=t=>fmtDT(t);
    <p class="stat">Перед установкой новая версия проверяется тестами опор во временной копии; при провале ничего не меняется.</p>
    ${hist?`<h4>История</h4><ul>${hist}</ul>`:''}`);
   $('#upd-go').onclick=async()=>{$('#upd-go').disabled=true;$('#upd-go').textContent='Проверка и установка…';
-    const r=await api('/api/update/apply',{method:'POST'});updDialog(await checkUpdate(false));if(!r.ok)return;waitRestart()};
+    const r=await api('/api/update/apply',{method:'POST',headers:{'Content-Type':'application/json'}});updDialog(await checkUpdate(false));if(!r.ok)return;waitRestart()};
   $('#upd-check').onclick=async()=>updDialog(await checkUpdate(true));
-  $('#upd-back').onclick=async()=>{if(!confirm('Вернуть предыдущую версию?'))return;const r=await api('/api/update/rollback',{method:'POST'});updDialog(await checkUpdate(false));if(r.ok)waitRestart()}}
+  $('#upd-back').onclick=async()=>{if(!confirm('Вернуть предыдущую версию?'))return;const r=await api('/api/update/rollback',{method:'POST',headers:{'Content-Type':'application/json'}});updDialog(await checkUpdate(false));if(r.ok)waitRestart()}}
 function waitRestart(){const t0=Date.now();const iv=setInterval(async()=>{try{const u=await api('/api/update');if(u.state.phase!=='restart_pending'&&Date.now()-t0>3000){clearInterval(iv);location.reload()}}catch(e){}},2000)}
 $('#updbtn').onclick=async()=>updDialog(await checkUpdate(false));
 checkUpdate(false);setInterval(()=>checkUpdate(false),60000);

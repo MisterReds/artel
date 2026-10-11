@@ -274,7 +274,8 @@ def make_handler(runner: Runner, auth=None):
             """The client behind a reverse proxy on this host; ignored when the peer is not loopback."""
             xff = self.headers.get("X-Forwarded-For")
             if xff and _loopback(self.client_address[0]):
-                return xff.split(",")[0].strip() or None
+                # the hop the proxy itself appended (rightmost): the leftmost ones are whatever the client sent
+                return xff.split(",")[-1].strip() or None
             return None
 
         def _client_ip(self) -> str:
@@ -303,8 +304,34 @@ def make_handler(runner: Runner, auth=None):
             self.send_header("Content-Length", "0")
             self.end_headers()
 
+        def _host_ok(self) -> bool:
+            """Local mode answers only to its own name: a page whose domain was re-pointed at 127.0.0.1 (DNS
+            rebinding) arrives with that domain in Host and is refused."""
+            if auth is not None:
+                return True
+            host = (self.headers.get("Host") or "").strip().lower()
+            name = host if host.endswith("]") else host.rsplit(":", 1)[0]
+            return _loopback(name.strip("[]"))
+
+        def _forged(self) -> str | None:
+            """Why a state-changing request cannot be the dashboard's own, or None. Any web page the user visits
+            can send a form or a no-cors fetch to 127.0.0.1; such requests cannot carry a JSON Content-Type without
+            a CORS preflight (which this server never grants), and browsers name their real origin."""
+            ctype = (self.headers.get("Content-Type") or "").split(";")[0].strip().lower()
+            if ctype != "application/json":
+                return "Content-Type must be application/json"
+            origin = self.headers.get("Origin")
+            if origin is not None:
+                hosts = {(self.headers.get(h) or "").split(",")[0].strip().lower() for h in ("Host", "X-Forwarded-Host")}
+                if urlparse(origin).netloc.lower() not in hosts - {""}:
+                    return "cross-origin request"
+            return None
+
         def _gate(self, key: str, public: set) -> bool:
             """True when the request may proceed; otherwise the refusal has been sent."""
+            if not self._host_ok():
+                self._json({"error": "unknown host"}, 421)
+                return False
             if auth is None or key in public or key.startswith("static/") or self._authed():
                 return True
             if key.startswith("api/"):
@@ -509,6 +536,9 @@ def make_handler(runner: Runner, auth=None):
 
         def do_POST(self):  # noqa: N802
             parts = [unquote(p) for p in urlparse(self.path).path.strip("/").split("/") if p]
+            forged = self._forged()
+            if forged:
+                return self._json({"error": forged}, 403)
             if not self._gate("/".join(parts), PUBLIC_POST):
                 return
             if parts == ["api", "auth", "login"]:

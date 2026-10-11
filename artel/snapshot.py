@@ -17,14 +17,19 @@ EXCLUDES = [".git", "__pycache__", ".pytest_cache"]
 
 
 class Snapshot:
-    def __init__(self, git_dir, work_tree):
+    def __init__(self, git_dir, work_tree, ignores: bool = True):
+        """``ignores=False``: the work tree's own .gitignore files and the user's global excludes are not trusted
+        (a guard must also see changes to ignored files such as node_modules/ or .env); only EXCLUDES are skipped."""
         self.git_dir = Path(git_dir)
         self.work_tree = Path(work_tree)
+        self.ignores = ignores
 
     def _git(self, *args: str, check: bool = True) -> Optional[str]:
         cmd = ["git", f"--git-dir={self.git_dir}", f"--work-tree={self.work_tree}",
                "-c", "user.name=artel", "-c", "user.email=artel@localhost",
-               "-c", "core.autocrlf=false", "-c", "core.quotepath=false", "-c", "gc.auto=0", *args]
+               "-c", "core.autocrlf=false", "-c", "core.quotepath=false", "-c", "gc.auto=0",
+               "-c", "core.hooksPath=/dev/null", "-c", "core.fsmonitor=false",
+               *([] if self.ignores else ["-c", "core.excludesFile=/dev/null"]), *args]
         try:
             p = subprocess.run(cmd, cwd=self.work_tree, capture_output=True, text=True, timeout=120, encoding="utf-8", errors="replace")
         except (OSError, subprocess.SubprocessError, ValueError):
@@ -50,7 +55,9 @@ class Snapshot:
 
     def track(self) -> Optional[str]:
         """Snapshot the work tree; return the tree hash, or None on failure."""
-        if not self._init() or self._git("add", "-A") is None:
+        add = ["add", "-A"] if self.ignores else ["add", "-A", "--force", "--", ".",
+                                                               *(f":(exclude,glob)**/{x}/**" for x in EXCLUDES)]
+        if not self._init() or self._git(*add) is None:
             return None
         out = self._git("write-tree")
         return out.strip() or None if out is not None else None
@@ -68,7 +75,8 @@ class Snapshot:
             return False
         if self._git("checkout-index", "-a", "-f") is None:
             return False
-        extra = self._git("ls-files", "-o", "--exclude-standard", "-z")
+        skip = "--exclude-standard" if self.ignores else f"--exclude-from={self.git_dir / 'info' / 'exclude'}"
+        extra = self._git("ls-files", "-o", skip, "-z")
         if extra is None:
             return False
         ok = True

@@ -23,8 +23,16 @@ def _http(url: str, token: str, path: str, body: dict | None = None) -> dict:
         return json.loads(r.read())
 
 
+def read_token(arg: str) -> str:
+    """``@<path>``: the token is in that file (mode 0600), kept off the command line; else the token itself."""
+    if arg.startswith("@"):
+        with open(arg[1:], encoding="utf-8") as fh:
+            return fh.read().strip()
+    return arg
+
+
 def main() -> None:
-    url, token = sys.argv[1], sys.argv[2]
+    url, token = sys.argv[1], read_token(sys.argv[2])
     # MCP stdio is UTF-8 JSON lines whatever the platform's locale encoding and line ending are
     for stream, extra in ((sys.stdin, {}), (sys.stdout, {"newline": "\n"})):
         try:

@@ -215,9 +215,14 @@ def restart(item: dict, log=print) -> Optional[int]:
     argv = resume_argv(hb.get("argv") or [])
     if "--repo" not in argv and state.get("repo"):
         argv += ["--repo", state["repo"]]
+    # where and as what the resume runs comes from this installation, never from heartbeat.json: ARTEL_HOME is the
+    # one this evolution lives in, the cwd its repository, and artel is imported from the supervisor's own code
+    # (python -P: nothing from the cwd shadows it)
     env = dict(os.environ)
-    env["ARTEL_HOME"] = hb.get("artel_home") or str(Path(home).parents[1])
-    cwd = hb.get("cwd") if hb.get("cwd") and Path(hb["cwd"]).is_dir() else state.get("repo") or None
+    env["ARTEL_HOME"] = str(Path(home).parents[1])
+    pkg_root = str(Path(__file__).resolve().parents[2])
+    env["PYTHONPATH"] = os.pathsep.join([pkg_root, *[x for x in [os.environ.get("PYTHONPATH")] if x]])
+    cwd = state.get("repo") if state.get("repo") and Path(state["repo"]).is_dir() else None
     logf = open(home / "supervisor.log", "ab")
     logf.write(f"\n--- {time.strftime('%Y-%m-%d %H:%M:%S')} auto-resume: artel {' '.join(argv)}\n".encode())
     logf.flush()
@@ -226,7 +231,7 @@ def restart(item: dict, log=print) -> Optional[int]:
         kw["creationflags"] = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
     else:
         kw["start_new_session"] = True  # outlives the dashboard that started it
-    proc = _spawn([sys.executable, "-m", "artel.cli", *argv], **kw)
+    proc = _spawn([sys.executable, *(["-P"] if sys.version_info >= (3, 11) else []), "-m", "artel.cli", *argv], **kw)
     sup.update(restarts=sup.get("restarts", 0) + 1, last_restart=time.time(), pid=proc.pid)
     (home / "state.json").write_text(json.dumps(state, indent=1), encoding="utf-8")
     with (home / "ledger.jsonl").open("a", encoding="utf-8") as fh:

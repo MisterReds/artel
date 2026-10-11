@@ -99,8 +99,21 @@ DEFAULT_CONFIG: dict[str, Any] = {
 }
 
 
+_secured: set = set()
+
+
 def artel_home() -> Path:
-    return Path(os.environ.get("ARTEL_HOME", Path.home() / ".artel"))
+    """ARTEL_HOME (default ~/.artel), private to its owner: it holds tokens, pairing codes and every project."""
+    home = Path(os.environ.get("ARTEL_HOME", Path.home() / ".artel"))
+    if home not in _secured:
+        _secured.add(home)
+        try:
+            home.mkdir(parents=True, exist_ok=True, mode=0o700)
+            if os.name == "posix" and home.stat().st_uid == os.getuid() and home.stat().st_mode & 0o077:
+                home.chmod(0o700)
+        except OSError:
+            pass
+    return home
 
 
 def deep_merge(base: dict, over: dict) -> dict:

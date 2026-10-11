@@ -59,8 +59,8 @@ def server(tmp_path, monkeypatch):
 
 def req(url, method="GET", body=None, cookie=None, headers=None):
     h = dict(headers or {})
-    if body is not None:
-        h["Content-Type"] = "application/json"
+    if body is not None or method == "POST":
+        h.setdefault("Content-Type", "application/json")
     if cookie:
         h["Cookie"] = f"{COOKIE}={cookie}"
     r = urllib.request.Request(url, json.dumps(body).encode() if body is not None else None, h, method=method)
@@ -251,3 +251,19 @@ def test_index_links_manifest_icons_and_registers_sw():
     assert 'rel="apple-touch-icon"' in html and '<meta name="theme-color"' in html
     assert "serviceWorker.register('/sw.js')" in html
     assert "status===401" in html  # a lost session goes back to the login page
+
+
+def test_other_sites_cannot_drive_the_local_dashboard(server):
+    """Any page the user visits can POST to 127.0.0.1 (form, no-cors fetch) or re-point its own domain there (DNS
+    rebinding); the dashboard must refuse both, in local mode where there is no login."""
+    base, _, _, _ = server(False)
+    plain = {"Content-Type": "text/plain"}
+    assert req(base + "/api/projects", "POST", {"goal": "x"}, headers=plain)[0] == 403  # simple request, no preflight
+    evil = {"Origin": "https://evil.example"}
+    code, _, body = req(base + "/api/projects", "POST", {"goal": "x"}, headers=evil)
+    assert code == 403 and "cross-origin" in json.loads(body)["error"]
+    assert req(base + "/api/portfolio", headers={"Host": "rebind.evil.example:8765"})[0] == 421
+    port = base.rsplit(":", 1)[1]
+    assert req(base + "/api/portfolio", headers={"Host": f"localhost:{port}"})[0] == 200
+    same = {"Origin": base}
+    assert req(base + "/api/providers/timezone", "POST", {"timezone": "UTC"}, headers=same)[0] == 200
