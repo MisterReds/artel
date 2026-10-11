@@ -131,3 +131,21 @@ def test_sandboxed_gate_cannot_write_outside(cfg, outside):
     res = m.run_gates({"id": "x", "checks": [f"echo x > {victim}", "echo ok > inside.txt"]})
     assert res[0]["exit"] != 0 and not victim.exists()
     assert res[1]["exit"] == 0 and (project.shared / "inside.txt").exists()
+
+
+def test_windows_commands_run_in_git_bash_with_utf8(cfg, tmp_path, monkeypatch):
+    """Agents and task checks write POSIX shell; on Windows the plain (unsandboxed) plan must use Git Bash, never
+    /bin/sh, and fall back to cmd.exe only when Git Bash is missing."""
+    from artel import tools
+
+    monkeypatch.setattr(tools, "WIN", True)
+    monkeypatch.setattr(tools, "posix_shell", lambda: r"C:\Program Files\Git\bin\bash.exe")
+    run = sandbox.plan(cfg, "ls -la && echo ok", cwd=tmp_path, writable=[tmp_path], mode="off")
+    assert run.argv == [r"C:\Program Files\Git\bin\bash.exe", "-c", "ls -la && echo ok"] and run.backend == "none"
+    assert tools.shell_env({"A": "1"}) == {"A": "1", "PYTHONUTF8": "1"}
+    monkeypatch.setattr(tools, "posix_shell", lambda: None)
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\system32\cmd.exe")
+    assert sandbox.plan(cfg, "dir", cwd=tmp_path, writable=[tmp_path], mode="off").argv[:2] == \
+        [r"C:\Windows\system32\cmd.exe", "/d"]
+    monkeypatch.setattr(tools, "WIN", False)
+    assert tools.shell_argv("x") == ["/bin/sh", "-c", "x"] and "PYTHONUTF8" not in tools.shell_env({})

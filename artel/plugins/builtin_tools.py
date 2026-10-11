@@ -11,7 +11,7 @@ from pathlib import Path
 from .. import guardian, policy, sandbox
 from ..kernel import ToolSpec
 from ..tooling import ToolContext, ToolError, window_text
-from ..tools import shell_run
+from ..tools import shell_env, shell_run
 
 PLUGIN = {"name": "artel.plugins.builtin_tools", "version": "1",
           "provides": ["tool:bash", "tool:read_file", "tool:write_file", "tool:edit_file", "tool:list_files",
@@ -84,7 +84,8 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
     if run.note and sandbox.settings(ctx.kernel.config)["require"]:
         raise ToolError(f"command NOT run: {run.note.split(';')[0]}, and sandbox.require is set")
     try:
-        proc = subprocess.run(run.argv, cwd=ctx.workspace, capture_output=True, text=True, timeout=timeout, env=env)
+        proc = subprocess.run(run.argv, cwd=ctx.workspace, capture_output=True, text=True, timeout=timeout,
+                              env=shell_env(env), encoding="utf-8", errors="replace")
     except subprocess.TimeoutExpired as exc:
         raise ToolError(f"timed out after {timeout}s; partial output:\n{_clip(str(exc.stdout or ''), 4000)}")
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")

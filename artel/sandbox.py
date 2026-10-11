@@ -154,7 +154,9 @@ def plan(config: dict, command: str, *, cwd, writable, mode: Optional[str] = Non
     """Decide how to run ``command`` under the configured sandbox. Never raises; see ``Plan.note``."""
     s = settings(config)
     mode = mode or s["mode"]
-    plain = Plan(argv=["/bin/sh", "-c", command], backend="none")
+    from .tools import shell_argv
+
+    plain = Plan(argv=shell_argv(command), backend="none")  # Windows: Git Bash (cmd.exe without it)
     if mode == "off":
         return plain
     allowed = _real([*writable, *s["writable"]]) + (temp_dirs() if s["temp"] else [])

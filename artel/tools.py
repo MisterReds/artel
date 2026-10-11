@@ -92,20 +92,31 @@ def posix_shell() -> Optional[str]:
     return None
 
 
+def shell_argv(command: str) -> list:
+    """argv that runs a POSIX shell command line on this platform: /bin/sh on Linux and macOS; on Windows Git Bash
+    when present, else cmd.exe (agents and task checks write POSIX syntax, so Git Bash is what makes them work)."""
+    if WIN:
+        bash = posix_shell()
+        return [bash, "-c", command] if bash else [os.environ.get("COMSPEC", "cmd.exe"), "/d", "/s", "/c", command]
+    return ["/bin/sh", "-c", command]
+
+
+def shell_env(env: Optional[dict] = None) -> dict:
+    """Environment for shell commands: on Windows, child Pythons in UTF-8 mode so their output decodes."""
+    env = dict(os.environ if env is None else env)
+    if WIN:
+        env.setdefault("PYTHONUTF8", "1")
+    return env
+
+
 def shell_run(command: str, **kw) -> subprocess.CompletedProcess:
     """Run a command line written in POSIX shell syntax (what agents and task checks write) and capture text
     output as UTF-8. On Windows it runs in Git Bash when available (cmd.exe otherwise), and child Pythons get
     UTF-8 mode so their output decodes."""
     kw.setdefault("encoding", "utf-8")
     kw.setdefault("errors", "replace")
-    if WIN:
-        env = dict(kw.get("env") or os.environ)
-        env.setdefault("PYTHONUTF8", "1")
-        kw["env"] = env
-        bash = posix_shell()
-        if bash:
-            return subprocess.run([bash, "-c", command], **kw)
-    return subprocess.run(command, shell=True, **kw)
+    kw["env"] = shell_env(kw.get("env"))
+    return subprocess.run(shell_argv(command), **kw)
 
 
 def terminate_tree(proc: subprocess.Popen, force: bool = False) -> bool:
