@@ -2,54 +2,5 @@
  "main": "master",
  "generation": 5,
  "repo": "/home/user/artel",
- "push_failures": [],
- "running": {
-  "generation": 5,
-  "since": 1791393763.7214735,
-  "phase": "final integration of 2 adopted items",
-  "plan": {
-   "champ": "0f3b1cc7d02743e7131e6d8290d64e7e2948e1f5",
-   "kind": "candidate",
-   "hypotheses": [
-    {
-     "title": "W2-guardian: Asynchronous trajectory risk reviewer; high risk switches later actions to blocking review",
-     "rationale": "Roadmap item W2-guardian (wave 2).",
-     "plan": "After each worker run, a cheap reviewer (System One or a small model) scores the trajectory's risk from the event log: destructive commands, writes outside the workspace, network exfiltration, secrets in output. Low risk: nothing. High risk: the task's later runs require a blocking review of every shell command by the guardian before execution, and the dashboard shows a risk badge with the reason.",
-     "expected": "risk score logged for every run (guardian/assessed events); high-risk run switches the task to blocking review; a scripted destructive trajectory is flagged high; cost increase <= 5%",
-     "files": [
-      "artel/manager.py"
-     ],
-     "refs": [
-      "/tmp/claude-0/artel-evo/evolution/artel/sources/openai__codex"
-     ],
-     "source": "roadmap:W2-guardian",
-     "license_note": "Donor: Codex \u2014 study first: /tmp/claude-0/artel-evo/evolution/artel/sources/openai__codex/codex-rs/prompts/templates/guardian/classifier_instructions.md. License Apache-2.0: copying allowed with attribution; keep the notice in a comment."
-    },
-    {
-     "title": "W2-fs-grants: Explicit read/write grants per path",
-     "rationale": "Roadmap item W2-fs-grants (wave 2).",
-     "plan": "Per-role and per-project grants: read paths, write paths (default: workspace + shared deliverables; read-only refs). ToolContext.resolve enforces them for every file tool; the Codex runtime maps them to --add-dir / sandbox, Claude Code to --add-dir and disallowed write tools. A denied access returns a tool error naming the grant.",
-     "expected": "writes outside granted paths are refused for every runtime (tests); refs stay read-only; grants visible on the project page; no benchmark regression",
-     "files": [
-      "artel/tooling.py"
-     ],
-     "refs": [
-      "/tmp/claude-0/artel-evo/evolution/artel/sources/synthetic-sciences__openscience"
-     ],
-     "source": "roadmap:W2-fs-grants",
-     "license_note": "Donor: OpenScience \u2014 study first: /tmp/claude-0/artel-evo/evolution/artel/sources/synthetic-sciences__openscience/ARCHITECTURE.md. License Apache-2.0: copying allowed with attribution; keep the notice in a comment."
-    }
-   ],
-   "branches": {
-    "1": "evolve/g5-1-w2-guardian-asynchronous-traject",
-    "2": "evolve/g5-2-w2-fs-grants-explicit-read-write"
-   },
-   "roadmap": [
-    "W2-guardian",
-    "W2-fs-grants"
-   ],
-   "mode": "adopt"
-  },
-  "resumed_at": 1791393768.789317
- }
+ "push_failures": []
 }
