@@ -469,6 +469,7 @@ items:
       `mcp_servers:` in artel.yaml (stdio / http, env from variables, per-role allow list). The native runtime lists
       their tools and calls them as Artel tools (logged, policy-checked); Claude Code and Codex get them in their own
       MCP config next to Artel's bridge. Presets: Playwright (browser QA — gstack /qa, Cline), fetch, filesystem.
+      A browser server always runs headless or on the worker's own display, never on the owner's screen.
     acceptance: [a stdio MCP server's tool is called by a native worker (fake server test), the same server reaches Claude Code and Codex args, roles without the grant do not see it]
   - id: C-task-tool
     wave: 3
