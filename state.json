@@ -1,6 +1,56 @@
 {
  "main": "master",
- "generation": 5,
+ "generation": 6,
  "repo": "/home/user/artel",
- "push_failures": []
+ "push_failures": [],
+ "running": {
+  "generation": 6,
+  "since": 1791753686.554037,
+  "phase": "baseline",
+  "plan": {
+   "champ": "9d580d3dc27b64aceb795404a226d6ca2cbfe601",
+   "kind": "candidate",
+   "branches": {},
+   "roadmap": [
+    "C-agents-md",
+    "C-mcp-client"
+   ],
+   "mode": "adopt",
+   "hypotheses": [
+    {
+     "title": "C-agents-md: Project instruction files \u2014 AGENTS.md / CLAUDE.md / GEMINI.md / .clinerules read into every agent's context",
+     "rationale": "Roadmap item C-agents-md (wave 3).",
+     "plan": "The de-facto standard every major coding agent reads. Find instruction files in the project's work directory and its parents up to the repository root (AGENTS.md first, then CLAUDE.md, GEMINI.md, .clinerules, nearest wins), put them into planner, worker, reviewer and auditor prompts under a size cap, show which file was used on the project page; CLI runtimes already read them natively, so they are not duplicated there.",
+     "expected": "a rule in AGENTS.md changes the worker's output (scripted test); size cap respected; file shown in the dashboard",
+     "files": [
+      "artel/manager.py",
+      "artel/project.py",
+      "artel/prompts.py"
+     ],
+     "refs": [
+      "/tmp/claude-0/artel-evo/evolution/artel/sources/openai__codex"
+     ],
+     "source": "roadmap:C-agents-md",
+     "license_note": "Donor: Codex / Claude Code / Gemini CLI \u2014 study first: /tmp/claude-0/artel-evo/evolution/artel/sources/openai__codex/docs/agents_md.md. License Apache-2.0: copying allowed with attribution; keep the notice in a comment."
+    },
+    {
+     "title": "C-mcp-client: External MCP servers for agents \u2014 configured once, available to every runtime (Playwright browser preset)",
+     "rationale": "Roadmap item C-mcp-client (wave 3).",
+     "plan": "`mcp_servers:` in artel.yaml (stdio / http, env from variables, per-role allow list). The native runtime lists their tools and calls them as Artel tools (logged, policy-checked); Claude Code and Codex get them in their own MCP config next to Artel's bridge. Presets: Playwright (browser QA \u2014 gstack /qa, Cline), fetch, filesystem. A browser server always runs headless or on the worker's own display, never on the owner's screen.",
+     "expected": "a stdio MCP server's tool is called by a native worker (fake server test); the same server reaches Claude Code and Codex args; roles without the grant do not see it",
+     "files": [
+      "artel/runtimes/mcp_client.py",
+      "artel/plugins/builtin_tools.py",
+      "artel/runtimes/claude_code.py",
+      "artel/runtimes/codex.py"
+     ],
+     "refs": [
+      "/tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode"
+     ],
+     "source": "roadmap:C-mcp-client",
+     "license_note": "Donor: Claude Code / Gemini CLI / goose / Cline \u2014 study first: /tmp/claude-0/artel-evo/evolution/artel/sources/anomalyco__opencode/packages/opencode/src/mcp. License MIT: copying allowed with attribution; keep the notice in a comment."
+    }
+   ]
+  }
+ }
 }
