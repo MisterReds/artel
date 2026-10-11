@@ -441,9 +441,17 @@ def _evolve_once(args) -> int:
             print(json.dumps(ev.cycle(items=args.roadmap if args.roadmap is not None else 2, study=args.study,
                                       wave=args.wave, **opts), ensure_ascii=False))
         return 0
-    if args.roadmap:
+    if args.roadmap or args.items:
+        ids = [i.strip() for i in args.items.split(",") if i.strip()] if args.items else None
+        if ids:
+            from .roadmap import Roadmap
+
+            known = {it["id"] for it in Roadmap.of_repo(ev.repo).items}
+            if set(ids) - known:
+                print(f"no such roadmap items: {', '.join(sorted(set(ids) - known))}", file=sys.stderr)
+                return 2
         for _ in range(args.generations):
-            s = ev.roadmap_generation(args.roadmap, wave=args.wave, **opts)
+            s = ev.roadmap_generation(args.roadmap or len(ids), wave=args.wave, ids=ids, **opts)
             print(json.dumps(s, ensure_ascii=False))
             if not s.get("roadmap"):
                 break
@@ -877,6 +885,7 @@ def main(argv=None) -> int:
     ev.add_argument("--no-stack", action="store_true", help="merge only the single best candidate")
     ev.add_argument("--roadmap", type=int, metavar="N", help="implement the next N evolve items of roadmap.yaml")
     ev.add_argument("--wave", type=int, help="with --roadmap: only this wave")
+    ev.add_argument("--items", metavar="IDS", help="implement exactly these roadmap items, e.g. C-agents-md,C-mcp-client")
     ev.add_argument("--cycle", type=int, metavar="K",
                     help="K turns of: study the next unstudied harness from the registry (findings join the "
                          "roadmap), then implement the next --roadmap items (default 2) in plan order")

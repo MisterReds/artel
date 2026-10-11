@@ -269,3 +269,20 @@ def test_core_priority_items_go_first_and_study_follows_significance(tmp_path):
         " metrics: {stars: 200000, forks: 9000, pushed: '2026-10-01', license: mit, lists: 6}}\n", encoding="utf-8")
     reg = [{"repo": "x/registry", "status": "alive", "category": "harness", "relevance": 30}]
     assert [h["repo"] for h in next_to_study(tmp_path, reg, n=2)] == ["big/origin", "x/registry"]
+
+
+def test_evolve_items_picks_exact_items_and_rejects_unknown_ids(tmp_path, monkeypatch, capsys):
+    from artel import cli
+    from artel.evolve.engine import Evolution
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    donor = tmp_path / "donor"
+    donor.mkdir()
+    repo = _selfrepo(tmp_path, str(donor))
+    assert cli.main(["evolve", "--repo", str(repo), "--items", "W1-a,NOPE"]) == 2
+    assert "NOPE" in capsys.readouterr().err
+    seen = {}
+    monkeypatch.setattr(Evolution, "roadmap_generation",
+                        lambda self, n, wave=None, ids=None, **kw: seen.update(n=n, ids=ids) or {"roadmap": {}})
+    assert cli.main(["evolve", "--repo", str(repo), "--items", "W2-c, W1-a"]) == 0
+    assert seen == {"n": 2, "ids": ["W2-c", "W1-a"]}
