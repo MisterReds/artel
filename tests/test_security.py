@@ -174,3 +174,36 @@ def test_a_planted_journal_branch_cannot_plant_a_heartbeat_or_change_the_reposit
     assert ev.restore_journal()
     assert (tmp_path / "evo" / "ledger.jsonl").exists() and not (tmp_path / "evo" / "heartbeat.json").exists()
     assert json.loads((tmp_path / "evo" / "state.json").read_text())["repo"] == str(repo)
+
+
+def test_the_mcp_proxy_works_from_a_workspace_that_is_another_artel_checkout(home, tmp_path):
+    """Evolution workers run inside a checkout of Artel. The CLI starts the MCP proxy in that workspace; started with
+    `-m artel.runtimes.mcp_proxy` it imported the checkout's (older) proxy, which did not understand the token file,
+    and the agents lost every Artel tool (generation 6: the auditor could not call audit_verdict)."""
+    import subprocess
+
+    from artel.manager import new_kernel
+    from artel.runtimes.claude_code import PROXY_SCRIPT, ToolBridge
+    from artel.tooling import ToolContext
+
+    shadow = tmp_path / "ws" / "artel" / "runtimes"
+    shadow.mkdir(parents=True)
+    for d in (shadow.parent, shadow):
+        (d / "__init__.py").write_text("")
+    (shadow / "mcp_proxy.py").write_text("raise SystemExit('old checkout proxy')\n")
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    project = Project.create("g", cfg, name="proxy", workdir=str(tmp_path / "wd"))
+    k = new_kernel(cfg)
+    bridge = ToolBridge(k, project, ToolContext(k, project, role="worker", workspace=project.shared), "worker",
+                        None, "w")
+    try:
+        msgs = [{"jsonrpc": "2.0", "id": 1, "method": "initialize", "params": {}},
+                {"jsonrpc": "2.0", "id": 2, "method": "tools/list"}]
+        p = subprocess.run([sys.executable, PROXY_SCRIPT, bridge.url, bridge.token_arg], cwd=tmp_path / "ws",
+                           input="\n".join(json.dumps(m) for m in msgs) + "\n", capture_output=True, text=True,
+                           timeout=60)
+        replies = [json.loads(x) for x in p.stdout.splitlines()]
+        names = {t["name"] for t in replies[1]["result"]["tools"]}
+        assert "task_submit" in names, p.stderr
+    finally:
+        bridge.close()

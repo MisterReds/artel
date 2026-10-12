@@ -69,7 +69,7 @@ def test_acp_handshake_mcp_streaming_and_terminal_tool_through_the_bridge(env):
     new = _received(tmp, "session/new")[0]["params"]
     assert new["cwd"] == str(project.shared.resolve())
     srv = new["mcpServers"][0]
-    assert srv["name"] == "artel" and srv["command"] == sys.executable and "artel.runtimes.mcp_proxy" in srv["args"]
+    assert srv["name"] == "artel" and srv["command"] == sys.executable and srv["args"][0].endswith("mcp_proxy.py")
     assert srv["env"][0]["name"] == "PYTHONPATH"
     mcp = next(r for r in _log(tmp) if "mcp_tools" in r)
     assert "task_submit" in mcp["mcp_tools"] and not mcp["mcp_result"]["isError"]

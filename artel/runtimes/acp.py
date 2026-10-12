@@ -40,7 +40,7 @@ from .. import policy
 from ..agent import LoopDetector, Outcome, _short
 from ..prompts import CONTINUATION
 from ..tooling import ToolContext
-from .claude_code import READONLY_ROLES, ToolBridge, child_env
+from .claude_code import PROXY_SCRIPT, READONLY_ROLES, ToolBridge, child_env
 
 PROTOCOL_VERSION = 1
 # Known ACP agents. Each is a command line; users add their own under ``acp.presets``.
@@ -560,7 +560,7 @@ class AcpRun:
         params: dict[str, Any] = {
             "cwd": str(Path(self.ctx.workspace).resolve()),
             "mcpServers": [{"name": "artel", "command": sys.executable,
-                            "args": ["-m", "artel.runtimes.mcp_proxy", self.bridge.url, self.bridge.token_arg],
+                            "args": [PROXY_SCRIPT, self.bridge.url, self.bridge.token_arg],
                             "env": [{"name": "PYTHONPATH", "value": pkg_root}]}]}
         if (self.agent_caps.get("sessionCapabilities") or {}).get("additionalDirectories") is not None:
             extra = [str(r) for r in self.write_roots[1:] + self.refs if r != self.write_roots[0]]

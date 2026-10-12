@@ -32,7 +32,7 @@ from .. import policy
 from ..agent import LoopDetector, Outcome, _short
 from ..prompts import CONTINUATION
 from ..tooling import ToolContext
-from .claude_code import READONLY_ROLES, ToolBridge, child_env
+from .claude_code import PROXY_SCRIPT, READONLY_ROLES, ToolBridge, child_env
 
 KEY_ENV = "DEEPSEEK_API_KEY"
 DEFAULTS = {"sdk": "deepseek_harness", "binary": None, "home": None, "profile": "sdk",
@@ -143,7 +143,7 @@ def artel_patch(cfg: dict, *, bridge_url: str, bridge_token: str) -> list:
     pkg_root = str(Path(__file__).resolve().parents[2])
     rows = [{"insert": [{"id": "artel-mcp", "name": "@deepseek-ai/dsh-mcp-client", "config": {
         "serverName": "artel", "transport": "stdio", "command": sys.executable,
-        "args": ["-m", "artel.runtimes.mcp_proxy", bridge_url, bridge_token],
+        "args": [PROXY_SCRIPT, bridge_url, bridge_token],
         "env": {"PYTHONPATH": pkg_root}, "toolCallTimeoutMs": 900_000, "failOnStartupError": True}}]}]
     if not cfg.get("share_session_log"):
         rows.append({"id": "session-log-deepseek", "config": {"enabled": False}})

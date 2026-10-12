@@ -13,7 +13,7 @@ import subprocess
 from pathlib import Path
 from typing import Optional
 
-EXCLUDES = [".git", "__pycache__", ".pytest_cache"]
+EXCLUDES = [".git", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"]  # tool caches are not work
 
 
 class Snapshot:

@@ -46,6 +46,9 @@ SESSION_ENV = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUD
 MCP_PREFIX = "mcp__artel__"
 # Roles that judge or plan must not edit the deliverables they are judging.
 WRITE_TOOLS = ("Write", "Edit", "MultiEdit")
+# The MCP proxy is started by its file path, never `-m artel.runtimes.mcp_proxy`: the CLI starts it in the agent's
+# workspace, and when that workspace is a checkout of Artel (evolution) `-m` would import that checkout's proxy.
+PROXY_SCRIPT = str(Path(__file__).resolve().with_name("mcp_proxy.py"))
 
 DEFAULTS = {"binary": "claude", "model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
             "timeout_s": 2400, "effort": None, "extra_args": []}
@@ -188,7 +191,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
     cfg_dir.mkdir(exist_ok=True)
     cfg_path = cfg_dir / f"mcp-{uuid.uuid4().hex[:8]}.json"
     cfg_path.write_text(json.dumps({"mcpServers": {"artel": {
-        "command": sys.executable, "args": ["-m", "artel.runtimes.mcp_proxy", bridge.url, bridge.token_arg]}}}), encoding="utf-8")
+        "command": sys.executable, "args": [PROXY_SCRIPT, bridge.url, bridge.token_arg]}}}), encoding="utf-8")
     terminal_names = [s.name for s in bridge.specs if s.terminal]
     note = (f"\n\n## Runtime\nYou run inside Claude Code. Use your built-in tools for files and shell. Artel "
             f"coordination tools are MCP tools named {MCP_PREFIX}<name>: "

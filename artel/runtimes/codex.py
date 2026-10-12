@@ -27,7 +27,7 @@ from .. import policy
 from ..agent import LoopDetector, Outcome, _short
 from ..prompts import CONTINUATION
 from ..tooling import ToolContext
-from .claude_code import READONLY_ROLES, ToolBridge, child_env
+from .claude_code import PROXY_SCRIPT, READONLY_ROLES, ToolBridge, child_env
 
 TERMINAL_GRACE_S = 0.5  # after a terminal tool: how long to wait for the turn's closing usage event
 
@@ -166,7 +166,7 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
     args = [resolve(cc["binary"]) or cc["binary"], "exec", "--json", "--skip-git-repo-check", "--color", "never", "-C", str(workspace),
             "-o", str(last_message),
             "-c", f"mcp_servers.artel.command={_toml(sys.executable)}",
-            "-c", f"mcp_servers.artel.args={_toml(['-m', 'artel.runtimes.mcp_proxy', bridge_url, bridge_token])}",
+            "-c", f"mcp_servers.artel.args={_toml([PROXY_SCRIPT, bridge_url, bridge_token])}",
             "-c", f"mcp_servers.artel.env={{PYTHONPATH={_toml(pkg_root)}}}",
             "-c", "mcp_servers.artel.tool_timeout_sec=900",
             # Autonomous: Codex never stops to ask (nobody would answer). Its own commands stay inside the sandbox
