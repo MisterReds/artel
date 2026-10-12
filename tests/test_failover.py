@@ -148,3 +148,35 @@ def test_claude_login_with_pasted_code_logout_and_models_from_the_cli(tmp_path, 
     assert login.start()["phase"] == "waiting" and login.submit("good-code")["phase"] == "done"
     assert claude_code_status(cfg)["logged_in"]
     assert logout_claude(cfg)["ok"] and not claude_code_status(cfg)["logged_in"]
+
+
+def test_a_goal_audit_that_hits_a_limit_waits_for_the_reset_instead_of_looping(tmp_path, monkeypatch):
+    """Generation 6 restarted a limited audit every tick: 3566 audits in two hours, 28 MB of events. A failed audit
+    waits like a task: until the reset for a limit, a growing delay for other errors, a person after repeated ones."""
+    import time
+
+    from artel import limits
+    from artel.agent import Outcome
+    from artel.manager import MAX_AUDIT_FAILURES, Manager, new_kernel
+    from artel.project import DEFAULT_CONFIG, Project, deep_merge
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(limits, "load", lambda: {"claude_code": {"until": time.time() + 3600}})
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "runtime": "claude_code"})
+    project = Project.create("g", cfg, name="audit", workdir=str(tmp_path / "wd"))
+    m = Manager(new_kernel(cfg), project)
+    m.ask_doctor = lambda *a, **kw: None
+    m.on_audit(Outcome(status="error", error="claude code failed: You've hit your session limit · resets 11:20am (UTC)"))
+    assert m.audit_backoff_until > time.time() + 60 and not m.audit_blocked
+    assert project.meta.get("audit_rounds", 0) == 0  # a failed audit is not a round
+    m.on_audit(Outcome(status="error", error="connection reset by peer"))
+    first = m.audit_backoff_until - time.time()
+    m.on_audit(Outcome(status="error", error="connection reset by peer"))
+    assert m.audit_backoff_until - time.time() > first  # the delay grows
+    for _ in range(MAX_AUDIT_FAILURES):
+        m.on_audit(Outcome(status="error", error="connection reset by peer"))
+    assert m.audit_blocked
+    m2 = Manager(new_kernel(cfg), project)
+    m2.ask_doctor = lambda *a, **kw: None
+    m2.on_audit(Outcome(status="error", error="Claude Code CLI не установлен (not installed)"))
+    assert m2.audit_blocked

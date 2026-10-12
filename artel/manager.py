@@ -48,6 +48,7 @@ TICK_S = 0.5
 BACKOFF_BASE_S = 10
 BACKOFF_CAP_S = 600
 REFINE_EVERY_FAILURES = 3
+MAX_AUDIT_FAILURES = 5  # consecutive goal audits without a verdict before a person is asked
 
 
 START_OVER_RE = re.compile(r"start(ing)?\s+(over|from\s+scratch)|\brevert|\bdiscard", re.I)
@@ -82,6 +83,9 @@ class Manager:
         self.snapshots: dict[str, str] = {}  # task id -> tree hash of shared/ before the pending attempt
         self.snapper = Snapshot(project.root / "snapshot.git", project.shared)
         self.last_refine = 0.0
+        self.audit_backoff_until = 0.0  # a failed goal audit waits (provider limit reset, growing delay) before the next
+        self.audit_failures = 0         # consecutive audits that ended without a verdict
+        self.audit_blocked: Optional[str] = None  # why the audit cannot run without a person (setup, repeated failures)
         self.iso: Optional[Isolation] = None  # per-task worktrees (W2-worktree-isolation), opt-in
         if isolation_enabled(self.cfg):
             if Isolation.available():
@@ -666,6 +670,34 @@ class Manager:
             self.note("escalated", task_id=task_id, rationale=d["rationale"])
             self.ask_doctor(task_id, f"Менеджер передал задачу человеку: {d['rationale']}")
 
+    def _audit_failed(self, reason: str) -> None:
+        """An audit that ended without a verdict is retried the way a task is: after the provider's limit resets
+        (or on another executor), after a growing delay for other errors, and never for a setup problem — a run
+        must not restart a failing audit every tick."""
+        from . import limits
+        from .failures import classify, retry_at
+        from .runtimes import runtime_for
+
+        kind = classify(reason)
+        self.audit_failures += 1
+        if kind == "limit":
+            alt = runtime_for(self.cfg, "auditor")
+            out = limits.load()
+            if out and alt != "none" and alt.split(":")[0] not in out:
+                self.audit_backoff_until = 0.0
+                self.note("provider_switch", to=alt, reason=reason[:300], job="audit")
+                return
+            self.audit_backoff_until = retry_at(reason) or time.time() + 900
+            self.note("audit_retry", reason=reason[:300], failure=kind, until=self.audit_backoff_until)
+            return
+        if kind == "setup" or self.audit_failures >= MAX_AUDIT_FAILURES:
+            self.audit_blocked = reason[:1000]
+            self.note("escalated", rationale=f"goal audit: {reason[:500]}")
+            self.ask_doctor(None, f"Аудит цели не может пройти: {reason}")
+            return
+        self.audit_backoff_until = time.time() + min(900, 30 * 2 ** (self.audit_failures - 1))
+        self.note("audit_retry", reason=reason[:300], failure=kind, until=self.audit_backoff_until)
+
     def is_easy_run(self) -> bool:
         """Gating rule for the goal audit: only a small run with no trouble at all is "easy".
 
@@ -680,12 +712,13 @@ class Manager:
                 and all(t["status"] == "done" and t["attempts"] == 0 for t in tasks))
 
     def on_audit(self, out: Outcome) -> None:
-        rounds = self.project.meta.get("audit_rounds", 0) + 1
-        self.project.set_meta(audit_rounds=rounds)
         if out.name != "audit_verdict":
             if out.status not in ("stopped", "budget"):
-                self.note("audit_retry", reason=out.status)
+                self._audit_failed(out.error or out.status)
             return
+        self.audit_failures = 0
+        rounds = self.project.meta.get("audit_rounds", 0) + 1
+        self.project.set_meta(audit_rounds=rounds)
         v = out.payload
         self.project.log.append("audit/verdict", round=rounds, **v)
         if v["complete"]:
@@ -757,7 +790,7 @@ class Manager:
                                         tool_calls=self.tool_calls)
                 self.board.update(self.root_id, status="done", result="Skipped goal audit: easy, clean run",
                                   actor="manager")
-            else:
+            elif now >= self.audit_backoff_until and not self.audit_blocked:
                 self._submit("audit", self.job_audit)
         if (self.failures_since_refine >= REFINE_EVERY_FAILURES and now - self.last_refine > 300):
             self.failures_since_refine = 0
@@ -834,6 +867,10 @@ class Manager:
                 final = "done"
                 break
             self.schedule()
+            if self.audit_blocked and not self.jobs:
+                self.project.set_meta(blocked_reason=self.audit_blocked)
+                final = "waiting_human"
+                break
             if self.waiting_on_humans():
                 final = "waiting_human"
                 break
