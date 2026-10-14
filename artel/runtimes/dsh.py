@@ -42,7 +42,7 @@ DEFAULTS = {"sdk": "deepseek_harness", "binary": None, "home": None, "profile": 
 MCP_PREFIX = "mcp__artel__"
 SHELL_TOOLS = {"bash", "pwsh"}
 EDIT_TOOLS = {"write", "edit", "str_replace_editor"}
-SETUP_MISSING = ("DeepSeek Harness не установлен: «Провайдеры» → «Установить» или `artel providers install dsh` "
+SETUP_MISSING = ("DeepSeek Harness не установлен: «Подключения» → «Установить» или `artel providers install dsh` "
                  "(pip-пакет deepseek-harness-sdk в окружение Artel)")
 # dsh failure codes (LlmFailure.code) → wording that artel.failures classifies (limit / setup)
 CODE_TEXT = {"RATE_LIMIT": "rate limit", "QUOTA": "usage limit (insufficient balance)",

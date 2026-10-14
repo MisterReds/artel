@@ -45,7 +45,7 @@ def test_a_task_that_stops_for_a_person_gets_an_explanation(cfg):
     from artel.agent import Outcome
 
     def no_cli(kernel, project, *, role, ctx, **kw):
-        return Outcome(status="error", error="Codex CLI не установлен: «Провайдеры» → «Установить»")
+        return Outcome(status="error", error="Codex CLI не установлен: «Подключения» → «Установить»")
 
     mod = types.ModuleType("nocli_rt")
     mod.setup = lambda k: k.register_runtime("nocli", no_cli)

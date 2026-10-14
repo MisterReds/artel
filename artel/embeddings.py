@@ -159,7 +159,7 @@ class LocalServer:
                 return cls._url
             binary = server_binary()
             if not binary or not model.exists():
-                raise EmbedError("локальная модель эмбеддингов не установлена: «Провайдеры» → «Эмбеддинги» → «Установить»")
+                raise EmbedError("локальная модель эмбеддингов не установлена: «Подключения» → «Поиск по смыслу» → «Установить»")
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
                 port = sock.getsockname()[1]

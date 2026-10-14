@@ -363,7 +363,7 @@ def test_setup_errors_go_to_a_person_at_once_and_limits_wait(cfg):
     from artel.agent import Outcome
 
     def no_cli(kernel, project, *, role, ctx, **kw):
-        return Outcome(status="error", error="Codex CLI не установлен: «Провайдеры» → «Установить»")
+        return Outcome(status="error", error="Codex CLI не установлен: «Подключения» → «Установить»")
 
     k = new_kernel(deep_merge(cfg, {"runtime_by_role": {"worker": "nocli"}}))
     k.load_plugin("nocli_rt", _mod("nocli_rt", lambda kk: kk.register_runtime("nocli", no_cli)))
@@ -387,7 +387,7 @@ def test_first_run_without_any_executor_explains_instead_of_crashing(cfg, monkey
     monkeypatch.setattr(rt, "detect_runtime", lambda config, ttl=120.0: "none")
     real = deep_merge(cfg, {"provider": "anthropic", "runtime": "auto"})
     project, status = run_goal("first run, nothing connected", real)
-    assert status == "waiting_human" and "Провайдеры" in project.meta["blocked_reason"]
+    assert status == "waiting_human" and "Подключения" in project.meta["blocked_reason"]
     # after connecting something, "continue" plans and finishes the goal
     monkeypatch.setattr(rt, "detect_runtime", lambda config, ttl=120.0: "native")
     from artel.manager import resume

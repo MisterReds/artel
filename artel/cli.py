@@ -978,7 +978,11 @@ def main(argv=None) -> int:
     rf.set_defaults(fn=cmd_refine)
 
     args = ap.parse_args(argv)
-    return args.fn(args)
+    try:
+        return args.fn(args)
+    except KeyboardInterrupt:  # Ctrl+C stops a command; a traceback would look like a crash
+        print("\nОстановлено.", file=sys.stderr)
+        return 130
 
 
 if __name__ == "__main__":

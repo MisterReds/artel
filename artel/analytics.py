@@ -103,26 +103,38 @@ def task_timelines(events: list[dict]) -> dict[str, list]:
     return tl
 
 
+# how the last event of a project reads on its card (for people, not for log readers)
+PROJECT_STATUS = {"done": "цель достигнута", "running": "в работе", "waiting_human": "ждёт человека", "stopped": "остановлен",
+                  "error": "ошибка", "paused_budget": "бюджет исчерпан", "needs_review": "нужна проверка"}
+TASK_STATUS = {"todo": "ожидает", "ready": "готова к работе", "running": "в работе", "review": "на ревью",
+               "done": "принята", "blocked": "заблокирована", "cancelled": "отменена"}
+PURPOSE = {"plan": "план", "work": "задача", "review": "ревью", "audit": "аудит цели", "test": "тесты",
+           "refine": "улучшение харнесса", "librarian": "навыки"}
+RUN_STATUS = {"terminal": "готово", "stalled": "завис", "error": "ошибка", "turn_limit": "лимит ходов",
+              "budget": "бюджет", "stopped": "остановлен", "refused": "отказ модели"}
+
+
 def _summary(e: dict) -> str:
     k = e["kind"]
+    st = lambda m, v: m.get(v, v)  # noqa: E731
     if k == "tool/call":
         return f"{e.get('actor')}: {e['tool']}"
     if k == "board/task_moved":
-        return f"{e['task_id']} {e['frm']} → {e['to']}"
+        return f"задача {st(TASK_STATUS, e['frm'])} → {st(TASK_STATUS, e['to'])}"
     if k == "review/verdict":
-        return ("принято " if e["passed"] else "отклонено ") + e["task_id"]
+        return "ревью: " + ("принято" if e["passed"] else "отклонено")
     if k == "audit/verdict":
         return "аудит: " + ("цель достигнута" if e["complete"] else "не готово")
     if k == "board/comment":
         return f"{e['author']}: {e['body'][:80]}"
     if k == "agent/end":
-        return f"{e.get('actor')}: {e.get('purpose')} — {e.get('status')}"
+        return f"{e.get('actor')}: {st(PURPOSE, e.get('purpose'))} — {st(RUN_STATUS, e.get('status'))}"
     if k == "manager/finished":
-        return f"менеджер завершил: {e.get('status')}"
+        return f"работа завершена: {st(PROJECT_STATUS, e.get('status'))}"
     if k == "project/status":
-        return f"статус: {e.get('status')}"
+        return f"статус: {st(PROJECT_STATUS, e.get('status'))}"
     if k == "run/finished":
-        return f"запуск #{e.get('run_id')}: {e.get('status')}"
+        return f"запуск #{e.get('run_id')}: {st(RUN_STATUS, e.get('status'))}"
     if k == "skills/reviewed":
         return "обновлена библиотека скиллов"
     if k in ("harness/refined", "harness/edited"):

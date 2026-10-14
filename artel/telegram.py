@@ -5,7 +5,7 @@ so a goal started from the phone is a normal project visible everywhere.
 
 Security: the bot token comes only from the environment (ARTEL_TELEGRAM_TOKEN) and is never stored. Nobody gets
 any data until their chat is paired: `/pair CODE` with a one-time code (valid 15 minutes) shown in the terminal and
-on the dashboard's "Провайдеры" page. Paired chat ids are kept in ARTEL_HOME/telegram.json.
+on the dashboard's "Подключения" page. Paired chat ids are kept in ARTEL_HOME/telegram.json.
 
 Commands: /status · /projects · /p N · /new <цель> (or just send the goal text) · /answer N <ответ> · /stop N ·
 /resume N · /update · /unpair · /help. Notifications: a project is done, needs a person, failed or ran out of
@@ -201,10 +201,10 @@ class TelegramBot:
                 self.send(chat, "Чат привязан к Artel.\n\n" + HELP)
             else:
                 self.failed_pairs[chat] = self.failed_pairs.get(chat, 0) + 1
-                self.send(chat, "Код не подошёл или устарел. Новый код: дашборд → Провайдеры → Telegram, "
+                self.send(chat, "Код не подошёл или устарел. Новый код: дашборд → Подключения → Telegram, "
                                 "или `artel telegram pair` в терминале.")
         else:
-            self.send(chat, "Этот чат не привязан. Отправьте /pair КОД — код в дашборде (Провайдеры → Telegram) "
+            self.send(chat, "Этот чат не привязан. Отправьте /pair КОД — код в дашборде (Подключения → Telegram) "
                             "или в терминале: `artel telegram pair`.")
 
     # --- commands -------------------------------------------------------
@@ -232,7 +232,7 @@ class TelegramBot:
         from .runtimes import detect_runtime
 
         rt = detect_runtime(self.runner.config)
-        lines.append("Исполнитель: " + ({"none": "не подключён — откройте «Провайдеры»"}.get(rt, rt)))
+        lines.append("Исполнитель: " + ({"none": "не подключён — откройте «Подключения»"}.get(rt, rt)))
         self.send(chat, "\n".join(lines))
         if need:
             self.c_projects(chat, "need")

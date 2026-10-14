@@ -178,7 +178,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
     actor = persona.name if persona else role
     task_id = (ctx.task or {}).get("id")
     if not resolve(cc["binary"]):
-        out = Outcome(status="error", error="Claude Code CLI не установлен: «Провайдеры» → «Установить» "
+        out = Outcome(status="error", error="Claude Code CLI не установлен: «Подключения» → «Установить» "
                                             "или `artel providers install claude`")
         out.cost_usd = 0.0
         project.log.append("llm/error", actor=actor, task_id=task_id, error=out.error, runtime="claude_code")

@@ -6,7 +6,7 @@ localhost bridge as the Claude Code runtime, so tool execution, validation and l
 
 Every agent message, command and file change is mirrored into the project event log. If Codex ends without a
 terminal tool, the thread is resumed (``codex exec resume <thread>``) with the continuation prompt, up to
-``max_resumes`` times. Login: ``artel providers login codex`` or the dashboard's "Провайдеры" page.
+``max_resumes`` times. Login: ``artel providers login codex`` or the dashboard's "Подключения" page.
 """
 
 from __future__ import annotations
@@ -207,7 +207,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
     cc = codex_settings(kernel.config)
     actor = persona.name if persona else role
     if not resolve(cc["binary"]):
-        out = Outcome(status="error", error="Codex CLI не установлен: «Провайдеры» → «Установить» "
+        out = Outcome(status="error", error="Codex CLI не установлен: «Подключения» → «Установить» "
                                             "или `artel providers install codex`")
         out.cost_usd = 0.0
         project.log.append("llm/error", actor=actor, task_id=(ctx.task or {}).get("id"), error=out.error,

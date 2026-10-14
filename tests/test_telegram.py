@@ -118,6 +118,6 @@ def test_waiting_project_is_announced_and_answered_from_the_phone(bot, monkeypat
     slug = runner.start("blocked goal", None)
     assert wait_for(lambda: slug not in runner.active)
     b.notify_once()
-    assert any("Нужен человек" in t and "Провайдеры" in t for t in tg.texts(9))
+    assert any("Нужен человек" in t and "Подключения" in t for t in tg.texts(9))
     b.notify_once()  # no duplicate notification
     assert sum("Нужен человек" in t for t in tg.texts(9)) == 1

@@ -1,4 +1,4 @@
-"""What Artel can talk to, and how it is signed in — the data behind the dashboard's "Провайдеры" page.
+"""What Artel can talk to, and how it is signed in — the data behind the dashboard's "Подключения" page.
 
 - Codex (ChatGPT subscription): device-code login driven through the official CLI (`codex login --device-auth`);
   the code and link are shown in the dashboard, the CLI stores and refreshes the tokens itself.

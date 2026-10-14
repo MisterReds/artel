@@ -30,6 +30,9 @@ SMOKE = ("import importlib, pkgutil, artel, artel.cli\n"
 DEFAULTS = {"remote": "origin", "branch": "master", "verify": "invariants", "check_interval_min": 30}
 
 
+UP_TO_DATE = "установлена последняя версия"
+
+
 class UpdateError(RuntimeError):
     pass
 
@@ -91,11 +94,11 @@ class Updater:
                    available=behind > 0)
         reason = ""
         if not behind:
-            reason = "up to date"
+            reason = UP_TO_DATE
         elif dirty:
-            reason = f"local changes in {len(dirty)} files; commit or discard them first"
+            reason = f"локальные изменения в {len(dirty)} файлах: сохраните (commit) или отмените их"
         elif ahead:
-            reason = f"local history has {ahead} commits not on {self.upstream}; updates only fast-forward"
+            reason = f"в локальной истории {ahead} коммитов, которых нет в {self.upstream}; обновление только догоняет его"
         out.update(can_update=behind > 0 and not reason, reason=reason)
         return self._remember(out)
 
@@ -171,7 +174,7 @@ class Updater:
         if cur != last["to"]:
             raise UpdateError(f"HEAD is {cur[:10]}, not the last update {last['to'][:10]}; roll back by hand")
         if self._git("status", "--porcelain", "--untracked-files=no"):
-            raise UpdateError("local changes present; commit or discard them first")
+            raise UpdateError("локальные изменения: сохраните (commit) или отмените их")
         self._git("reset", "--hard", "--quiet", last["from"])
         entry = self._record({"action": "rollback", "from": cur, "to": last["from"]})
         return {"rolled_back": True, **entry, "restart_required": True}

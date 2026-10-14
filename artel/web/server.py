@@ -742,7 +742,12 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
         print("Без HTTPS токен и сессия идут по сети открытым текстом - см. docs/REMOTE.md", flush=True)
     try:
         httpd.serve_forever()
+    except KeyboardInterrupt:  # Ctrl+C is how a person stops the dashboard: say so, no traceback
+        live = sorted(getattr(runner, "active", {}) or {})
+        print("\nArtel остановлен." + (f" Незавершённые проекты ({len(live)}) продолжатся кнопкой «Продолжить» "
+                                       "после следующего `artel web`." if live else ""), flush=True)
     finally:
+        httpd.server_close()
         runner.kernel.shutdown(reason="server_stop")
 
 

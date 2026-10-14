@@ -129,6 +129,12 @@ button:disabled{opacity:.45;cursor:default}
 .netwarn{display:none;border-left:3px solid var(--warn);background:var(--panel);padding:8px 16px;font-size:13px;border-bottom:1px solid var(--line)}
 .netwarn.show{display:block}
 #logout{display:none}
+/* two audiences: a person who runs projects sees what they need; the developer mode (Настройки) shows the rest */
+body:not(.devmode) .dev{display:none!important}
+.devtag{font-size:11px;padding:1px 7px;border-radius:99px;background:var(--brand-soft);color:var(--brand);margin-left:6px;vertical-align:1px}
+.set{max-width:760px}.set section{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:14px 16px;margin:12px 0}
+.set h3{margin:0 0 6px;font:600 15px/1.3 var(--display)}.set .row{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}
+.set .row input:not([type=radio]):not([type=checkbox]){flex:1;min-width:200px}.set .row .switch{align-items:center}.switch{display:flex;gap:10px;align-items:flex-start;cursor:pointer}.switch input{width:auto;margin-top:3px}
 @supports(padding:env(safe-area-inset-top)){header{padding-top:max(10px,env(safe-area-inset-top));padding-left:max(16px,env(safe-area-inset-left));padding-right:max(16px,env(safe-area-inset-right))}}
 </style>
 </head>
@@ -136,17 +142,18 @@ button:disabled{opacity:.45;cursor:default}
 <header>
   <a class="logo" href="#/portfolio"><svg viewBox="0 0 64 64" aria-hidden="true"><g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"><line x1="32" y1="9" x2="11" y2="55"/><line x1="32" y1="9" x2="53" y2="55"/><line x1="20.5" y1="36" x2="43.5" y2="36"/></g><g fill="var(--brand)"><circle cx="32" cy="9" r="6.2"/><circle cx="11" cy="55" r="6.2"/><circle cx="53" cy="55" r="6.2"/><circle cx="20.5" cy="36" r="5"/><circle cx="43.5" cy="36" r="5"/></g></svg>Artel</a>
   <nav id="nav">
-    <a href="#/portfolio" data-v="portfolio">Портфель</a>
-    <a href="#/agents" data-v="agents">Агенты</a>
-    <a href="#/registry" data-v="registry">Реестр харнессов</a>
-    <a href="#/evolution" data-v="evolution">Эволюция</a>
-    <a href="#/skills" data-v="skills">Скиллы</a>
-    <a href="#/plugins" data-v="plugins">Плагины</a>
-    <a href="#/providers" data-v="providers">Провайдеры</a>
+    <a href="#/portfolio" data-v="portfolio">Проекты</a>
+    <a href="#/providers" data-v="providers">Подключения</a>
     <a href="#/failures" data-v="failures">Сбои</a>
+    <a href="#/settings" data-v="settings">Настройки</a>
+    <a class="dev" href="#/agents" data-v="agents">Воркеры</a>
+    <a class="dev" href="#/skills" data-v="skills">Навыки</a>
+    <a class="dev" href="#/plugins" data-v="plugins">Плагины</a>
+    <a class="dev" href="#/evolution" data-v="evolution">Эволюция</a>
+    <a class="dev" href="#/registry" data-v="registry">Реестр харнессов</a>
   </nav>
   <button id="updbtn" style="display:none" title="Доступно обновление Artel"></button>
-  <button class="primary" id="newbtn">+ Новая цель</button>
+  <button class="primary" id="newbtn">+ Новый проект</button>
   <button id="theme" title="Тема">◐</button>
   <button id="logout" title="Выйти на этом устройстве">Выйти</button>
 </header>
@@ -197,6 +204,10 @@ const num=v=>v==null?'—':Number(v).toLocaleString();
 const pct=v=>v==null?'—':Math.round(v*100)+'%';
 let timer=null, es=null, state={};
 try{const t=localStorage.getItem('artel-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
+// Режим разработчика: эволюция, реестр харнессов, плагины, статистика воркеров, сырые события, токены и роли
+let DEV=false;try{DEV=localStorage.getItem('artel-dev')==='1'}catch(e){}
+document.body.classList.toggle('devmode',DEV);
+function setDev(on){DEV=on;document.body.classList.toggle('devmode',on);try{localStorage.setItem('artel-dev',on?'1':'0')}catch(e){}}
 $('#theme').onclick=()=>{const r=document.documentElement;r.dataset.theme=r.dataset.theme==='dark'?'light':'dark';try{localStorage.setItem('artel-theme',r.dataset.theme)}catch(e){}};
 const dlgEl=$('#dlg');dlgEl.addEventListener('click',e=>{if(e.target===dlgEl)dlgEl.close()});
 /* Диагност: «Почему?» — объяснение сбоя на доступной модели */
@@ -210,7 +221,7 @@ async function why(problem,slug,task){dlg('<h3>Диагност</h3><p class="st
       <p class="stat">${r.by==='rules'?'Ответ по встроенным правилам'+(r.model_error?' (модель недоступна: '+esc(r.model_error)+')':''):'Разобрано моделью: '+esc(r.by)}</p>`);return}
   $('#dlgbody').querySelector('p').textContent='Диагност не успел ответить; повторите позже.'}
 function dlg(html){$('#dlgbody').innerHTML=html+'<div style="text-align:right;margin-top:12px"><button onclick="dlgEl.close()">Закрыть</button></div>';dlgEl.showModal()}
-$('#newbtn').onclick=()=>{dlg(`<h3>Новая цель → новый проект</h3><p class="stat">Архитектор соберёт команду, разложит цель на задачи и запустит работу. Проект появится в портфеле.</p>
+$('#newbtn').onclick=()=>{dlg(`<h3>Новый проект</h3><p class="stat">Опишите, что нужно получить. Artel наберёт команду воркеров, разложит цель на задачи, выполнит и проверит их. Ход работы виден на странице проекта.</p>
   <textarea id="goal" rows="5" placeholder="Например: Сделай CLI-утилиту на Python, которая конвертирует CSV в JSON, с тестами и README"></textarea>
   <input id="pname" placeholder="Название (необязательно)" style="margin-top:8px"><div style="margin-top:8px"><button class="primary" id="go">Запустить</button></div>`);
   $('#go').onclick=async()=>{const g=$('#goal').value.trim();if(!g)return;const r=await post('/api/projects',{goal:g,name:$('#pname').value.trim()});dlgEl.close();location.hash='#/p/'+encodeURIComponent(r.slug)}};
@@ -218,7 +229,7 @@ $('#newbtn').onclick=()=>{dlg(`<h3>Новая цель → новый проек
 function route(){clearInterval(timer);if(es){es.close();es=null}
   const h=location.hash.slice(2)||'portfolio';const [v,arg]=h.split('/');
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
-  ({portfolio,agents,registry,skills,evolution,providers,plugins,failures,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
+  ({portfolio,agents,registry,skills,evolution,providers,plugins,failures,settings,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
 window.addEventListener('hashchange',route);
 
 /* ---------- Сбои ---------- */
@@ -242,13 +253,34 @@ async function failures(){$('#view').innerHTML='<div class="wrap" id="fl"><div c
         $('#rp-msg').innerHTML=x.ok?`Готово: <a href="${esc(x.url)}" target="_blank" rel="noopener">${esc(x.url)}</a>`:'Не отправлено: '+esc(x.error||'');draw()}})};
   await draw()}
 
+/* ---------- Настройки ---------- */
+async function settings(){$('#view').innerHTML='<div class="wrap set" id="st"><div class="empty">Загрузка…</div></div>';
+  const [o,u]=await Promise.all([api('/api/providers'),api('/api/update')]);const tz=o.timezone||{};
+  const theme=document.documentElement.dataset.theme||'';
+  $('#st').innerHTML=`<section><h3>Часовой пояс</h3><p class="stat">Время в панели, Telegram и командной строке. Пусто — пояс компьютера (сейчас ${esc(tz.effective||'')}).</p>
+    <div class="row"><input id="tz" value="${esc(tz.configured||'')}" placeholder="например Asia/Sakhalin" list="tzl"><datalist id="tzl">${(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]).map(z=>`<option value="${z}">`).join('')}</datalist>
+    <button class="primary" id="tz-save">Сохранить</button><span class="stat" id="tz-msg"></span></div></section>
+   <section><h3>Тема</h3><div class="row">${[['','как в системе'],['light','светлая'],['dark','тёмная']].map(([v,l])=>`<label class="switch"><input type="radio" name="th" value="${v}" ${v===theme?'checked':''}> ${l}</label>`).join('')}</div></section>
+   <section><h3>Обновления</h3><p class="stat">${u.available?`Доступно обновление: изменений ${u.behind}.`:'Установлена последняя версия.'}<span class="dev"> ${esc(u.reason||'')}</span> Перед установкой новая версия проверяется тестами; откатиться можно в один клик.</p>
+    <div class="row"><button id="st-upd">${u.available?'Посмотреть и обновить':'Проверить сейчас'}</button></div></section>
+   <section><h3>Уведомления и отчёты о сбоях</h3><p class="stat">Telegram подключается в «Подключениях»; что сообщать о сбоях и отправлять ли их разработчикам — в «Сбоях».</p>
+    <div class="row"><a href="#/providers">Подключения →</a> <a href="#/failures">Сбои →</a></div></section>
+   <section><h3>Навыки воркеров</h3><p class="stat">Библиотека приёмов, которые воркеры накапливают и переиспользуют между проектами. Artel ведёт её сам; заглядывать сюда не обязательно.</p>
+    <div class="row"><a href="#/skills">Открыть навыки →</a></div></section>
+   <section><h3>Режим разработчика</h3><label class="switch"><input type="checkbox" id="devmode" ${DEV?'checked':''}><span>Показывать инструменты разработки Artel: эволюцию, реестр харнессов, плагины, статистику воркеров по моделям, все события в ленте проекта (вызовы инструментов, ходы модели), токены и стоимость, назначение ролей рантаймам, ACP-агентов и System One.</span></label></section>`;
+  $('#tz-save').onclick=async()=>{const r=await fetch('/api/providers/timezone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timezone:$('#tz').value})});
+    const j=await r.json().catch(()=>({}));if(!r.ok){$('#tz-msg').textContent='Не сохранено: '+(j.error||r.status);return}TZ=j.configured||'';$('#tz-msg').textContent='Сохранено.'};
+  document.querySelectorAll('input[name=th]').forEach(x=>x.onchange=()=>{const r=document.documentElement;if(x.value)r.dataset.theme=x.value;else delete r.dataset.theme;try{localStorage.setItem('artel-theme',x.value)}catch(e){}});
+  $('#st-upd').onclick=async()=>updDialog(await checkUpdate(true));
+  $('#devmode').onchange=e=>setDev(e.target.checked)}
+
 /* ---------- Портфель ---------- */
 async function portfolio(){
   const draw=async()=>{const [ps,r]=await Promise.all([api('/api/portfolio'),api('/api/ready')]);state.ps=ps;state.ready=r;renderPortfolio()};
   $('#view').innerHTML='<div class="wrap" id="pf"><div class="empty">Загрузка…</div></div>';state.pfilter=state.pfilter||'all';state.pq=state.pq||'';
   await draw();timer=setInterval(draw,3000)}
 function readyBanner(){const r=state.ready;if(!r||r.runtime!=='none')return '';
-  return `<div class="alert" onclick="location.hash='#/providers'"><b>Нет подключённого исполнителя.</b> Цели не начнутся, пока не подключён Codex, Claude Code или DeepSeek Harness (или ключ API). Открыть «Провайдеры» →</div>`}
+  return `<div class="alert" onclick="location.hash='#/providers'"><b>Нет подключённого исполнителя.</b> Проекты не начнутся, пока не подключён Claude Code, Codex или DeepSeek Harness (или ключ API). Открыть «Подключения» →</div>`}
 function renderPortfolio(){const ps=state.ps;const att=ps.flatMap(p=>(p.attention||[]).map(a=>({...a,p})));
   const live=ps.filter(p=>p.live).length,done=ps.reduce((s,p)=>s+(p.tasks_done||0),0),tot=ps.reduce((s,p)=>s+(p.tasks_total||0),0);
   const cost=ps.reduce((s,p)=>s+(p.cost_usd||0),0),agents=ps.reduce((s,p)=>s+(p.active_workers||0),0);
@@ -256,12 +288,15 @@ function renderPortfolio(){const ps=state.ps;const att=ps.flatMap(p=>(p.attentio
   const shown=ps.filter(p=>(state.pfilter==='all'||p.stage===state.pfilter)&&(!state.pq||(p.name+' '+p.goal).toLowerCase().includes(state.pq)));
   $('#pf').innerHTML=`${readyBanner()}<div class="kpis">
     <div class="kpi"><b>${ps.length}</b><span>проектов</span></div><div class="kpi"><b>${live}</b><span>работают сейчас</span></div>
-    <div class="kpi"><b>${agents}</b><span>агентов в работе</span></div><div class="kpi"><b>${done}/${tot}</b><span>задач выполнено</span></div>
-    <div class="kpi"><b style="color:${att.length?'var(--bad)':'inherit'}">${att.length}</b><span>требуют внимания</span></div><div class="kpi"><b>${money(cost)}</b><span>оценка стоимости</span></div></div>
+    <div class="kpi"><b>${agents}</b><span>воркеров в работе</span></div><div class="kpi"><b>${done}/${tot}</b><span>задач выполнено</span></div>
+    <div class="kpi"><b style="color:${att.length?'var(--bad)':'inherit'}">${att.length}</b><span>требуют внимания</span></div><div class="kpi dev"><b>${money(cost)}</b><span>оценка стоимости API</span></div></div>
   ${att.length?`<h2>Требует внимания</h2>${att.map(a=>`<div class="alert" data-s="${esc(a.p.slug)}"><b>${esc(a.p.name)}</b> · ${esc(a.title)} <span class="stat">· @${esc(a.assignee)} · ${esc(a.reason)}</span></div>`).join('')}`:''}
   <h2>Проекты</h2><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><div class="chips">${stages.map(s=>`<button data-f="${s}" class="${state.pfilter===s?'on':''}">${s==='all'?'все':esc(STAGE[s]||s)} ${s==='all'?ps.length:ps.filter(p=>p.stage===s).length}</button>`).join('')}</div>
     <input id="pq" placeholder="Поиск по проектам" value="${esc(state.pq)}" style="max-width:280px"></div>
-  ${shown.length?`<div class="grid">${shown.map(pcard).join('')}</div>`:`<div class="empty"><svg class="mark" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"><line x1="32" y1="9" x2="11" y2="55"/><line x1="32" y1="9" x2="53" y2="55"/><line x1="20.5" y1="36" x2="43.5" y2="36"/></g></svg>Артель ждёт цель. Нажмите «+ Новая цель».</div>`}`;
+  ${shown.length?`<div class="grid">${shown.map(pcard).join('')}</div>`:`<div class="empty"><svg class="mark" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"><line x1="32" y1="9" x2="11" y2="55"/><line x1="32" y1="9" x2="53" y2="55"/><line x1="20.5" y1="36" x2="43.5" y2="36"/></g></svg><div style="max-width:420px;margin:0 auto;text-align:left"><b>Как начать</b><ol style="margin:8px 0 0;padding-left:20px">
+    <li>«Подключения» — войдите в Claude Code или Codex (подписка) либо задайте ключ API.</li>
+    <li>«+ Новый проект» — опишите, что нужно получить.</li>
+    <li>Следите за доской проекта; если воркеру нужен человек, проект попросит.</li></ol></div></div>`}`;
   document.querySelectorAll('.pcard,.alert').forEach(e=>e.onclick=()=>location.hash='#/p/'+encodeURIComponent(e.dataset.s));
   document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{state.pfilter=b.dataset.f;renderPortfolio()});
   const q=$('#pq');q.oninput=()=>{state.pq=q.value.toLowerCase();renderPortfolio();const n=$('#pq');n.focus();n.setSelectionRange(n.value.length,n.value.length)}}
@@ -269,7 +304,7 @@ function segbar(c,total){if(!total)return '<div class="bar"></div>';return `<div
 function pcard(p){const c=p.counts||{};return `<div class="pcard" data-s="${esc(p.slug)}">
   <div class="top"><span class="dot ${p.live?'live':''}"></span><span class="nm">${esc(p.name)}</span><span class="badge ${p.stage}">${esc(STAGE[p.stage]||p.stage)}</span></div>
   ${segbar(c,p.tasks_total)}
-  <div class="stat">${p.tasks_done}/${p.tasks_total} задач · аудитов ${p.audit_rounds||0} · ${money(p.cost_usd)}${p.budget&&p.budget.alert?` · <span class="human">бюджет ${pct(p.budget.fraction)}</span>`:''}</div>
+  <div class="stat">${p.tasks_done}/${p.tasks_total} задач<span class="dev"> · аудитов ${p.audit_rounds||0} · ${money(p.cost_usd)}</span>${p.budget&&p.budget.alert?` · <span class="human">бюджет ${pct(p.budget.fraction)}</span>`:''}</div>
   <div class="avatars">${(p.workers||[]).map(w=>`<span class="av ${w.busy_on?'busy':''}" title="${esc(w.role)}${w.busy_on?' — '+esc(w.busy_on):''}">${ri(w.role)}${esc(w.name)}</span>`).join('')}</div>
   ${p.last_event?`<div class="stat" style="overflow-wrap:anywhere">${esc(p.last_event.text)} · ${ago(p.last_event.ts)}</div>`:''}
   ${(p.attention||[]).length?`<div class="human">⚠ ${p.attention.length} требует внимания</div>`:''}</div>`}
@@ -277,7 +312,7 @@ function pcard(p){const c=p.counts||{};return `<div class="pcard" data-s="${esc(
 /* ---------- Проект ---------- */
 async function project(slug){state.slug=slug;state.events=[];
   $('#view').innerHTML=`<div class="layout"><main id="pm"><div class="empty">Загрузка…</div></main>
-    <section class="feed" id="feed"><div class="feedhead"><input id="filter" placeholder="Фильтр ленты: tool, review, имя…"><button class="feedbtn" id="closefeed">×</button></div><div id="events"></div></section></div>`;
+    <section class="feed" id="feed"><div class="feedhead"><input id="filter" placeholder="Поиск по ленте: имя, задача, слово…"><button class="feedbtn" id="closefeed">×</button></div><div id="events"></div></section></div>`;
   $('#filter').oninput=()=>{$('#events').innerHTML='';state.events.forEach(appendEvent)};$('#closefeed').onclick=()=>$('#feed').classList.remove('show');
   await refresh();
   es=new EventSource(`/api/projects/${encodeURIComponent(slug)}/events?after=0`);
@@ -287,24 +322,24 @@ let pending=null;function schedule(){if(!pending)pending=setTimeout(()=>{pending
 async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(state.slug)}`);if(v.error){$('#pm').innerHTML=`<div class="empty">${esc(v.error)}</div>`;return}
   state.v=v;const m=v.meta,st=v.stats,u=m.usage;const tasks=v.board.tasks.filter(t=>t.kind!=='goal'),root=v.board.tasks.find(t=>t.kind==='goal');
   const by=s=>tasks.filter(t=>t.status===s);const si=STEPS.indexOf(st.stage);
-  $('#pm').innerHTML=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><a href="#/portfolio">← Портфель</a></div>
-  ${m.blocked_reason?`<div class="alert"><b>Проект не может продолжить:</b> ${esc(m.blocked_reason)} <a href="#/providers">Провайдеры →</a> · после исправления нажмите «Продолжить». <button id="why-proj">Почему?</button>${m.diagnosis?`<div class="stat" style="margin-top:6px"><b>Диагност:</b> ${esc(m.diagnosis.cause||'')}${(m.diagnosis.steps||[]).length?' — '+esc(m.diagnosis.steps[0]):''}</div>`:''}</div>`:''}
+  $('#pm').innerHTML=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><a href="#/portfolio">← Проекты</a></div>
+  ${m.blocked_reason?`<div class="alert"><b>Проект не может продолжить:</b> ${esc(m.blocked_reason)} <a href="#/providers">Подключения →</a> · после исправления нажмите «Продолжить». <button id="why-proj">Почему?</button>${m.diagnosis?`<div class="stat" style="margin-top:6px"><b>Диагност:</b> ${esc(m.diagnosis.cause||'')}${(m.diagnosis.steps||[]).length?' — '+esc(m.diagnosis.steps[0]):''}</div>`:''}</div>`:''}
   <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px"><div style="font-size:20px;font-weight:600;flex:1;min-width:200px">${esc(m.name)}</div>
     <span class="badge ${st.stage}">${esc(STAGE[st.stage]||st.stage)}</span>
     ${v.live?'<button id="stop">Стоп</button>':m.status==='done'?'':'<button id="resume">Продолжить</button>'}<button class="feedbtn" id="openfeed">Лента</button></div>
   <div class="stepper">${STEPS.map((s,i)=>`<div class="step ${si<0?'':i<si?'past':i===si?'now':''}">${STAGE[s]}</div>`).join('')}</div>
-  <div class="stat">токены ${num(u.input_tokens)} → ${num(u.output_tokens)} · запросов ${u.requests} · ${money(st.cost_usd)} · раундов аудита ${m.audit_rounds||0} · задач ${st.tasks_done}/${st.tasks_total}</div>
+  <div class="stat">задач выполнено ${st.tasks_done} из ${st.tasks_total}<span class="dev"> · токены ${num(u.input_tokens)} → ${num(u.output_tokens)} · запросов ${u.requests} · ${money(st.cost_usd)} · раундов аудита ${m.audit_rounds||0}</span></div>
   ${segbar(st.counts,st.tasks_total)}
   <div class="goal"><b>Цель.</b> ${esc(m.goal)}${root&&root.result?`<div style="margin-top:6px;color:var(--ok)">${esc(root.result)}</div>`:''}</div>
   ${st.attention.length?`<h2>Требует внимания</h2>${st.attention.map(a=>`<div class="alert" data-t="${a.task_id}"><b>${esc(a.title)}</b> <span class="stat">· @${esc(a.assignee)} · ${esc(a.reason)} — откройте и напишите исполнителю</span></div>`).join('')}`:''}
   ${activeBox(v,tasks)}
   <h2>Команда</h2><div class="team">${v.workers.map(w=>{const s=st.workers.find(x=>x.name===w.name)||{};return `<div class="worker" data-w="${esc(w.name)}"><b>${esc(w.name)}</b><span class="role">${ri(w.role)}${esc(w.role)}</span>
     <div class="now">${w.current?'▶ '+esc((tasks.find(t=>t.id===w.current)||{}).title||w.current):'<span class="stat">свободен</span>'}</div>
-    <div class="stat" style="font-size:12px">готово ${s.done||0}/${s.tasks||0} · с 1-й попытки ${s.first_pass||0} · отказов ${s.rejections||0} · ${money(s.cost_usd)}</div></div>`}).join('')}</div>
+    <div class="stat" style="font-size:12px">готово ${s.done||0}/${s.tasks||0}<span class="dev"> · с 1-й попытки ${s.first_pass||0} · отказов ${s.rejections||0} · ${money(s.cost_usd)}</span></div></div>`}).join('')}</div>
   <h2>Доска</h2>${tasks.length?'':`<p class="stat">${v.live&&v.stage==='planning'?'Задач пока нет: планировщик составляет план — задачи и исполнители появятся здесь, как только он его сдаст.':v.live?'Задач пока нет.':'Задач нет: проект не запущен. Нажмите «Продолжить».'}</p>`}<div class="board">${COLS.map(([s,l])=>`<div class="col"><h3>${l}<span>${by(s).length}</span></h3>${by(s).map(card).join('')}</div>`).join('')}</div>
-  ${v.notes?`<h2>Заметки харнесса (refine)</h2><pre>${esc(v.notes)}</pre>`:''}
-  <h2>Доступ к путям</h2><div class="stat">запись: ${v.grants.write.map(esc).join(', ')||'—'}<br>чтение: ${v.grants.read.map(esc).join(', ')}${v.grants.refs.length?`<br>refs (только чтение): ${v.grants.refs.map(esc).join(', ')}`:''}</div>
-  <h2>Результаты (shared/)</h2><div id="filesbox" class="files"></div>`;
+  ${v.notes?`<div class="dev"><h2>Заметки харнесса (refine)</h2><pre>${esc(v.notes)}</pre></div>`:''}
+  <div class="dev"><h2>Доступ к путям</h2><div class="stat">запись: ${v.grants.write.map(esc).join(', ')||'—'}<br>чтение: ${v.grants.read.map(esc).join(', ')}${v.grants.refs.length?`<br>refs (только чтение): ${v.grants.refs.map(esc).join(', ')}`:''}</div></div>
+  <h2>Результаты</h2><div id="filesbox" class="files"></div>`;
   document.querySelectorAll('.card,.alert[data-t]').forEach(c=>c.onclick=()=>showTask(c.dataset.t));
   document.querySelectorAll('.worker').forEach(c=>c.onclick=()=>showWorker(c.dataset.w));
   const wp=$('#why-proj');if(wp)wp.onclick=()=>why(m.blocked_reason,state.slug,'');
@@ -316,11 +351,11 @@ const PURPOSE={plan:'составляет план',work:'выполняет з�
 function activeBox(v,tasks){const a=v.active||[];
   const rows=a.map(x=>{const t=x.task_id?tasks.find(t=>t.id===x.task_id):null;return `<div class="worker"><b>${ri(x.role||'worker')}${esc(x.actor||x.role)}</b><span class="role">${esc(PURPOSE[x.purpose]||x.purpose||x.role||'')}</span>
     <div class="now">${t?'▶ '+esc(t.title):x.purpose==='plan'?'▶ план проекта':''}</div>
-    <div class="stat" style="font-size:12px">${esc(x.runtime)}${x.model?' · '+esc(x.model):''} · с ${fmtT(x.since)}${x.last?' · последнее: '+esc(x.last)+' '+ago(x.last_ts):''}</div></div>`}).join('');
+    <div class="stat" style="font-size:12px"><span class="dev">${esc(x.runtime)}${x.model?' · '+esc(x.model):''} · </span>с ${fmtT(x.since)}${x.last?' · последнее: '+esc(x.last)+' '+ago(x.last_ts):''}</div></div>`}).join('');
   const banner=v.live&&v.stage==='planning'&&!a.length?'<div class="alert">Запускаю планировщика…</div>':'';
   const pr=(v.recent_problems||[]).slice(-3).map(e=>`<div class="stat">${fmtT(e.ts)} · ${esc(e.kind)} · ${esc(String(e.error||e.reason||e.rationale||e.to||'').slice(0,240))}</div>`).join('');
   if(!v.live&&!pr)return '';
-  return `<h2>Сейчас работают${a.length?` <span class="stat">${a.length}</span>`:''}</h2>${banner}${rows?`<div class="team">${rows}</div>`:v.live&&!banner?'<p class="stat">Никто не работает: менеджер ждёт следующего события.</p>':''}${pr?`<details ${a.length?'':'open'}><summary class="stat">Последние сбои и переключения</summary>${pr}</details>`:''}`}
+  return `<h2>Сейчас работают${a.length?` <span class="stat">${a.length}</span>`:''}</h2>${banner}${rows?`<div class="team">${rows}</div>`:v.live&&!banner?'<p class="stat">Никто не работает: менеджер ждёт следующего события.</p>':''}${pr?`<details class="dev" ${a.length?'':'open'}><summary class="stat">Последние сбои и переключения</summary>${pr}</details>`:''}`}
 function card(t){const last=(t.runs||[]).slice(-1)[0];const since=(t.timeline||[]).slice(-1)[0];return `<div class="card ${t.status}" data-t="${t.id}"><div class="t">${esc(t.title)}</div>
   <div class="m"><span>@${esc(t.assignee||'—')}</span>${t.attempts?`<span>попыток ${t.attempts}</span>`:''}${last&&t.status==='running'?`<span>ход ${last.turns}</span>`:''}${since?`<span>${ago(since.ts)}</span>`:''}${t.needs_human?'<span class="human">нужен человек</span>':''}${t.risk==='high'?`<span class="badge error" title="${esc(t.risk_reason||'')}">риск</span>`:''}</div></div>`}
 async function listFiles(path){const r=await api(`/api/projects/${encodeURIComponent(state.slug)}/files?path=${encodeURIComponent(path)}`);const box=$('#filesbox');if(!box||!r.items)return;
@@ -329,13 +364,13 @@ async function listFiles(path){const r=await api(`/api/projects/${encodeURICompo
 async function showFile(p){const r=await api(`/api/projects/${encodeURIComponent(state.slug)}/files?path=${encodeURIComponent(p)}`);dlg(`<h3>${esc(r.file)}</h3><pre>${esc(r.text)}</pre>`)}
 const MOVE={todo:'ожидает',ready:'готова к работе',running:'в работе',review:'на ревью',done:'принята',blocked:'заблокирована',cancelled:'отменена'};
 function showTask(id){const t=state.v.board.tasks.find(x=>x.id===id);if(!t)return;
-  dlg(`<h3>${esc(t.title)} <span class="badge">${esc(MOVE[t.status]||t.status)}</span></h3><div class="stat">${t.id} · @${esc(t.assignee||'—')} · попыток ${t.attempts} · зависит от: ${t.depends_on.join(', ')||'—'}${t.risk==='high'?` · <span class="badge error">риск ${t.risk_score}</span> ${esc(t.risk_reason||'')}`:''}</div>
+  dlg(`<h3>${esc(t.title)} <span class="badge">${esc(MOVE[t.status]||t.status)}</span></h3><div class="stat">@${esc(t.assignee||'—')} · попыток ${t.attempts}<span class="dev"> · ${t.id}</span> · зависит от: ${t.depends_on.join(', ')||'—'}${t.risk==='high'?` · <span class="badge error">риск ${t.risk_score}</span> ${esc(t.risk_reason||'')}`:''}</div>
   <h2>Путь задачи</h2><div class="tl">${(t.timeline||[]).map(s=>`<div><span class="ts">${fmtT(s.ts)}</span><span>${esc(MOVE[s.to]||s.to)}</span><span class="stat">${esc(s.actor||'')}</span></div>`).join('')}</div>
   <h2>Задача</h2><pre>${esc(t.body)}</pre><h2>Критерии приёмки</h2><pre>${esc(t.criteria.map(c=>'• '+c).join('\n'))}</pre>
-  ${t.checks.length?`<h2>Гейты</h2><pre>${esc(t.checks.join('\n'))}</pre>`:''}
+  ${t.checks.length?`<h2>Автоматические проверки</h2><pre>${esc(t.checks.join('\n'))}</pre>`:''}
   ${t.result?`<h2>Результат</h2><pre>${esc(t.result)}</pre>`:''}${t.evidence?`<h2>Доказательства</h2><pre>${esc(t.evidence)}</pre>`:''}
   <h2>Обсуждение</h2>${t.comments.map(c=>`<div class="ev"><span class="a">${esc(c.author)}</span>: ${esc(c.body)}</div>`).join('')||'<div class="stat">нет</div>'}
-  <h2>Запуски</h2>${t.runs.map(r=>`<div class="ev">#${r.id} ${esc(r.worker)} — ${esc(r.status)} · ходов ${r.turns} · тулов ${r.tool_calls} · ${num(r.tokens_in+r.tokens_out)} ток. · ${esc((r.summary||'').slice(0,300))}</div>`).join('')||'<div class="stat">нет</div>'}
+  <div class="dev"><h2>Запуски</h2>${t.runs.map(r=>`<div class="ev">#${r.id} ${esc(r.worker)} — ${esc(r.status)} · ходов ${r.turns} · тулов ${r.tool_calls} · ${num(r.tokens_in+r.tokens_out)} ток. · ${esc((r.summary||'').slice(0,300))}</div>`).join('')||'<div class="stat">нет</div>'}</div>
   ${t.status==='blocked'||t.needs_human?'<p><button id="why-task">Почему не работает?</button> <span class="stat">диагност разберёт причину на доступной модели</span></p>':''}
   <h2>Сообщение исполнителю</h2><textarea id="cmt" rows="3" placeholder="Подсказка, решение или доступ. Снимает блок «нужен человек»."></textarea><div style="margin-top:6px"><button class="primary" id="send">Отправить</button></div>`);
   const wt=$('#why-task');if(wt)wt.onclick=()=>why(`Задача «${t.title}» остановлена (${t.status}). ${(t.comments.slice(-1)[0]||{}).body||''}`,state.slug,id);
@@ -344,11 +379,12 @@ function showWorker(name){const w=state.v.workers.find(x=>x.name===name);const f
   const render=()=>{$('#wtab').innerHTML=`<pre>${esc(f[tab]||'')}</pre>`;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.f===tab))};
   dlg(`<h3>${ri(w.role)}${esc(w.name)} <span class="stat">${esc(w.role)}</span></h3><div class="tabs">${Object.keys(f).map(k=>`<button data-f="${k}">${k}</button>`).join('')}</div><div id="wtab"></div>`);
   document.querySelectorAll('.tabs button').forEach(b=>b.onclick=()=>{tab=b.dataset.f;render()});render()}
+const ttl=id=>{const t=state.v&&state.v.board.tasks.find(x=>x.id===id);return DEV||!t?id:'«'+t.title+'»'};
 function describe(e){const k=e.kind;
   if(k==='tool/call')return [`🔧 ${e.tool}`,JSON.stringify(e.input).slice(0,220)];
   if(k==='tool/result')return [e.is_error?'⚠ ошибка тула':'↳ результат',e.output.slice(0,220)];
   if(k==='llm/response'){const t=e.blocks.filter(b=>b.type==='text').map(b=>b.text).join(' ');return [`💬 ход ${e.turn}`,t.slice(0,300)||'(вызов инструментов)']}
-  if(k==='board/task_moved')return ['📋 '+e.task_id,`${MOVE[e.frm]||e.frm} → ${MOVE[e.to]||e.to}`];
+  if(k==='board/task_moved')return ['📋 '+ttl(e.task_id),`${MOVE[e.frm]||e.frm} → ${MOVE[e.to]||e.to}`];
   if(k==='board/comment')return ['💭 '+e.author,e.body.slice(0,300)];
   if(k==='review/verdict')return [e.passed?'✅ принято':'❌ отклонено',e.feedback.slice(0,300)];
   if(k==='audit/verdict')return [e.complete?'🏁 цель достигнута':'🔁 аудит: не готово',e.summary];
@@ -367,15 +403,17 @@ function describe(e){const k=e.kind;
   if(k==='manager/finished')return ['◆ менеджер завершил',`${STAGE[e.status]||e.status} · запросов ${e.usage.requests}`];
   if(k==='manager/job_started'||k==='manager/job_finished')return [k==='manager/job_started'?'⏵ задание':'⏹ задание',e.job];
   if(k==='worker/hired')return ['👤 нанят '+e.worker,e.role];
-  if(k==='board/task_created')return ['＋ задача '+e.task_id,e.title];
+  if(k==='board/task_created')return ['＋ задача',DEV?e.task_id+' '+e.title:e.title];
   if(k==='file/written'||k==='file/edited')return ['📄 '+(k==='file/written'?'записан':'изменён'),e.path];
   if(k==='worker/memory')return ['🧠 память',e.content];
   const r={...e};['seq','ts','kind','system','user','blocks'].forEach(x=>delete r[x]);return [k,JSON.stringify(r).slice(0,220)]}
-function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter').value.toLowerCase();const [h,b]=describe(e);const who=e.actor||e.worker||'';
+// what a person follows in the feed; the developer mode shows every event (tool calls, model turns, jobs)
+const PEOPLE=/^(board\/(task_moved|task_created|comment)|review\/verdict|audit\/verdict|manager\/(decision|escalated|provider_limit|provider_switch)|worker\/hired|file\/(written|edited)|project\/status|gate\/result|llm\/error|doctor\/report|skill\/mutated)$/;
+function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter').value.toLowerCase();if(!DEV&&!PEOPLE.test(e.kind))return;const [h,b]=describe(e);const who=e.actor||e.worker||'';
   if(f&&!`${e.kind} ${who} ${h} ${b}`.toLowerCase().includes(f))return;
   const cls=(e.is_error||(e.kind==='review/verdict'&&!e.passed)||e.kind.endsWith('error'))?'err':(e.kind==='audit/verdict'&&e.complete)?'good':'';
   const d=document.createElement('div');d.className='ev '+cls;
-  d.innerHTML=`<div class="k">#${e.seq} ${fmtT(e.ts)} · ${esc(e.kind)}</div><span class="a">${who||e.role?ri(e.role||who):''}${esc(who)}</span> ${esc(h)} <span>${esc(b)}</span>`;
+  d.innerHTML=`<div class="k">${DEV?`#${e.seq} ${fmtT(e.ts)} · ${esc(e.kind)}`:fmtT(e.ts)}</div><span class="a">${who||e.role?ri(e.role||who):''}${esc(who)}</span> ${esc(h)} <span>${esc(b)}</span>`;
   const stick=box.scrollTop+box.clientHeight>=box.scrollHeight-40;box.appendChild(d);if(stick)box.scrollTop=box.scrollHeight}
 
 /* ---------- Провайдеры ---------- */
@@ -408,12 +446,12 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       <button id="cx-cancel">Отменить</button>`
      :L.phase==='starting'?'<p class="stat">Запрашиваю код…</p>'
      :L.phase==='error'?`<pre>${esc(L.error||'')}</pre>`:L.phase==='done'?'<p style="color:var(--ok)">Вход выполнен.</p>':'';
-   box.innerHTML=`<p class="stat">Кто выполняет работу. Подписки подключаются входом в их официальные CLI; ключи API задаются только переменными окружения — их значения здесь не показываются и не хранятся.</p>
+   box.innerHTML=`<p class="stat">Кто выполняет работу. Достаточно одного: подписка Claude (Claude Code) или ChatGPT (Codex) подключается входом в их программу; ключи API задаются только переменными окружения — их значения здесь не показываются и не хранятся.</p>
    <div class="pv">
     <div class="pvc"><h3>${ri('worker')}Codex${st(cx.logged_in,'подключён',cx.installed?'не подключён':'не установлен')}</h3>
       <div class="kv"><span>вход</span><span>${cx.logged_in?esc(cx.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка ChatGPT (device code) или ключ API</span>${cx.installed?`<span>CLI</span><span>${esc(cx.version)}${cx.by_artel?' · в папке Artel':''}</span><span>модель</span><span>${esc(cx.model||'')}</span>`:''}</div>
-      <p class="stat">Работает автономно: Codex ничего не спрашивает (approval_policy=never — спрашивать некого), его команды ограничены песочницей <code>workspace-write</code> (папка бота и результаты) и политикой команд Artel; инструменты Artel (канбан, сообщения, отчёты) одобрены заранее. Приложения аккаунта ChatGPT, управление экраном и браузер владельца для ботов отключены.</p>
-      ${cx.sandbox?`<p class="stat">Песочница: ${esc(cx.sandbox)}</p>`:''}
+      <p class="stat dev">Работает автономно: Codex ничего не спрашивает (approval_policy=never — спрашивать некого), его команды ограничены песочницей <code>workspace-write</code> (папка бота и результаты) и политикой команд Artel; инструменты Artel (канбан, сообщения, отчёты) одобрены заранее. Приложения аккаунта ChatGPT, управление экраном и браузер владельца для ботов отключены.</p>
+      ${cx.sandbox?`<p class="stat dev">Песочница: ${esc(cx.sandbox)}</p>`:''}
       ${use('codex')}
       ${login}
       ${cx.installed&&!cx.logged_in&&L.phase!=='waiting'?'<button class="primary" id="cx-login">Войти через device code</button>':''}
@@ -427,28 +465,28 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       ${cc.logged_in?'<button id="cl-logout">Выйти</button>':''}
       ${inst('claude',cc,'Claude Code CLI')}</div>
     <div class="pvc"><h3>${ri('worker')}DeepSeek Harness${st(ds.logged_in,'подключён',ds.installed?'нет ключа':'не установлен')}</h3>
-      <div class="kv"><span>доступ</span><span>ключ API DeepSeek · <code>${esc(ds.key_env||'DEEPSEEK_API_KEY')}</code> ${ds.key_set?'<span style="color:var(--ok)">задан</span>':'не задан'}</span>${ds.installed?`<span>SDK</span><span>${esc(ds.version||'')}${ds.by_artel?' · ставил Artel':''}</span><span>модель</span><span>${esc(ds.model||'по умолчанию dsh')}</span><span>профиль</span><span><code>${esc(ds.profile||'sdk')}</code></span><span>плагины dsh</span><span>${(ds.plugins||[]).length?ds.plugins.map(x=>`<code>${esc(x)}</code>`).join(' '):'нет (dsh.plugins в artel.yaml)'}</span>`:''}</div>
+      <div class="kv"><span>доступ</span><span>ключ API DeepSeek · <code>${esc(ds.key_env||'DEEPSEEK_API_KEY')}</code> ${ds.key_set?'<span style="color:var(--ok)">задан</span>':'не задан'}</span>${ds.installed?`<span>SDK</span><span>${esc(ds.version||'')}${ds.by_artel?' · ставил Artel':''}</span><span>модель</span><span>${esc(ds.model||'по умолчанию dsh')}</span><span class="dev">профиль</span><span class="dev"><code>${esc(ds.profile||'sdk')}</code></span><span class="dev">плагины dsh</span><span class="dev">${(ds.plugins||[]).length?ds.plugins.map(x=>`<code>${esc(x)}</code>`).join(' '):'нет (dsh.plugins в artel.yaml)'}</span>`:''}</div>
       ${use('dsh')}
       ${ds.installed&&!ds.logged_in?`<p class="stat">${esc(ds.detail||'')}</p>`:''}
       ${inst('dsh',ds,'DeepSeek Harness','Ставится pip-пакет deepseek-harness-sdk с готовым рантаймом dsh в окружение Artel, без прав администратора и без Node.js.')}</div>
-    <div class="pvc"><h3>${ri('worker')}ACP-агенты${st(o.acp.installed,'агент найден','агент не найден')}</h3>
+    <div class="pvc dev"><h3>${ri('worker')}ACP-агенты${st(o.acp.installed,'агент найден','агент не найден')}</h3>
       <div class="kv"><span>что это</span><span>любой агент с Agent Client Protocol (Gemini CLI, Claude Code и Codex через ACP-адаптеры, goose, OpenHands…) работает исполнителем</span>
       <span>по умолчанию</span><span><code>${esc((o.acp.command||[]).join(' ')||'—')}</code>${o.acp.custom?' · своя команда (acp.command)':''}</span>
       ${o.acp.presets.map(p=>`<span>${esc(p.name)}</span><span>${p.installed?'<span style="color:var(--ok)">установлен</span>':'не установлен'} · <code>${esc(p.command.join(' '))}</code></span>`).join('')}</div>
       ${o.acp.error?`<pre>${esc(o.acp.error)}</pre>`:''}
       <p class="stat">Вход выполняется в CLI самого агента. Роль назначается ниже: «ACP-агент: имя». Свои агенты — <code>acp.presets</code> в artel.yaml.</p></div>
-    <div class="pvc"><h3>${ri('librarian')}Эмбеддинги${st(em.active!=='off','включены: '+(em.active==='local'?'локально':'HTTP'),em.installed?'выключены':'не установлены')}</h3>
+    <div class="pvc"><h3>${ri('librarian')}Поиск по смыслу${st(em.active!=='off','включены: '+(em.active==='local'?'локально':'HTTP'),em.installed?'выключены':'не установлены')}</h3>
       <div class="kv"><span>что даёт</span><span>поиск по смыслу: агенты получают подходящие к задаче навыки, инструмент <code>search</code> находит код и документы по описанию, на любом языке</span>
       <span>модель</span><span>Google EmbeddingGemma 2 · Apache-2.0 · работает на этом компьютере, данные никуда не уходят</span>
       ${em.installed?`<span>режим</span><span><select id="em-backend">${[['auto','автоматически (локально, если установлена)'],['local','локально'],['http','свой сервер (OpenAI-совместимый)'],['off','выключено — поиск по словам']].map(([v,l])=>`<option value="${v}" ${v===em.backend?'selected':''}>${l}</option>`).join('')}</select></span>
-      <span>размерность</span><span><select id="em-dim">${[768,512,256,128].map(d=>`<option ${d===em.dim?'selected':''}>${d}</option>`).join('')}</select></span>
+      <span class="dev">размерность</span><span class="dev"><select id="em-dim">${[768,512,256,128].map(d=>`<option ${d===em.dim?'selected':''}>${d}</option>`).join('')}</select></span>
       <span>сервер</span><span>${em.running?'<span style="color:var(--ok)">запущен</span>':'запускается при первом поиске'}</span>`:''}</div>
       ${em.error?`<pre>${esc(em.error)}</pre><p><button data-why="${esc('Эмбеддинги: '+em.error)}">Почему?</button></p>`:''}
       ${em.installed?'<p><button id="em-save">Сохранить</button> <button id="em-test">Проверить</button> <span class="stat" id="em-msg"></span></p>':''}
       ${inst('embeddings',{installed:em.installed,by_artel:em.installed},'EmbeddingGemma 2','Ставится сервер llama.cpp (~45 МБ) и модель EmbeddingGemma 2 Q8_0 (~310 МБ) в папку Artel; контрольная сумма модели сверяется с Hugging Face. Без модели поиск работает по словам.')}</div>
     <div class="pvc"><h3>${ri('librarian')}Ключи API</h3><div class="kv">${o.keys.map(k=>`<span>${esc(k.label)}</span><span>${k.set?'<span style="color:var(--ok)">задан</span>':'не задан'} · <code>${esc(k.env)}</code></span>`).join('')}</div>
       <p class="stat">Задаются в настройках окружения, не в чате и не здесь.</p></div>
-    <div class="pvc"><h3>${ri('auditor')}System One${st(o.system_one.connected,'подключена','не подключена')}</h3>
+    <div class="pvc dev"><h3>${ri('auditor')}System One${st(o.system_one.connected,'подключена','не подключена')}</h3>
       <div class="kv"><span>что это</span><span>быстрые решения в узких местах (сложность задачи, нужен ли библиотекарь, разбор застрявшей задачи)</span>
       ${o.system_one.connected?`<span>источник</span><span><code>${esc(o.system_one.name)}</code></span><span>точки</span><span>${esc(o.system_one.points.join(', ')||'не включены')}</span>`:''}</div>
       ${o.system_one.connected?'':'<p class="stat">Своя модель пока не подключена — без неё Artel работает как обычно. Подключение: docs/SYSTEM_ONE.md.</p>'}</div>
@@ -456,19 +494,18 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       <div class="kv"><span>что даёт</span><span>цели, статус, ответы проектам и уведомления с телефона</span><span>токен</span><span>${tg.token_set?'задан':'не задан'} · <code>${esc(tg.token_env)}</code></span></div>
       ${tg.token_set?(tg.code?`<p>Отправьте боту в Telegram:</p><div class="devcode">/pair ${esc(tg.code)}</div><p class="stat">Код одноразовый, действует 15 минут.</p>`:'<button id="tg-pair">Показать код привязки</button>'):'<p class="stat">Создайте бота у @BotFather (/newbot) и задайте его токен в переменной окружения ARTEL_TELEGRAM_TOKEN, затем перезапустите <code>artel web</code>. Токен не вводится здесь и нигде не сохраняется.</p>'}</div>
    </div>
-   <h2>Кто какую роль выполняет</h2>
+   <h2>Модели</h2>
+   <div class="dev"><h2>Кто какую роль выполняет <span class="devtag">разработчик</span></h2>
    <div class="tablewrap pvroles"><table><tr><th>роль</th><th>рантайм</th></tr>
     <tr><td><b>по умолчанию</b></td><td><select data-def="1">${r.runtimes.map(x=>`<option value="${x}" ${x===r.runtime?'selected':''}>${rtl(x)}</option>`).join('')}</select>${r.runtime==='auto'?` <span class="stat">сейчас: ${esc(rtl(r.auto_resolves_to))}</span>`:''}</td></tr>
     ${r.roles.map(role=>`<tr><td>${ri(role)}${esc(role)}</td><td><select data-role="${role}"><option value="">как по умолчанию</option>${r.runtimes.map(x=>`<option value="${x}" ${r.runtime_by_role[role]===x?'selected':''}>${rtl(x)}</option>`).join('')}</select></td></tr>`).join('')}
-   </table></div>
+   </table></div></div>
    <div class="kv" style="margin-top:10px;max-width:520px"><span>модель Claude Code</span>${msel('m-cc','claude_code',r.models.claude_code,'sonnet')}
      <span>модель Codex</span>${msel('m-cx','codex',r.models.codex,'по умолчанию аккаунта')}
      <span>модель DeepSeek Harness</span><input id="m-ds" value="${esc(r.models.dsh||'')}" placeholder="по умолчанию dsh">
-     <span>ACP-агент для «acp»</span><select id="acp-agent">${o.acp.presets.map(p=>`<option value="${esc(p.name)}" ${p.name===r.acp_agent?'selected':''}>${esc(p.name)}${p.installed?'':' (не установлен)'}</option>`).join('')}</select></div>
-   <div class="kv" style="margin-top:10px;max-width:520px"><span>часовой пояс</span><input id="tz" value="${esc((o.timezone||{}).configured||'')}" placeholder="${esc((o.timezone||{}).effective||'Europe/Moscow')}" list="tzl"><datalist id="tzl">${(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]).map(z=>`<option value="${z}">`).join('')}</datalist></div>
-   <p class="stat">IANA-имя, например Asia/Sakhalin; пусто — часовой пояс системы (сейчас ${esc((o.timezone||{}).effective||'')}). Время в панели, CLI и уведомлениях показывается в нём.</p>
+     <span class="dev">ACP-агент для «acp»</span><select class="dev" id="acp-agent">${o.acp.presets.map(p=>`<option value="${esc(p.name)}" ${p.name===r.acp_agent?'selected':''}>${esc(p.name)}${p.installed?'':' (не установлен)'}</option>`).join('')}</select></div>
    <p><button class="primary" id="rt-save">Сохранить</button> <span class="stat" id="rt-msg"></span></p>
-   <p class="stat">Сохраняется в ARTEL_HOME/artel.yaml и действует для новых запусков. Разные подписки на разных ролях разносят нагрузку по лимитам.</p>`;
+   <p class="stat">Действует для новых запусков.<span class="dev"> Сохраняется в ARTEL_HOME/artel.yaml. Разные подписки на разных ролях разносят нагрузку по лимитам.</span></p>`;
    const on=(id,fn)=>{const el=$('#'+id);if(el)el.onclick=fn};
    document.querySelectorAll('[data-inst]').forEach(b=>b.onclick=async()=>{b.disabled=true;await api('/api/providers/install/'+b.dataset.inst,{method:'POST',headers:{'Content-Type':'application/json'}});state.inst=true;draw()});
    document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!confirm('Удалить из папки Artel?'))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
@@ -492,9 +529,6 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});
      const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value,dsh:$('#m-ds').value},acp_agent:$('#acp-agent').value};
-     const tzr=await fetch('/api/providers/timezone',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({timezone:$('#tz').value})});
-     if(!tzr.ok){const j=await tzr.json().catch(()=>({}));$('#rt-msg').textContent='Часовой пояс не сохранён: '+(j.error||tzr.status);return}
-     TZ=(await tzr.json()).configured||'';
      const rr=await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
      if(rr.error){$('#rt-msg').textContent='Не сохранено: '+rr.error;return}
      const used=new Set([body.runtime,...Object.values(byRole)]);const miss=[];

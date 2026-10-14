@@ -644,7 +644,7 @@ def run_acp(kernel, project, *, role: str, system: str, first_user: str, ctx: To
     binary = resolve(cfg["command"][0])
     if not binary:
         return fail(f"ACP-агент «{cfg['name']}» не установлен: команда `{cfg['command'][0]}` не найдена "
-                    f"(not installed). Установите агента или укажите acp.command — «Провайдеры» → «ACP-агенты»")
+                    f"(not installed). Установите агента или укажите acp.command — «Подключения» → «ACP-агенты» (режим разработчика)")
     cfg["command"] = [binary, *cfg["command"][1:]]
     bridge = ToolBridge(kernel, project, ctx, role, tool_names, actor, runtime="acp")
     run = AcpRun(kernel, project, role=role, ctx=ctx, cfg=cfg, actor=actor, bridge=bridge, max_turns=max_turns,

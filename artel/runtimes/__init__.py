@@ -19,7 +19,7 @@ import uuid
 from contextlib import contextmanager
 from pathlib import Path
 
-NO_EXECUTOR = ("Нет подключённого исполнителя (not installed): откройте «Провайдеры» и подключите Codex, "
+NO_EXECUTOR = ("Нет подключённого исполнителя (not installed): откройте «Подключения» и подключите Codex, "
                "Claude Code или DeepSeek Harness, или задайте ключ API в переменной окружения (ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY для DeepSeek Harness)")
 _auto_cache: dict = {}
 
