@@ -108,8 +108,11 @@ models: {default: deepseek-chat}
   приходят по MCP, все действия Codex пишутся в журнал.
 - **Claude Code — подписка Claude.** «Войти через подписку Claude» даёт ссылку; код со страницы входа вставляется в
   дашборд и передаётся CLI (`claude auth login`). «Выйти» — `claude auth logout`. В терминале: `artel providers login|logout claude`.
-- **DeepSeek Harness — ключ DeepSeek.** «Установить» ставит pip-пакет `deepseek-harness-sdk` с готовым рантаймом
-  `dsh`; доступ — переменная окружения `DEEPSEEK_API_KEY`. Подробнее — раздел «DeepSeek Harness как исполнитель».
+- **DeepSeek Harness — отдельный харнесс со своими настройками моделей.** «Установить» ставит pip-пакет
+  `deepseek-harness-sdk` с готовым рантаймом `dsh`. Модель и доступ выбираются в самом DeepSeek Harness
+  («Настроить модели» открывает его страницу Settings → Models): ключ DeepSeek или любой провайдер из его каталога —
+  Anthropic, OpenAI, Kimi, GLM, OpenRouter, подписка Codex — или свой шлюз. Воркеры Artel работают на выбранной там
+  модели. Подробнее — раздел «DeepSeek Harness как исполнитель».
 - **Ключи API** (Anthropic, OpenAI, OpenRouter, DeepSeek…) — только признак «задан / не задан»; значения задаются
   в переменных окружения и нигде не показываются.
 - **ACP-агенты.** Любой агент с Agent Client Protocol (Gemini CLI, goose, OpenHands, Claude Code и Codex через
@@ -372,26 +375,30 @@ Code и Codex запускают команды своими инструмен�
 
 Как включить:
 
-1. «Провайдеры» → карточка DeepSeek Harness → «Установить» (или `artel providers install dsh`). Ставится
+1. «Подключения» → карточка DeepSeek Harness → «Установить» (или `artel providers install dsh`). Ставится
    `pip install --pre deepseek-harness-sdk` в окружение Artel; пакет приносит рантайм для Linux x64/arm64,
    macOS и Windows x64.
-2. Ключ: `export DEEPSEEK_API_KEY=sk-…` в окружении, из которого запускается Artel. Его читает сам dsh; Artel значение
-   не читает, не показывает и не хранит. Свой адрес API — `DEEPSEEK_BASE_URL`.
-3. Выбрать рантайм `dsh` для всех ролей или для части ролей на странице «Провайдеры» либо в `~/.artel/artel.yaml`.
-   В режиме `runtime: auto` dsh выбирается после Codex, если SDK установлен и `DEEPSEEK_API_KEY` задан.
+2. «Настроить модели» открывает собственную страницу настроек DeepSeek Harness (`dsh web` → Settings → Models):
+   там вводится ключ DeepSeek или добавляется другой провайдер и выбирается модель. Artel пользуется тем же домом dsh
+   (`$DSH_HOME`, по умолчанию `~/.dsh`, как и сам dsh): ключи из хранилища dsh, провайдеры и выбранная модель
+   передаются воркерам. Значения ключей Artel не читает, не показывает и не хранит. Ключ можно задать и переменной
+   окружения провайдера (`DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`…).
+3. Выбрать рантайм `dsh` для всех ролей или для части ролей (режим разработчика → «Подключения») либо в
+   `~/.artel/artel.yaml`. В режиме `runtime: auto` dsh выбирается после Codex, если он установлен и у выбранной в нём
+   модели есть доступ.
 
 ```yaml
 runtime_by_role: {worker: dsh, tester: dsh}
 dsh:
-  model: null              # пусто — модель dsh по умолчанию
-  provider: deepseek-official
+  model: null              # пусто — модель, выбранная в самом DeepSeek Harness
+  provider: null           #   (оба поля задают модель только для Artel, например anthropic / claude-sonnet-4-5)
   plugins:                 # плагины dsh: пакеты npm/git ставятся в профиль один раз (`dsh plugin add`),
     - "@scope/dsh-plugin"  #   файлы .yml/.yaml подключаются как слои --patch при каждом запуске
     - github:owner/dsh-plugin
     - ~/my-dsh/extra.cordis.yml
   timeout_s: 2400
   max_resumes: 3
-  # home: ~/.artel/dsh     DSH_HOME для Artel: профили, плагины, сессии dsh
+  # home: ~/.dsh          DSH_HOME: по умолчанию тот же, что у самого dsh ($DSH_HOME или ~/.dsh)
   # profile: sdk           свой профиль должен содержать сервер @deepseek-ai/dsh-sdk-app
   # sandbox: workspace-write
   # share_session_log: false   по умолчанию Artel выключает выгрузку журнала сессии в DeepSeek

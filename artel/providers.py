@@ -3,7 +3,7 @@
 - Codex (ChatGPT subscription): device-code login driven through the official CLI (`codex login --device-auth`);
   the code and link are shown in the dashboard, the CLI stores and refreshes the tokens itself.
 - Claude Code (Claude subscription): status of the installed CLI; login happens in the CLI.
-- DeepSeek Harness: whether the SDK (with its bundled runtime) is installed and DEEPSEEK_API_KEY is set; dsh plugins.
+- DeepSeek Harness: whether the SDK is installed, which model it runs (chosen in dsh itself) and whether that model has a credential; its own settings page.
 - API keys: only whether the configured environment variable is set — values are never read out or stored.
 - ACP agents (Gemini CLI, Claude Code / Codex via ACP adapters, goose, OpenHands…): which presets are installed;
   login happens in each agent's own CLI.
@@ -247,8 +247,9 @@ def claude_code_status(config: dict) -> dict:
 
 
 def dsh_status(config: dict) -> dict:
-    """DeepSeek Harness: SDK installed, key present (the value is never read out), configured plugins."""
-    from .runtimes.dsh import KEY_ENV, dsh_settings, key_available, sdk_available
+    """DeepSeek Harness: installed, which model it will run (chosen in dsh itself), whether that model's provider has
+    a credential (names only, never values), and dsh's own settings page."""
+    from .runtimes.dsh import access, dsh_home, dsh_settings, provider_keys, sdk_available
 
     cfg = dsh_settings(config)
     installed = sdk_available(cfg)
@@ -260,13 +261,99 @@ def dsh_status(config: dict) -> dict:
             version = _v("deepseek-harness-sdk")
         except Exception:  # noqa: BLE001 - a custom SDK module without distribution metadata
             version = ""
-    key = installed and key_available(cfg)
-    return {"installed": installed, "by_artel": installed_by_artel("dsh"), "version": version, "logged_in": key,
-            "method": f"ключ {KEY_ENV}" if key else "", "key_env": KEY_ENV,
-            "key_set": bool(os.environ.get(KEY_ENV)), "model": cfg.get("model") or "",
-            "provider": cfg.get("provider"), "profile": cfg.get("profile"),
-            "plugins": [str(p) for p in cfg.get("plugins") or []],
-            "detail": "" if key else f"задайте переменную окружения {KEY_ENV} и перезапустите Artel"}
+    acc = access(cfg) if installed else {"ok": False, "provider": "", "model": None, "source": "", "why": ""}
+    home = dsh_home(cfg)
+    shown = str(home).replace(str(Path.home()), "~", 1)
+    return {"installed": installed, "by_artel": installed_by_artel("dsh"), "version": version,
+            "logged_in": bool(installed and acc["ok"]), "provider": acc.get("provider") or "",
+            "model": acc.get("model") or "", "source": acc.get("source") or "", "providers": sorted(provider_keys(cfg)),
+            "home": shown, "profile": cfg.get("profile"), "plugins": [str(p) for p in cfg.get("plugins") or []],
+            "settings": DSH_GUI.status(), "detail": acc.get("why") or ""}
+
+
+class _DshGui:
+    """DeepSeek Harness's own settings page (`dsh web`) on the shared home, started on request from the dashboard:
+    models, keys, other providers and sign-ins are configured there, by dsh, not by Artel."""
+
+    def __init__(self):
+        self.proc = None
+        self.url = ""
+        self.error = ""
+        self.lock = threading.Lock()
+
+    def status(self) -> dict:
+        alive = self.proc is not None and self.proc.poll() is None
+        return {"running": alive, "url": self.url if alive else "", "error": "" if alive else self.error}
+
+    def start(self, config: dict) -> dict:
+        from .runtimes.dsh import dsh_home, dsh_settings, launcher
+
+        with self.lock:
+            if self.proc is not None and self.proc.poll() is None and self.url:
+                return self.status()
+            cfg = dsh_settings(config)
+            home = dsh_home(cfg)
+            home.mkdir(parents=True, exist_ok=True)
+            env = {**os.environ, "DSH_HOME": str(home)}
+            # the newest dsh first: one installed with npm, the SDK's bundled runtime, then npx (needs Node.js)
+            candidates = []
+            if cfg.get("binary") or resolve("dsh"):
+                candidates.append([resolve(cfg.get("binary") or "dsh") or "dsh"])
+            sdk = launcher({**cfg, "binary": None})
+            if sdk and sdk not in candidates:
+                candidates.append(sdk)
+            if resolve("npx"):
+                candidates.append([resolve("npx"), "-y", "@deepseek-ai/dsh@latest"])
+            self.url, self.error = "", ""
+            tails = []
+            for argv in candidates:
+                url, tail = self._try(argv, env)
+                if url:
+                    self.url = url
+                    return self.status()
+                tails.append(f"{os.path.basename(argv[0])}: {tail}")
+            self.error = ("Настройки DeepSeek Harness не открылись" + (":\n" + "\n".join(tails) if tails else
+                          ": DeepSeek Harness не установлен") + "\nЗапустите вручную: "
+                          f"DSH_HOME={home} npx @deepseek-ai/dsh web")
+            return self.status()
+
+    def _try(self, argv: list, env: dict) -> tuple:
+        try:
+            proc = subprocess.Popen([*argv, "web", "--no-open", "--port", "0"], env=env, text=True,
+                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8",
+                                    errors="replace", start_new_session=True)
+        except OSError as e:
+            return "", str(e)
+        lines: list = []
+        deadline = time.time() + 180
+        while time.time() < deadline:
+            line = proc.stdout.readline()
+            if not line:
+                break
+            lines.append(line.rstrip())
+            m = re.search(r"https?://\S+", line)
+            if m and "dsh web" in line:
+                self.proc = proc
+                threading.Thread(target=lambda: [None for _ in proc.stdout], daemon=True).start()
+                return m.group(0), ""
+        proc.kill()
+        err = next((ln for ln in reversed(lines) if "Error" in ln or "error" in ln), lines[-1] if lines else "")
+        return "", err.strip()[:300]
+
+    def stop(self) -> None:
+        if self.proc is not None and self.proc.poll() is None:
+            if os.name == "posix":  # npx → node: the whole process group started for it
+                import signal
+
+                try:
+                    os.killpg(self.proc.pid, signal.SIGTERM)
+                except OSError:
+                    pass
+            else:
+                terminate_tree(self.proc)
+
+
+DSH_GUI = _DshGui()
 
 
 def runtimes(config: dict) -> list[str]:

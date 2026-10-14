@@ -19,6 +19,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("FAKE_DSH_LOG", str(tmp_path / "calls.jsonl"))
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test-not-a-real-key")
+    monkeypatch.setenv("DSH_HOME", str(tmp_path / "dsh"))  # never the real ~/.dsh
     for var in ("FAKE_DSH_LIMIT", "FAKE_DSH_LAZY", "FAKE_DSH_CMD", "FAKE_DSH_BOOT_FAIL", "FAKE_DSH_PNPM_MISSING"):
         monkeypatch.delenv(var, raising=False)
     cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05,
@@ -59,7 +60,7 @@ def test_dsh_runtime_does_work_and_finishes_through_artel_tools(env):
     launch = _calls(tmp)[0]
     assert "mcp__artel__task_submit" in launch["tools"] and launch["permission_mode"] == "workspace-write"
     assert launch["opts"]["profile"] == "sdk" and launch["opts"]["cwd"] == str(project.shared)
-    assert launch["opts"]["dsh_home"] == str(tmp / "home" / "dsh")
+    assert launch["opts"]["dsh_home"] == str(tmp / "dsh")
     rows = launch["rows"]
     assert {"id": "session-log-deepseek", "config": {"enabled": False}} in rows  # no session-log upload by default
     end = next(e for e in ev if e["kind"] == "agent/end" and e.get("runtime") == "dsh")
@@ -78,7 +79,7 @@ def test_dsh_plugins_are_installed_into_the_profile_and_patches_passed_through(e
     calls = _calls(tmp)
     cli = [c for c in calls if "cli" in c]
     assert cli == [{"cli": ["plugin", "--profile", "sdk", "add", "@acme/dsh-plugin-a", "github:acme/dsh-plugin-b"],
-                    "home": str(tmp / "home" / "dsh")}]
+                    "home": str(tmp / "dsh")}]
     launch = next(c for c in calls if "opts" in c)
     assert launch["opts"]["patches"][0] == str(user_patch) and launch["opts"]["patches"][-1].endswith(".patch.yml")
     assert launch["opts"]["model"] == "some-model" and launch["opts"]["dsh_bin"] == FAKE_CLI
@@ -114,7 +115,7 @@ def test_dsh_missing_install_or_key_is_a_setup_error(env, monkeypatch):
     assert out.status == "error" and classify(out.error) == "setup"
     monkeypatch.delenv("DEEPSEEK_API_KEY")
     out, _ = _run(cfg, project)
-    assert out.status == "error" and "DEEPSEEK_API_KEY" in out.error and classify(out.error) == "setup"
+    assert out.status == "error" and "нет ключа" in out.error and classify(out.error) == "setup"
     assert not _calls(tmp)  # nothing was launched
     monkeypatch.setenv("DEEPSEEK_API_KEY", "sk-test")
     monkeypatch.setenv("FAKE_DSH_PNPM_MISSING", "1")
@@ -163,7 +164,7 @@ def test_dsh_runtime_is_a_plugin_and_auto_detection(env, monkeypatch):
     runtimes._auto_cache.clear()
     assert runtimes.detect_runtime(live, ttl=0) != "dsh"
     st = dsh_status(cfg)
-    assert st["installed"] and not st["logged_in"] and st["key_env"] == "DEEPSEEK_API_KEY" and "sk-" not in json.dumps(st)
+    assert st["installed"] and not st["logged_in"] and st["provider"] == "deepseek-official" and "sk-" not in json.dumps(st)
     r = save_routing(live, {"runtime_by_role": {"worker": "dsh"}, "models": {"dsh": "m-1"}}, path=tmp / "artel.yaml")
     assert r["runtime_by_role"] == {"worker": "dsh"} and live["dsh"]["model"] == "m-1"
 
@@ -179,3 +180,64 @@ def test_dsh_tool_entry_installs_with_pip(env, monkeypatch):
     assert res["ok"] and seen[0][:2] == ["install", "--pre"] and "deepseek-harness-sdk" in seen[0]
     assert tools.installed_by_artel("dsh")
     assert tools.uninstall("dsh")["ok"] and seen[-1][:2] == ["uninstall", "-y"] and not tools.installed_by_artel("dsh")
+
+
+def test_dsh_runs_on_the_model_chosen_in_deepseek_harness_itself(env, monkeypatch):
+    """DeepSeek Harness is a harness with its own model settings (`dsh web` → Settings → Models): a DeepSeek key or any
+    other provider. Artel shares its home and runs workers on what was chosen there — no DEEPSEEK_API_KEY needed."""
+    from artel import runtimes
+    from artel.providers import dsh_status
+
+    cfg, project, tmp = env
+    monkeypatch.delenv("DEEPSEEK_API_KEY")
+    home = tmp / "dsh"
+    (home / "profiles" / "web").mkdir(parents=True)
+    (home / "profiles" / "web" / "cordis.patch.yml").write_text(
+        "- id: ui-settings-general\n  config: {welcomeNoticeVersion: x}\n"
+        "- id: llm-pi-ai\n  name: '@deepseek-ai/dsh-llm-pi-ai'\n  config:\n    providers:\n"
+        "      anthropic: {apiKeyEnv: ANTHROPIC_API_KEY}\n"
+        "- id: agent-default-model\n  config: {provider: anthropic, model: claude-sonnet-4-5}\n")
+    st = dsh_status(cfg)
+    assert st["provider"] == "anthropic" and st["model"] == "claude-sonnet-4-5" and st["source"] == "dsh"
+    assert not st["logged_in"] and "anthropic" in st["detail"]  # no key for the chosen provider yet
+    (home / ".credentials.yaml").write_text("version: 1\nrefs:\n  ANTHROPIC_API_KEY: sk-ant-secret\n")
+    st = dsh_status(cfg)
+    assert st["logged_in"] and "sk-ant" not in json.dumps(st)  # saved in dsh's own store; the value never shown
+    runtimes._auto_cache.clear()
+    assert runtimes.dsh_ready(cfg)
+    out, _ = _run(cfg, project)
+    assert out.status == "terminal", out.error
+    call = _calls(tmp)[-1]
+    assert call["opts"]["provider"] == "anthropic" and call["opts"]["model"] == "claude-sonnet-4-5"
+    assert call["opts"]["dsh_home"] == str(home)
+    ids = {r.get("id") for r in call["rows"]}
+    assert {"llm-pi-ai", "agent-default-model"} <= ids and "ui-settings-general" not in ids  # model rows only
+
+
+def test_deepseek_harness_settings_page_opens_from_the_dashboard(env, tmp_path, monkeypatch):
+    """«Настроить модели» starts dsh's own Web UI on the shared home and hands its address back; a dsh that cannot
+    serve it is skipped for the next one, and when none can the person gets the exact command to run."""
+    import stat
+
+    from artel import providers
+
+    cfg, _, _ = env
+    cfg = deep_merge(cfg, {"dsh": {"binary": None}})
+    bindir = tmp_path / "bin"
+    bindir.mkdir()
+    broken, good = bindir / "dsh", tmp_path / "good-dsh"
+    broken.write_text("#!/bin/sh\necho 'Error: Cannot find package @deepseek-ai/x'\nexit 1\n")
+    good.write_text("#!/bin/sh\necho \"dsh web: http://127.0.0.1:4321/?token=t home=$DSH_HOME\"\nexec /bin/sleep 30\n")
+    for f in (broken, good):
+        f.chmod(f.stat().st_mode | stat.S_IEXEC)
+    monkeypatch.setenv("PATH", str(bindir))
+    gui = providers._DshGui()
+    monkeypatch.setattr("artel.runtimes.dsh.launcher", lambda c: [str(good)])
+    st = gui.start(cfg)
+    try:
+        assert st["running"] and st["url"].startswith("http://127.0.0.1:4321/")
+    finally:
+        gui.stop()
+    monkeypatch.setattr("artel.runtimes.dsh.launcher", lambda c: None)
+    st = providers._DshGui().start(cfg)
+    assert not st["running"] and "Cannot find package" in st["error"] and "npx @deepseek-ai/dsh web" in st["error"]

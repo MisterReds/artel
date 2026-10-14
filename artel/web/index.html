@@ -464,10 +464,16 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       ${cc.installed&&!cc.logged_in&&!['waiting','starting','checking'].includes(CL.phase)?'<button class="primary" id="cl-login">Войти через подписку Claude</button>':''}
       ${cc.logged_in?'<button id="cl-logout">Выйти</button>':''}
       ${inst('claude',cc,'Claude Code CLI')}</div>
-    <div class="pvc"><h3>${ri('worker')}DeepSeek Harness${st(ds.logged_in,'подключён',ds.installed?'нет ключа':'не установлен')}</h3>
-      <div class="kv"><span>доступ</span><span>ключ API DeepSeek · <code>${esc(ds.key_env||'DEEPSEEK_API_KEY')}</code> ${ds.key_set?'<span style="color:var(--ok)">задан</span>':'не задан'}</span>${ds.installed?`<span>SDK</span><span>${esc(ds.version||'')}${ds.by_artel?' · ставил Artel':''}</span><span>модель</span><span>${esc(ds.model||'по умолчанию dsh')}</span><span class="dev">профиль</span><span class="dev"><code>${esc(ds.profile||'sdk')}</code></span><span class="dev">плагины dsh</span><span class="dev">${(ds.plugins||[]).length?ds.plugins.map(x=>`<code>${esc(x)}</code>`).join(' '):'нет (dsh.plugins в artel.yaml)'}</span>`:''}</div>
+    <div class="pvc"><h3>${ri('worker')}DeepSeek Harness${st(ds.logged_in,'подключён',ds.installed?'не настроен':'не установлен')}</h3>
+      <div class="kv"><span>что это</span><span>отдельный харнесс DeepSeek со своими настройками моделей: ключ DeepSeek или любой другой провайдер (Anthropic, OpenAI, Kimi, GLM, OpenRouter, подписка Codex…), свой шлюз</span>
+      ${ds.installed?`<span>модель</span><span>${ds.model?`<code>${esc(ds.provider)} · ${esc(ds.model)}</code>`:`по умолчанию DeepSeek Harness (<code>${esc(ds.provider)}</code>)`}${ds.source==='dsh'?' — выбрана в DeepSeek Harness':ds.source==='artel'?' — задана в artel.yaml':''}</span>
+      <span>доступ</span><span>${ds.logged_in?'<span style="color:var(--ok)">есть</span>':esc(ds.detail||'нет')}</span>
+      <span class="dev">SDK</span><span class="dev">${esc(ds.version||'')}${ds.by_artel?' · ставил Artel':''} · профиль <code>${esc(ds.profile||'sdk')}</code> · дом <code>${esc(ds.home||'')}</code></span>
+      <span class="dev">плагины dsh</span><span class="dev">${(ds.plugins||[]).length?ds.plugins.map(x=>`<code>${esc(x)}</code>`).join(' '):'нет (dsh.plugins в artel.yaml)'}</span>`:''}</div>
+      ${ds.installed?`<p class="stat">Ключи, провайдеры и модель задаются в самом DeepSeek Harness; воркеры Artel работают на том, что выбрано там.</p>
+        ${(ds.settings||{}).url?`<p><a href="${esc(ds.settings.url)}" target="_blank" rel="noopener">Открыть настройки DeepSeek Harness</a> <span class="stat">· Settings → Models</span></p>`:'<button class="primary" id="ds-settings">Настроить модели</button>'}
+        ${(ds.settings||{}).error?`<pre>${esc(ds.settings.error)}</pre>`:''}`:''}
       ${use('dsh')}
-      ${ds.installed&&!ds.logged_in?`<p class="stat">${esc(ds.detail||'')}</p>`:''}
       ${inst('dsh',ds,'DeepSeek Harness','Ставится pip-пакет deepseek-harness-sdk с готовым рантаймом dsh в окружение Artel, без прав администратора и без Node.js.')}</div>
     <div class="pvc dev"><h3>${ri('worker')}ACP-агенты${st(o.acp.installed,'агент найден','агент не найден')}</h3>
       <div class="kv"><span>что это</span><span>любой агент с Agent Client Protocol (Gemini CLI, Claude Code и Codex через ACP-адаптеры, goose, OpenHands…) работает исполнителем</span>
@@ -502,7 +508,6 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    </table></div></div>
    <div class="kv" style="margin-top:10px;max-width:520px"><span>модель Claude Code</span>${msel('m-cc','claude_code',r.models.claude_code,'sonnet')}
      <span>модель Codex</span>${msel('m-cx','codex',r.models.codex,'по умолчанию аккаунта')}
-     <span>модель DeepSeek Harness</span><input id="m-ds" value="${esc(r.models.dsh||'')}" placeholder="по умолчанию dsh">
      <span class="dev">ACP-агент для «acp»</span><select class="dev" id="acp-agent">${o.acp.presets.map(p=>`<option value="${esc(p.name)}" ${p.name===r.acp_agent?'selected':''}>${esc(p.name)}${p.installed?'':' (не установлен)'}</option>`).join('')}</select></div>
    <p><button class="primary" id="rt-save">Сохранить</button> <span class="stat" id="rt-msg"></span></p>
    <p class="stat">Действует для новых запусков.<span class="dev"> Сохраняется в ARTEL_HOME/artel.yaml. Разные подписки на разных ролях разносят нагрузку по лимитам.</span></p>`;
@@ -518,6 +523,8 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    on('em-save',async()=>{const j=await api('/api/providers/embeddings',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({backend:$('#em-backend').value,dim:+$('#em-dim').value})});$('#em-msg').textContent=j.error?'Не сохранено: '+j.error:'Сохранено.'});
    on('em-test',async()=>{$('#em-msg').textContent='Проверяю (первый запуск сервера — до минуты)…';const j=await api('/api/providers/embeddings/test',{method:'POST',headers:{'Content-Type':'application/json'}});
      $('#em-msg').textContent=j.how==='hybrid'?`Работает: запрос по-русски нашёл английский текст о лимитах за ${j.seconds} с.`:'Модель не ответила — поиск идёт по словам. '+(j.error||'')});
+   on('ds-settings',async()=>{$('#ds-settings').disabled=true;$('#ds-settings').textContent='Запускаю DeepSeek Harness…';
+     const j=await api('/api/providers/dsh/settings',{method:'POST',headers:{'Content-Type':'application/json'}});if(j.url)window.open(j.url,'_blank','noopener');draw()});
    on('tg-pair',async()=>{await api('/api/telegram/pair',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('cx-login',async()=>{$('#cx-login').disabled=true;await api('/api/providers/codex/login',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('cl-login',async()=>{$('#cl-login').disabled=true;await api('/api/providers/claude/login',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
@@ -528,7 +535,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});
-     const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value,dsh:$('#m-ds').value},acp_agent:$('#acp-agent').value};
+     const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value},acp_agent:$('#acp-agent').value};
      const rr=await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
      if(rr.error){$('#rt-msg').textContent='Не сохранено: '+rr.error;return}
      const used=new Set([body.runtime,...Object.values(byRole)]);const miss=[];

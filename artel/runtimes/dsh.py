@@ -10,8 +10,14 @@ proxy as the Claude Code and Codex runtimes), so tool execution, validation and 
 
 Every assistant message, tool call and tool result is mirrored into the project event log. If dsh ends without a
 terminal tool, the same durable session gets the continuation prompt, up to ``max_resumes`` times. Read-only roles
-run with dsh's ``read-only`` file sandbox. The DeepSeek API key is read by dsh itself from ``DEEPSEEK_API_KEY`` in
-the environment (or dsh's own credential store in its home); Artel never reads it out or stores it.
+run with dsh's ``read-only`` file sandbox.
+
+Models and sign-in belong to DeepSeek Harness, not to Artel. dsh is a harness of its own: in its Web UI (`dsh web` →
+Settings → Models) a person enters a DeepSeek key or adds any other provider from its catalog (Anthropic, OpenAI,
+Kimi, GLM, OpenRouter, a Codex or Copilot subscription…) or a custom gateway, and picks the model. Artel uses the
+same DSH_HOME (default ``~/.dsh``, as dsh itself): the credential store there is shared by every profile, and the
+provider rows and the chosen model that the Web UI writes into its ``web`` profile are forwarded to the worker's
+``sdk`` profile as a patch layer. Artel never reads a key's value or stores one.
 """
 
 from __future__ import annotations
@@ -35,8 +41,12 @@ from ..tooling import ToolContext
 from .claude_code import PROXY_SCRIPT, READONLY_ROLES, ToolBridge, child_env
 
 KEY_ENV = "DEEPSEEK_API_KEY"
+OFFICIAL = "deepseek-official"
+GUI_PROFILE = "web"  # the profile `dsh web` writes its settings into
+SETTINGS_ROWS = ("llm-pi-ai", "llm-deepseek", "llm-deepseek-account", "agent-default-model")
+# provider: None and model: None = the model chosen in DeepSeek Harness itself; set both to pin one for Artel
 DEFAULTS = {"sdk": "deepseek_harness", "binary": None, "home": None, "profile": "sdk",
-            "provider": "deepseek-official", "model": None, "reasoning_effort": None, "max_tokens": None,
+            "provider": None, "model": None, "reasoning_effort": None, "max_tokens": None,
             "plugins": [], "patches": [], "sandbox": "workspace-write", "share_session_log": False,
             "max_resumes": 3, "timeout_s": 2400, "init_timeout_s": 180}
 MCP_PREFIX = "mcp__artel__"
@@ -56,11 +66,69 @@ def dsh_settings(config: dict) -> dict:
 
 
 def dsh_home(cfg: dict) -> Path:
+    """The DeepSeek Harness home Artel shares with dsh itself: ``dsh.home``, else $DSH_HOME, else ~/.dsh."""
     if cfg.get("home"):
         return Path(cfg["home"]).expanduser()
+    if (os.environ.get("DSH_HOME") or "").strip():
+        return Path(os.environ["DSH_HOME"]).expanduser()
+    own = Path.home() / ".dsh"
     from ..project import artel_home
 
-    return artel_home() / "dsh"
+    legacy = artel_home() / "dsh"  # earlier Artel versions kept a private home here
+    return legacy if legacy.exists() and not own.exists() else own
+
+
+def gui_settings(cfg: dict) -> list:
+    """The model rows DeepSeek Harness's own settings page saved (providers, default model), or []."""
+    import yaml
+
+    path = dsh_home(cfg) / "profiles" / GUI_PROFILE / "cordis.patch.yml"
+    try:
+        rows = yaml.safe_load(path.read_text(encoding="utf-8")) or []
+    except (OSError, yaml.YAMLError):  # absent, or uses dsh's `!!js` expressions: nothing Artel can forward safely
+        return []
+    return [r for r in rows if isinstance(r, dict) and r.get("id") in SETTINGS_ROWS] if isinstance(rows, list) else []
+
+
+def selection(cfg: dict) -> dict:
+    """Which provider and model a worker runs on: Artel's dsh.provider/dsh.model when set, else what was chosen in
+    DeepSeek Harness, else the SDK's default (the official DeepSeek route)."""
+    if cfg.get("model"):
+        return {"provider": cfg.get("provider") or OFFICIAL, "model": cfg["model"], "source": "artel"}
+    for row in gui_settings(cfg):
+        c = row.get("config") or {}
+        if row.get("id") == "agent-default-model" and c.get("provider") and c.get("model"):
+            return {"provider": str(c["provider"]), "model": str(c["model"]), "source": "dsh",
+                    **({"reasoning_effort": str(c["reasoningEffort"])} if c.get("reasoningEffort") else {})}
+    return {"provider": cfg.get("provider") or OFFICIAL, "model": None, "source": "default"}
+
+
+def provider_keys(cfg: dict) -> dict:
+    """Configured providers → the environment name of their API key (None: sign-in or provider-managed auth)."""
+    out = {OFFICIAL: KEY_ENV}
+    for row in gui_settings(cfg):
+        if row.get("id") == "llm-pi-ai":
+            for name, p in ((row.get("config") or {}).get("providers") or {}).items():
+                out[str(name)] = (p or {}).get("apiKeyEnv") if isinstance(p, dict) else None
+    return out
+
+
+def _stored_refs(home: Path) -> set:
+    """Names of the credentials saved in dsh's store (values are never read into Artel's output)."""
+    import yaml
+
+    names = set()
+    try:
+        data = yaml.safe_load((home / ".credentials.yaml").read_text(encoding="utf-8")) or {}
+        names |= {str(k) for k in (data.get("refs") or {})}
+    except (OSError, yaml.YAMLError, AttributeError):
+        pass
+    try:
+        names |= {ln.split("=", 1)[0].strip() for ln in (home / ".env").read_text(encoding="utf-8").splitlines()
+                  if "=" in ln and not ln.lstrip().startswith("#")}
+    except OSError:
+        pass
+    return names
 
 
 def sdk_available(cfg: dict) -> bool:
@@ -70,14 +138,24 @@ def sdk_available(cfg: dict) -> bool:
         return False
 
 
+def access(cfg: dict) -> dict:
+    """Whether the selected provider has a credential dsh will find: {ok, provider, model, key_env, why}."""
+    sel = selection(cfg)
+    keys = provider_keys(cfg)
+    prov = sel["provider"]
+    out = {**sel, "key_env": keys.get(prov), "ok": True, "why": ""}
+    if prov != OFFICIAL and prov not in keys and sel["source"] != "artel":
+        out.update(ok=False, why=f"провайдер {prov} не настроен в DeepSeek Harness")
+    elif keys.get(prov):
+        env = keys[prov]
+        out["ok"] = bool(os.environ.get(env)) or env in _stored_refs(dsh_home(cfg))
+        if not out["ok"]:
+            out["why"] = f"для {prov} нет ключа: введите его в настройках моделей DeepSeek Harness"
+    return out
+
+
 def key_available(cfg: dict) -> bool:
-    """Whether dsh will find a DeepSeek credential: the environment variable or dsh's own store in its home."""
-    if cfg.get("provider", "deepseek-official") != "deepseek-official":
-        return True  # another adapter (e.g. llm-pi-ai) owns its credentials
-    if os.environ.get(KEY_ENV):
-        return True
-    home = dsh_home(cfg)
-    return (home / ".credentials.yaml").exists() or (home / ".env").exists()
+    return access(cfg)["ok"]
 
 
 def launcher(cfg: dict) -> Optional[list]:
@@ -301,10 +379,11 @@ def run_dsh(kernel, project, *, role: str, system: str, first_user: str, ctx: To
     task_id = (ctx.task or {}).get("id")
     if not sdk_available(cfg) or (cfg.get("binary") and not launcher(cfg)):
         return _setup_error(project, actor, task_id, SETUP_MISSING)
-    if not key_available(cfg):
+    acc = access(cfg)
+    if not acc["ok"]:
         return _setup_error(project, actor, task_id,
-                            f"DeepSeek API key not set: задайте переменную окружения {KEY_ENV} (значение Artel "
-                            f"не хранит) и перезапустите Artel")
+                            f"DeepSeek Harness: missing api key — {acc['why']} («Подключения» → DeepSeek Harness → "
+                            f"«Настроить модели»)")
     sdk = importlib.import_module(cfg["sdk"])
     env = run_env(cfg, role)
     err = ensure_plugins(cfg, env)
@@ -321,12 +400,17 @@ def run_dsh(kernel, project, *, role: str, system: str, first_user: str, ctx: To
             f"directory is your workspace; the team's shared deliverables directory is {project.shared}."
             + (" Your file sandbox is read-only." if role in READONLY_ROLES else "")
             + (f" Read-only reference sources: {', '.join(map(str, project.refs))}." if project.refs else ""))
-    model = f"dsh:{cfg.get('model') or 'default'}"
+    model = f"dsh:{acc['provider']}/{acc['model'] or 'default'}"
     session_id = f"artel-{task_id or role}-{uuid.uuid4().hex[:8]}"
     _, user_patches = _split_plugins(cfg)
     patch_path = project.root / ".cc" / f"dsh-{uuid.uuid4().hex[:8]}.patch.yml"
     patch_path.parent.mkdir(exist_ok=True)
     patch_path.write_text(json.dumps(artel_patch(cfg, bridge_url=bridge.url, bridge_token=bridge.token_arg), indent=1))
+    settings = gui_settings(cfg)  # providers and model chosen in DeepSeek Harness's own settings page
+    settings_path = None
+    if settings:
+        settings_path = project.root / ".cc" / f"dsh-settings-{uuid.uuid4().hex[:8]}.patch.yml"
+        settings_path.write_text(json.dumps(settings, indent=1))
     project.log.append("agent/start", actor=actor, role=role, purpose=purpose, task_id=task_id, model=model,
                        effort=cfg.get("reasoning_effort") or "default", system=system + note,
                        user=first_user, tools=[MCP_PREFIX + s.name for s in bridge.specs],
@@ -335,14 +419,17 @@ def run_dsh(kernel, project, *, role: str, system: str, first_user: str, ctx: To
     harness = None
     budget = kernel.get("budget")
     prompt = f"<role_instructions>\n{system}{note}\n</role_instructions>\n\n{first_user}"
-    kw = {"provider": cfg["provider"], "cwd": str(ctx.workspace), "dsh_home": str(dsh_home(cfg)),
-          "profile": cfg["profile"], "patches": tuple([*user_patches, str(patch_path)]), "env": env,
-          "initialize_timeout_seconds": float(cfg["init_timeout_s"])}
-    for k, sk in (("model", "model"), ("max_tokens", "max_tokens"), ("binary", "dsh_bin")):
+    kw = {"provider": acc["provider"], "cwd": str(ctx.workspace), "dsh_home": str(dsh_home(cfg)),
+          "profile": cfg["profile"], "env": env, "initialize_timeout_seconds": float(cfg["init_timeout_s"]),
+          "patches": tuple([*([str(settings_path)] if settings_path else []), *user_patches, str(patch_path)])}
+    if acc["model"]:
+        kw["model"] = acc["model"]
+    for k, sk in (("max_tokens", "max_tokens"), ("binary", "dsh_bin")):
         if cfg.get(k):
             kw[sk] = launcher(cfg)[0] if k == "binary" else cfg[k]
-    if cfg.get("reasoning_effort"):  # adapter-owned identifiers: only an explicit setting, never Artel's effort hint
-        kw["reasoning_effort"] = cfg["reasoning_effort"]
+    effort = cfg.get("reasoning_effort") or acc.get("reasoning_effort")
+    if effort:  # adapter-owned identifiers: only an explicit setting, never Artel's effort hint
+        kw["reasoning_effort"] = effort
     try:
         for attempt in range(1 + int(cfg["max_resumes"])):
             if stop_event is not None and stop_event.is_set():
@@ -403,6 +490,8 @@ def run_dsh(kernel, project, *, role: str, system: str, first_user: str, ctx: To
             harness.close()
         bridge.close()
         patch_path.unlink(missing_ok=True)
+        if settings_path is not None:
+            settings_path.unlink(missing_ok=True)
     out.tool_calls += bridge.calls
     project.log.append("agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
                        terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage, cost_usd=0.0,
