@@ -298,7 +298,9 @@ def memory_write(ctx: ToolContext, content: str, mode: str = "append") -> str:
     return f"MEMORY.md {mode}d"
 
 
-def setup(kernel) -> None:
+def setup(kernel):
+    from ..runtimes import mcp_client
+
     S = {"type": "object", "additionalProperties": False}
     kernel.register_tool(ToolSpec(
         "bash", "Run a shell command in your workspace (cwd). $ARTEL_SHARED is the project's shared deliverables "
@@ -334,3 +336,5 @@ def setup(kernel) -> None:
         "mode=append (default) or replace.",
         {**S, "properties": {"content": {"type": "string"}, "mode": {"type": "string", "enum": ["append", "replace"]}},
          "required": ["content"]}, memory_write, roles=("worker",)))
+    # external MCP servers from artel.yaml (mcp_servers:), as mcp__<server>__<tool> tools for the allowed roles
+    return mcp_client.register_tools(kernel)

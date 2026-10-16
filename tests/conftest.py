@@ -24,3 +24,10 @@ def git_identity_and_line_endings(monkeypatch):
         monkeypatch.setenv("GIT_CONFIG_VALUE_0", "false")
         monkeypatch.setenv("GIT_CONFIG_KEY_1", "commit.gpgsign")
         monkeypatch.setenv("GIT_CONFIG_VALUE_1", "false")
+
+
+@pytest.fixture(autouse=True)
+def no_host_evolve_process(monkeypatch):
+    """Tests must not depend on a real `artel evolve` running on the machine (the repo lock refuses to start then)."""
+    import artel.evolve.supervisor as sv
+    monkeypatch.setattr(sv, "evolve_process_running", lambda **kw: False)

@@ -27,6 +27,7 @@ from .. import policy
 from ..agent import LoopDetector, Outcome, _short
 from ..prompts import CONTINUATION
 from ..tooling import ToolContext
+from . import mcp_client
 from .claude_code import PROXY_SCRIPT, READONLY_ROLES, ToolBridge, child_env
 
 TERMINAL_GRACE_S = 0.5  # after a terminal tool: how long to wait for the turn's closing usage event
@@ -103,6 +104,10 @@ def _toml(value) -> str:
     return json.dumps(value)  # JSON strings and arrays of strings are valid TOML
 
 
+def _toml_table(d: dict) -> str:
+    return "{" + ", ".join(f"{_toml(k)}={_toml(v)}" for k, v in d.items()) + "}"
+
+
 def sandbox_mode(cc: dict, refresh: bool = False) -> str:
     """How Codex's own sandbox can run on this machine, probed once with `codex sandbox -- true`:
     "sandbox" (as configured), "sandbox+network" (works only with network on — e.g. bubblewrap may not set up a
@@ -149,7 +154,7 @@ def sandbox_note(cc: dict) -> str:
 
 def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url: str, bridge_token: str,
                effort: Optional[str], thread_id: Optional[str], last_message: Path,
-               grants: Optional[dict] = None, mode: str = "sandbox") -> list:
+               grants: Optional[dict] = None, mode: str = "sandbox", mcp_servers: Optional[dict] = None) -> list:
     pkg_root = str(Path(__file__).resolve().parents[2])
     no_write = role in READONLY_ROLES or (grants is not None and not grants["write"])
     sandbox = cc["sandbox"]
@@ -174,6 +179,19 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
             # otherwise the planner cannot even submit its plan.
             "-c", 'approval_policy="never"',
             "-c", 'mcp_servers.artel.default_tools_approval_mode="approve"']
+    for name, srv in (mcp_servers or {}).items():  # external MCP servers (mcp_client.cli_config), next to Artel's
+        if name == "artel":
+            continue
+        pre = f"mcp_servers.{name}"
+        if "url" in srv:  # header values travel in Codex's environment, by name (mcp_client.codex_secrets)
+            args += ["-c", f"{pre}.url={_toml(srv['url'])}"]
+            if srv.get("env_http_headers"):
+                args += ["-c", f"{pre}.env_http_headers={_toml_table(srv['env_http_headers'])}"]
+        else:
+            args += ["-c", f"{pre}.command={_toml(srv['command'])}", "-c", f"{pre}.args={_toml(srv['args'])}"]
+            if srv.get("env_vars"):
+                args += ["-c", f"{pre}.env_vars={_toml(srv['env_vars'])}"]
+        args += ["-c", f'{pre}.default_tools_approval_mode="approve"']
     for feature in cc.get("disable_features") or []:
         args += ["-c", f"features.{feature}=false"]
     if sandbox == "danger-full-access":
@@ -260,11 +278,13 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                 project.log.append("codex/sandbox", actor=actor, task_id=task_id, mode=mode, reason=sandbox_note(cc),
                                    note="Codex's sandbox cannot start commands on this machine; running without it — "
                                         "Artel's file grants and command policy still apply")
+            ext_servers, ext_env = mcp_client.codex_secrets(mcp_client.cli_config(kernel.config, role))
             args = build_args(cc, workspace=run_dir, shared=ctx.shared_dir, role=role,
                               bridge_url=bridge.url, bridge_token=bridge.token_arg, effort=ctx.state.get("effort"),
-                              thread_id=thread_id, last_message=last_msg, grants=grants, mode=mode)
+                              thread_id=thread_id, last_message=last_msg, grants=grants, mode=mode,
+                              mcp_servers=ext_servers)
             proc = subprocess.Popen(args, cwd=run_dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True, env=codex_env(cc), bufsize=1,
+                                    stderr=subprocess.PIPE, text=True, env={**codex_env(cc), **ext_env}, bufsize=1,
                                     encoding="utf-8", errors="replace")
             proc.stdin.write(prompt)
             proc.stdin.close()

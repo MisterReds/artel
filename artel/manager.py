@@ -32,7 +32,7 @@ from . import guardian
 from .runtimes import run_agent
 from .snapshot import Snapshot
 from .tools import shell_env, shell_run
-from .project import Persona, Project, persona_from_dict
+from .project import INSTRUCTIONS_TRUNCATED, Persona, Project, find_instructions, persona_from_dict
 from .tooling import ToolContext, window_text
 from .tz import fmt_ts, zone_name
 from .worktree import Isolation, IsolationError, isolation_enabled
@@ -149,6 +149,25 @@ class Manager:
     def root_id(self) -> Optional[str]:
         return self.project.meta.get("root_task")
 
+    # --- project instructions --------------------------------------------
+    def instructions(self, role: str) -> str:
+        """AGENTS.md-style project instructions as an untrusted-framed block for roles on the native runtime.
+        CLI runtimes (claude_code, codex, ...) read these files themselves, so they get nothing here."""
+        from .runtimes import runtime_for
+
+        found = find_instructions(self.project.shared)
+        path = str(found[0]) if found else None
+        truncated = bool(found and found[1].endswith(INSTRUCTIONS_TRUNCATED))
+        if (self.project.meta.get("instructions_file"), self.project.meta.get("instructions_truncated")) != (path, truncated):
+            self.project.set_meta(instructions_file=path, instructions_truncated=truncated)
+        if not found or runtime_for(self.cfg, role) != "native":
+            return ""
+        return prompts.PROJECT_INSTRUCTIONS.format(path=path, text=found[1])
+
+    def _with_instructions(self, system: str, role: str) -> str:
+        block = self.instructions(role)
+        return f"{system}\n\n{block}" if block else system
+
     # --- planning -------------------------------------------------------
     def plan(self) -> None:
         skills = self.kernel.get("skills")
@@ -158,7 +177,7 @@ class Manager:
         from .runtimes import runtime_for
 
         self.note("planning", runtime=runtime_for(self.cfg, "planner"))
-        out = run_agent(self.kernel, self.project, role="planner", system=prompts.PLANNER, first_user=user, ctx=ctx,
+        out = run_agent(self.kernel, self.project, role="planner", system=self._with_instructions(prompts.PLANNER, "planner"), first_user=user, ctx=ctx,
                        max_turns=12, purpose="plan", stop_event=self.stop)
         if out.name != "submit_plan":
             raise RuntimeError(f"planning failed: {out.status} {out.error}")
@@ -258,7 +277,7 @@ class Manager:
                 self.snapshots[task["id"]] = tree
                 self.note("snapshot", task_id=task["id"], tree=tree)
         try:
-            out = run_agent(self.kernel, self.project, role="worker", system=self.worker_system(persona),
+            out = run_agent(self.kernel, self.project, role="worker", system=self._with_instructions(self.worker_system(persona), "worker"),
                            first_user=self.task_card(task), ctx=ctx, max_turns=int(self.b["max_turns_per_run"]),
                            purpose="work", persona=persona, stop_event=self.stop)
         except Exception as exc:  # noqa: BLE001 - a crashed run is retried, never fatal
@@ -347,7 +366,7 @@ class Manager:
                 f"{changed}<gate_results>\n{gate_text}\n</gate_results>\n\nReview it now.")
         ctx = ToolContext(self.kernel, self.project, role="reviewer", workspace=wt or self.project.shared, task=task,
                           deliverables=wt)
-        out = run_agent(self.kernel, self.project, role="reviewer", system=prompts.REVIEWER, first_user=user, ctx=ctx,
+        out = run_agent(self.kernel, self.project, role="reviewer", system=self._with_instructions(prompts.REVIEWER, "reviewer"), first_user=user, ctx=ctx,
                        max_turns=25, purpose="review", stop_event=self.stop)
         return gates, out
 
@@ -400,7 +419,7 @@ class Manager:
                 f"\n</completed_tasks>\n\n<roster>\n{roster}\n</roster>\n\nAudit round "
                 f"{self.project.meta.get('audit_rounds', 0) + 1}. Inspect shared/ and audit now.")
         ctx = ToolContext(self.kernel, self.project, role="auditor", workspace=self.project.shared)
-        return run_agent(self.kernel, self.project, role="auditor", system=prompts.AUDITOR, first_user=user, ctx=ctx,
+        return run_agent(self.kernel, self.project, role="auditor", system=self._with_instructions(prompts.AUDITOR, "auditor"), first_user=user, ctx=ctx,
                         max_turns=30, purpose="audit", stop_event=self.stop)
 
     def _gate(self, point: str, instructions: str, yes: str, no: str, context: str) -> bool:

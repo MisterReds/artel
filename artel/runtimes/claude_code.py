@@ -32,6 +32,7 @@ from .. import policy
 from ..agent import LoopDetector, Outcome, _short, execute_tool
 from ..prompts import CONTINUATION
 from ..tools import terminate_tree
+from . import mcp_client
 from ..tooling import READONLY_ROLES, ToolContext
 
 # Claude Code ships better versions of these; do not expose Artel's duplicates.
@@ -44,6 +45,17 @@ SESSION_ENV = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUD
                "CLAUDE_CODE_SYNC_SESSION_REFS", "CLAUDE_CODE_TEE_SDK_STDOUT", "CLAUDE_CODE_DIAGNOSTICS_FILE",
                "CLAUDE_AFTER_LAST_COMPACT", "CLAUDE_CODE_SESSION_ATTENDED")
 MCP_PREFIX = "mcp__artel__"
+
+
+def mcp_servers_json(external: dict, base: dict) -> dict:
+    """The ``mcpServers`` object for --mcp-config: Artel's bridge plus the configured external servers."""
+    out = dict(base)
+    for name, s in external.items():
+        if name in out:
+            continue
+        out[name] = ({"type": "http", "url": s["url"], "headers": s["headers"]} if "url" in s else
+                     {"command": s["command"], "args": s["args"], "env": s["env"]})
+    return out
 # Roles that judge or plan must not edit the deliverables they are judging.
 WRITE_TOOLS = ("Write", "Edit", "MultiEdit")
 # The MCP proxy is started by its file path, never `-m artel.runtimes.mcp_proxy`: the CLI starts it in the agent's
@@ -70,7 +82,9 @@ class ToolBridge:
     def __init__(self, kernel, project, ctx: ToolContext, role: str, tool_names: Optional[list], actor: str,
                  runtime: str = "claude_code"):
         self.kernel, self.project, self.ctx, self.actor, self.runtime = kernel, project, ctx, actor, runtime
-        self.specs = [s for s in kernel.tools_for(role, tool_names) if s.name not in NATIVE_DUPLICATES]
+        # external MCP servers are handed to the CLI directly (see run), not proxied through the bridge
+        self.specs = [s for s in kernel.tools_for(role, tool_names)
+                      if s.name not in NATIVE_DUPLICATES and not s.name.startswith("mcp__")]
         self.token = secrets.token_hex(16)
         # the MCP proxy gets the token from a file only its owner can read, never on its command line (`ps` shows
         # every user the command lines of every process)
@@ -190,8 +204,12 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
     cfg_dir = project.root / ".cc"
     cfg_dir.mkdir(exist_ok=True)
     cfg_path = cfg_dir / f"mcp-{uuid.uuid4().hex[:8]}.json"
-    cfg_path.write_text(json.dumps({"mcpServers": {"artel": {
-        "command": sys.executable, "args": [PROXY_SCRIPT, bridge.url, bridge.token_arg]}}}), encoding="utf-8")
+    external = mcp_client.cli_config(kernel.config, role)
+    # may hold the values of the external servers' secrets: readable by the owner only
+    fd = os.open(cfg_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"mcpServers": mcp_servers_json(external, {"artel": {
+            "command": sys.executable, "args": [PROXY_SCRIPT, bridge.url, bridge.token_arg]}})}))
     terminal_names = [s.name for s in bridge.specs if s.terminal]
     note = (f"\n\n## Runtime\nYou run inside Claude Code. Use your built-in tools for files and shell. Artel "
             f"coordination tools are MCP tools named {MCP_PREFIX}<name>: "
@@ -225,7 +243,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                     *([] if session_id else ["--append-system-prompt", system + note]),  # a resumed session keeps it
                     "--permission-mode", cc["permission_mode"], *build_dir_args(grants),
                     "--allowedTools", *[t for t in BUILTIN_TOOLS if not no_write or t not in WRITE_TOOLS],
-                    "mcp__artel"]
+                    "mcp__artel", *[f"mcp__{n}" for n in external]]
             if no_write:
                 args += ["--disallowedTools", *WRITE_TOOLS]
             args += ["--settings", policy_hook_settings(project.root)]

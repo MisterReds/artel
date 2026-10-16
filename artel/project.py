@@ -99,6 +99,50 @@ DEFAULT_CONFIG: dict[str, Any] = {
 }
 
 
+# Project instruction files (AGENTS.md convention, as read by Codex, Claude Code, Gemini CLI and Cline).
+# Discovery is adapted from Codex's AGENTS.md handling (openai/codex, Apache-2.0): the nearest directory from the
+# work dir up to the repository root wins, and the content is capped.
+INSTRUCTION_FILES = ("AGENTS.md", "CLAUDE.md", "GEMINI.md", ".clinerules")
+INSTRUCTIONS_MAX_BYTES = 16 * 1024
+INSTRUCTIONS_TRUNCATED = "\n[... instructions truncated at the size cap ...]"
+
+
+def _cap(text: str, limit: int = INSTRUCTIONS_MAX_BYTES) -> str:
+    raw = text.encode("utf-8")
+    if len(raw) <= limit:
+        return text
+    return raw[:limit].decode("utf-8", "ignore") + INSTRUCTIONS_TRUNCATED
+
+
+def _read_instruction(path: Path) -> Optional[str]:
+    try:
+        if path.is_file():
+            return path.read_text(encoding="utf-8", errors="replace")
+        if path.is_dir() and path.name == ".clinerules":  # Cline: a directory of rule files
+            parts = [f"## {f.name}\n{f.read_text(encoding='utf-8', errors='replace')}"
+                     for f in sorted(path.iterdir()) if f.is_file() and not f.name.startswith(".")]
+            return "\n\n".join(parts) if parts else None
+    except OSError:
+        return None
+    return None
+
+
+def find_instructions(workdir: Any, max_bytes: int = INSTRUCTIONS_MAX_BYTES) -> Optional[tuple[Path, str]]:
+    """Nearest project instruction file from ``workdir`` up to the repo root (the dir holding .git; without one,
+    only ``workdir`` itself). Per directory the priority is AGENTS.md > CLAUDE.md > GEMINI.md > .clinerules.
+    Returns (path, text capped at ``max_bytes`` with a truncation marker) or None."""
+    start = Path(workdir).resolve()
+    chain = [start, *start.parents]
+    root = next((i for i, d in enumerate(chain) if (d / ".git").exists()), 0)  # no repo: the work dir only
+    dirs = chain[:root + 1]
+    for d in dirs:
+        for name in INSTRUCTION_FILES:
+            text = _read_instruction(d / name)
+            if text is not None and text.strip():
+                return d / name, _cap(text, max_bytes)
+    return None
+
+
 _secured: set = set()
 
 

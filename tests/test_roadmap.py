@@ -277,6 +277,8 @@ def test_evolve_items_picks_exact_items_and_rejects_unknown_ids(tmp_path, monkey
 
     from artel.evolve import supervisor
 
+    # a real `artel evolve` may be running on this machine; the lock scan must not depend on it
+    monkeypatch.setattr(supervisor, "evolve_process_running", lambda **kw: False)
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
     monkeypatch.setattr(supervisor, "evolve_process_running", lambda **kw: False)  # a real evolution may be running
     donor = tmp_path / "donor"
