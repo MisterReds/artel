@@ -447,7 +447,8 @@ items:
     wave: 3
     priority: core
     mode: evolve
-    status: planned
+    status: done
+    result: "AGENTS.md / CLAUDE.md / GEMINI.md / .clinerules, nearest wins, 16 KiB cap"
     title: Project instruction files — AGENTS.md / CLAUDE.md / GEMINI.md / .clinerules read into every agent's context
     source: {harness: Codex / Claude Code / Gemini CLI, repo: openai/codex, paths: [docs/agents_md.md], license: Apache-2.0}
     target: [artel/manager.py, artel/project.py, artel/prompts.py]
@@ -461,7 +462,8 @@ items:
     wave: 3
     priority: core
     mode: evolve
-    status: planned
+    status: done
+    result: "external MCP servers per role; judges only read_only servers; secrets by variable name"
     title: External MCP servers for agents — configured once, available to every runtime (Playwright browser preset)
     source: {harness: Claude Code / Gemini CLI / goose / Cline, repo: anomalyco/opencode, paths: [packages/opencode/src/mcp], license: MIT}
     target: [artel/runtimes/mcp_client.py, artel/plugins/builtin_tools.py, artel/runtimes/claude_code.py, artel/runtimes/codex.py]
@@ -686,7 +688,8 @@ items:
   - id: C-rea-pack
     wave: 3
     mode: evolve
-    status: planned
+    status: done
+    result: "REA as skill + CLI (artel skills import morluto/rea); not MCP: 207 tool schemas would cost every run"
     after: [C-mcp-client]
     title: Reverse-engineering pack (REA) — workers can investigate binaries, JS/Electron bundles, .NET, APKs and websites
     source: {harness: REA (Reverse Engineer Anything), repo: morluto/rea, paths: [README.md, docs/mcp-contracts.md], license: MIT}

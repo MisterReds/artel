@@ -61,7 +61,7 @@
 | W2-timezone | User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin | Artel (`MisterReds/artel`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-evolve-two-subscriptions | Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it | Artel (`MisterReds/artel`) | design | готово — evolve.runtimes [claude_code, codex]: a limit moves implementation and benchmark to the next runtime, pause only when all are limited; baselines per (commit, runtime) (tests/test_evolve_runtimes.py) |
 
-## Волна 3 — 3/31 готово
+## Волна 3 — 6/31 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
@@ -77,8 +77,8 @@
 | W3-mailbox | Agent mailbox and teams | Claude Code / Gas Town (`lintsinghua/claude-code-book`) | evolve | план |
 | W3-automations | Automations — schedule and event triggers | OpenHands / Qwen Code (`QwenLM/qwen-code`) | evolve | план |
 | W3-system-one | Our own System One from the partner team, connected through the System One contract (docs/SYSTEM_ONE.md) | partner team (`pending`) | design | план |
-| C-agents-md | Project instruction files — AGENTS.md / CLAUDE.md / GEMINI.md / .clinerules read into every agent's context | Codex / Claude Code / Gemini CLI (`openai/codex`) | evolve | план |
-| C-mcp-client | External MCP servers for agents — configured once, available to every runtime (Playwright browser preset) | Claude Code / Gemini CLI / goose / Cline (`anomalyco/opencode`) | evolve | план |
+| C-agents-md | Project instruction files — AGENTS.md / CLAUDE.md / GEMINI.md / .clinerules read into every agent's context | Codex / Claude Code / Gemini CLI (`openai/codex`) | evolve | готово — AGENTS.md / CLAUDE.md / GEMINI.md / .clinerules, nearest wins, 16 KiB cap |
+| C-mcp-client | External MCP servers for agents — configured once, available to every runtime (Playwright browser preset) | Claude Code / Gemini CLI / goose / Cline (`anomalyco/opencode`) | evolve | готово — external MCP servers per role; judges only read_only servers; secrets by variable name |
 | C-task-tool | Subagents on demand — a worker delegates a sub-question to a child agent with a fresh context and gets a summary back | Claude Code / OpenCode / Deep Agents / Hermes (`anomalyco/opencode`) | design | план |
 | C-web-tools | web_search and web_fetch for the native runtime (CLI runtimes already have their own) | Gemini CLI / OpenCode (`anomalyco/opencode`) | evolve | план |
 | C-user-hooks | User hooks from the config — shell commands on before_tool / after_tool / task_done / project_end, can block a tool call | Claude Code / Crush / Qwen Code (`anthropics/claude-code`) | evolve | план |
@@ -95,7 +95,7 @@
 | C-best-of-n | Best of N for hard tasks — several workers (or runtimes) on one task in separate worktrees, the reviewer picks | Orca / Qwen Code Agent Arena (`stablyai/orca`) | design | план |
 | C-evolution-archive | Evolution keeps an archive of variants, not only a champion — parents sampled for diversity | Darwin Gödel Machine / OpenEvolve (`jennyzzt/dgm`) | design | план |
 | C-acp-server | Artel as an ACP agent — drive the whole team from Zed, JetBrains or any ACP client | Gemini CLI / Claude Code / goose (IDE integration) (`agentclientprotocol/agent-client-protocol`) | design | план |
-| C-rea-pack | Reverse-engineering pack (REA) — workers can investigate binaries, JS/Electron bundles, .NET, APKs and websites | REA (Reverse Engineer Anything) (`morluto/rea`) | evolve | план |
+| C-rea-pack | Reverse-engineering pack (REA) — workers can investigate binaries, JS/Electron bundles, .NET, APKs and websites | REA (Reverse Engineer Anything) (`morluto/rea`) | evolve | готово — REA as skill + CLI (artel skills import morluto/rea); not MCP: 207 tool schemas would cost every run |
 
 ## Волна 4 (найдено разбором проектов) — 0/14 готово
 
@@ -130,4 +130,4 @@
 | `Yeachan-Heo/oh-my-claudecode` | MIT | 7 | A-omc-clarify-gate, A-omc-review-tiers, A-omc-secret-redaction | Claude Code plugin: team pipeline plan/prd/exec/verify/fix, deep-interview ambiguity gate, verification tiers, notifications with a reply listener and token red |
 | `chaitanyagiri/munder-difflin` | MIT | 6 | A-munder-work-tokens | Electron desktop app wrapping many terminal agent CLIs as an office: git-backed hive mailbox with a single committer, markdown memory, runaway circuit breaker ( |
 
-Итого: 31/75 пунктов готово.
+Итого: 34/75 пунктов готово.

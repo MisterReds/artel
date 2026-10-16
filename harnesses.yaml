@@ -52,11 +52,11 @@ harnesses:
     note: есть события жизненного цикла для Python-плагинов; простых shell-хуков из конфига нет
   - name: CLAUDE.md / AGENTS.md
     what: инструкции проекта автоматически в контексте
-    artel: gap
+    artel: done
     ref: C-agents-md
   - name: MCP-клиент
     what: подключение любых MCP-серверов к агенту
-    artel: partial
+    artel: done
     ref: C-mcp-client
     note: Artel сам отдаёт инструменты по MCP CLI-агентам, но внешние MCP-серверы подключить нельзя
   - name: Plan mode
@@ -112,7 +112,7 @@ harnesses:
     ref: W2-guardian
   - name: AGENTS.md
     what: инструкции репозитория для агента
-    artel: gap
+    artel: done
     ref: C-agents-md
   - name: Двухфазная память
     what: извлечение из прогонов, затем консолидация
@@ -191,7 +191,7 @@ harnesses:
   features:
   - name: GEMINI.md
     what: контекст проекта из файла
-    artel: gap
+    artel: done
     ref: C-agents-md
   - name: Веб-поиск и загрузка страниц
     what: встроенные web search / fetch
@@ -199,7 +199,7 @@ harnesses:
     ref: C-web-tools
   - name: MCP-расширения
     what: подключение MCP-серверов
-    artel: partial
+    artel: done
     ref: C-mcp-client
   - name: Чекпоинты сессий
     what: сохранить и продолжить
@@ -308,11 +308,11 @@ harnesses:
     ref: C-rewind
   - name: Правила .clinerules
     what: инструкции проекта
-    artel: gap
+    artel: done
     ref: C-agents-md
   - name: MCP и хуки через SDK
     what: расширения
-    artel: partial
+    artel: done
     ref: C-mcp-client
   - name: Команды агентов
     what: координатор делит работу на специалистов
@@ -338,7 +338,7 @@ harnesses:
   features:
   - name: MCP-расширения
     what: 70+ готовых
-    artel: partial
+    artel: done
     ref: C-mcp-client
   - name: Подписки через ACP
     what: Claude / ChatGPT / Gemini
@@ -996,7 +996,7 @@ harnesses:
   features:
   - name: Браузерный QA
     what: агент воспроизводит баг в браузере
-    artel: gap
+    artel: done
     ref: C-mcp-client
     note: через MCP-сервер Playwright
   - name: Второе мнение другой модели
@@ -1164,7 +1164,7 @@ harnesses:
   features:
   - name: Реверс-инжиниринг как инструменты агента
     what: MCP-сервер + навык расследования
-    artel: planned
+    artel: done
     ref: C-rea-pack
   - name: Записи-доказательства у каждого вывода
     what: что наблюдалось и чего не удалось установить

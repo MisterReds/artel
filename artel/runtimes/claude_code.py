@@ -189,6 +189,11 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
     from ..tools import resolve
 
     cc = {**DEFAULTS, **(kernel.config.get("claude_code") or {})}
+    from ..routing import model_for
+
+    tiered = None if (persona and getattr(persona, "model", None)) else model_for(kernel.config, "claude_code", role, project)
+    if tiered:  # the role's tier: opus only for the manager's decisions, haiku for routine (artel/routing.py)
+        cc["model"] = tiered
     actor = persona.name if persona else role
     task_id = (ctx.task or {}).get("id")
     if not resolve(cc["binary"]):

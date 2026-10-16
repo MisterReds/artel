@@ -217,7 +217,17 @@ def project_stats(project: Project, live: bool = False) -> dict:
         "attention": attention,
         "last_event": {"ts": last["ts"], "text": _summary(last)} if last else None,
         "budget": _budget_state(project),
+        "efficiency": _efficiency(project),
     }
+
+
+def _efficiency(project) -> Optional[dict]:
+    try:
+        from .routing import efficiency
+
+        return efficiency(project)
+    except Exception:  # noqa: BLE001 - metrics never hide a project
+        return None
 
 
 def _budget_state(project: Project) -> Optional[dict]:
@@ -285,4 +295,5 @@ def agent_analytics(projects: list[dict]) -> dict:
         return sorted(out, key=lambda r: (-(r["done"] or 0), r["key"]))
 
     rows.sort(key=lambda r: (-r["done"], r["project"]))
-    return {"by_model": finish(by_model), "by_role": finish(by_role), "workers": rows}
+    eff = [{"project": p["slug"], "name": p["name"], **p["efficiency"]} for p in projects if p.get("efficiency")]
+    return {"by_model": finish(by_model), "by_role": finish(by_role), "workers": rows, "efficiency": eff}

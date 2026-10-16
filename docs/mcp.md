@@ -25,3 +25,20 @@ mcp_servers:
 - Playwright (preset, or any `@playwright/mcp` command) is always run with `--headless`; `--headed`,
   `--no-headless` and `--headless=false` are dropped, so a browser never opens on the owner's screen.
 - A server that fails to start is skipped (see `kernel.failed["mcp:<name>"]`), never fatal.
+
+## REA — разбор программ (reverse engineering)
+
+REA (github.com/morluto/rea, MIT) подключается как **навык + CLI**, не как MCP-сервер. Его MCP-сервер объявляет 207
+инструментов; их описания — 6,4 МБ, то есть сотни тысяч токенов в контексте каждого запуска воркера. Навык же
+загружается, только когда задача его требует, а сам REA вызывается командой с ограничением вывода.
+
+```sh
+artel skills import morluto/rea --include reverse-engineer-anything   # навык в библиотеку Artel
+```
+
+Воркеру нужен Node.js 22+ (REA запускается через `npx -y rea-agents@6.5.0 …`). Сразу работают статический разбор
+JavaScript/Electron, .NET и сайтов; нативные бинарники — с Ghidra (`GHIDRA_INSTALL_DIR`), Hopper или IDA; Android —
+с JADX и JDK. Вывод ограничивайте: `--format toon --token-limit 4000`.
+
+Для исходных кодов REA не нужен (так говорит и его навык): репозиторий читается обычными инструментами. Использовать
+только на своём ПО или ПО, на анализ которого есть разрешение.

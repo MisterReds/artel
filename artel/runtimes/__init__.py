@@ -101,7 +101,24 @@ def runtime_for(config: dict, role: str) -> str:
 
 
 def run_agent(kernel, project, *, role: str, **kw):
-    """Same contract as :func:`artel.agent.run_loop`, dispatched to the runtime plugin configured for the role."""
+    """Same contract as :func:`artel.agent.run_loop`, dispatched to the runtime plugin configured for the role.
+    Each run's tokens are added to the project's per-tier account (artel/routing.py)."""
+    from ..routing import record, tier_for
+
+    tier = tier_for(kernel.config, role, project)
+    out = _run_agent(kernel, project, role=role, **kw)
+    try:
+        usage = getattr(out, "usage", None) or {}
+        record(project, tier, usage)
+        planned = tier_for(kernel.config, role)  # without the project: the configured tier, before any degradation
+        if planned == "expensive":  # the manager's calls are few; each one is visible in the log
+            project.log.append("tier/usage", role=role, tier=tier, usage=usage, degraded=tier != planned)
+    except Exception:  # noqa: BLE001 - accounting never breaks a run
+        pass
+    return out
+
+
+def _run_agent(kernel, project, *, role: str, **kw):
     name = runtime_for(kernel.config, role)
     if name == "none":
         from ..agent import Outcome

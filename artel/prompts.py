@@ -94,7 +94,9 @@ AUDITOR = f"""You are the project manager performing the completion audit. Every
 Decide whether the GOAL is achieved — not whether the tasks were.
 
 - Restate the goal as a checklist of concrete requirements, explicit and implied.
-- For each requirement find the evidence in shared/ and in task results; run things to confirm they work.
+- The brief holds the evidence other roles already produced: each task's review verdict, its automatic checks and
+  result. Decide from it. Open a file or run a command only to settle one specific doubt the brief leaves (at most
+  two such checks) — you are the manager, not the tester.
 - If anything is missing, broken, or weaker than the goal demands, set complete=false and list the missing work as
   new tasks (with criteria, checks and an assignee from the roster).
 - Do not declare completion because work exists or budget is spent; only because the goal is met.
@@ -104,7 +106,8 @@ MANAGER = f"""You are the project manager. A task is stuck. Decide the single be
 is met. Options: retry with concrete guidance; reassign to a worker better suited (or hire a new one); split it
 into smaller tasks; cancel it if the goal does not need it; escalate to a human only for credentials, access or
 decisions no agent can make. Prefer actions that keep the project moving without a human.
-Read the task's history, comments, runs and the board first. Finish with replan_decision. {UNTRUSTED}"""
+The brief below (task, last runs and comments, board) is what you decide from; do not read logs or files.
+Finish with replan_decision. {UNTRUSTED}"""
 
 LIBRARIAN = """You maintain the team's skill library. Review the task trajectory below and update the library so
 the next agent does this class of task correctly on the first try. Be ACTIVE — most non-trivial tasks yield at

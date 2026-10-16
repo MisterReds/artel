@@ -43,6 +43,9 @@ REVIEW_EVIDENCE_CHARS = 4000
 GATE_OUTPUT_CHARS = 1500
 REVIEW_GATES_CHARS = 5000
 AUDIT_RESULT_CHARS = 1200
+# The expensive model (planner, manager, auditor) sees a brief of constant size, never raw files, logs or the whole
+# history: ~800 tokens whatever the length of the project (docs/ORCHESTRATION.md).
+MANAGER_BRIEF_CHARS = 3200
 
 TICK_S = 0.5
 BACKOFF_BASE_S = 10
@@ -391,6 +394,59 @@ class Manager:
         top = float((a.get("probabilities") or {}).get(a.get("choice"), 0))
         return a.get("choice") if top >= floor and a.get("choice") in ("retry", "human") else None
 
+    def _verdicts(self) -> dict:
+        """task id -> its last review verdict (passed, gate exits), from the event log."""
+        out = {}
+        for e in self.project.log.read():
+            if e.get("kind") == "review/verdict":
+                out[e["task_id"]] = e
+        return out
+
+    def _brief(self, parts: list) -> str:
+        """Join brief sections, cut to MANAGER_BRIEF_CHARS (the cut is marked; the full data stays in the log)."""
+        text = "\n".join(x for x in parts if x)
+        return text if len(text) <= MANAGER_BRIEF_CHARS else text[:MANAGER_BRIEF_CHARS - 40] + "\n[… brief cut to size]"
+
+    def manager_brief(self, task: dict) -> str:
+        """Manager Input for a stuck task: goal, the task, its last runs and comments, the neighbours on the board."""
+        counts: dict = {}
+        for t in self.board.list():
+            if t["kind"] != "goal":
+                counts[t["status"]] = counts.get(t["status"], 0) + 1
+        near = [*self.board.deps_of(task["id"]), *self.board.dependents_of(task["id"])][:7]
+        runs = self.board.runs(task["id"])[-2:]
+        comments = self.board.comments(task["id"])[-3:]
+        return self._brief([
+            f"<goal>{window_text(self.project.goal, 500)}</goal>",
+            f"<task id=\"{task['id']}\" status=\"{task['status']}\" attempts=\"{task['attempts']}\" "
+            f"assignee=\"{task['assignee']}\">{task['title']}\ncriteria:\n{_fmt_list(task['criteria'][:5])}</task>",
+            "<last_runs>\n" + "\n".join(f"- {r['worker']}: {r['status']} after {r['turns']} turns — "
+                                         f"{window_text(r['summary'] or '', 300)}" for r in runs) + "\n</last_runs>",
+            "<last_comments>\n" + "\n".join(f"[{c['author']}] {window_text(c['body'], 300)}" for c in comments)
+            + "\n</last_comments>",
+            "<board>" + ", ".join(f"{k}: {v}" for k, v in sorted(counts.items())) + "</board>",
+            ("<related>\n" + "\n".join(f"[{t['status']}] {t['title']}" for t in
+                                         (self.board.get(i) for i in near) if t) + "\n</related>") if near else "",
+        ])
+
+    def audit_brief(self) -> str:
+        """Manager Input for the final acceptance: per task the reviewer's verdict and the automatic checks (the
+        evidence cheaper roles already produced), a short result, and where the deliverables are."""
+        verdicts = self._verdicts()
+        done = [t for t in self.board.list(status=["done"]) if t["kind"] != "goal"]
+        rows = []
+        for t in done:
+            v = verdicts.get(t["id"]) or {}
+            gates = v.get("gates") or []
+            ok = sum(1 for g in gates if g.get("exit") == 0)
+            rows.append(f"- {t['title']} — review: {'passed' if v.get('passed') else 'no verdict'}; checks: "
+                        f"{ok}/{len(gates)} ok; result: {window_text(t['result'] or '', 160)}")
+        files = sorted(str(p.relative_to(self.project.shared)) for p in self.project.shared.rglob("*")
+                       if p.is_file() and ".git" not in p.parts)[:20]
+        return self._brief([f"<goal>{window_text(self.project.goal, 800)}</goal>",
+                            f"<tasks done=\"{len(done)}\">\n" + "\n".join(rows) + "\n</tasks>",
+                            "<deliverables in=\"shared/\">" + ", ".join(files) + "</deliverables>"])
+
     def job_replan(self, task: dict) -> Outcome:
         fast = self.triage(task)
         if fast:
@@ -398,29 +454,19 @@ class Manager:
             return Outcome(status="terminal", terminal=("replan_decision", {
                 "action": action, "rationale": f"System One triage: {fast}", "guidance": "", "assignee": "",
                 "new_worker": {}, "subtasks": []}))
-        runs = self.board.runs(task["id"])
-        roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster())
-        user = (f"{self.task_card(task)}\n\n<runs>\n" +
-                "\n".join(f"- run {r['id']} by {r['worker']}: {r['status']} after {r['turns']} turns — "
-                          f"{window_text(r['summary'] or '', 600)}" for r in runs) +
-                f"\n</runs>\n\n<roster>\n{roster}\n</roster>\n\nBoard:\n" +
-                "\n".join(f"[{t['status']}] {t['id']} ({t['assignee']}) {t['title']}" for t in self.board.list()) +
-                "\n\nDecide now.")
+        roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster()[:12])
+        user = f"{self.manager_brief(task)}\n\n<roster>\n{roster}\n</roster>\n\nDecide now."
         ctx = ToolContext(self.kernel, self.project, role="manager", workspace=self.project.shared, task=task)
         return run_agent(self.kernel, self.project, role="manager", system=prompts.MANAGER, first_user=user, ctx=ctx,
-                        max_turns=15, purpose="replan", stop_event=self.stop)
+                        max_turns=6, purpose="replan", stop_event=self.stop)
 
     def job_audit(self) -> Outcome:
-        done = [t for t in self.board.list(status=["done"]) if t["kind"] != "goal"]
-        roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster())
-        user = (f"<goal>\n{self.project.goal}\n</goal>\n\n<completed_tasks>\n" +
-                "\n\n".join(f"## {t['title']} ({t['assignee']})\nCriteria:\n{_fmt_list(t['criteria'])}\n"
-                            f"Result: {window_text(t['result'] or '', AUDIT_RESULT_CHARS)}" for t in done) +
-                f"\n</completed_tasks>\n\n<roster>\n{roster}\n</roster>\n\nAudit round "
-                f"{self.project.meta.get('audit_rounds', 0) + 1}. Inspect shared/ and audit now.")
+        roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster()[:12])
+        user = (f"{self.audit_brief()}\n\n<roster>\n{roster}\n</roster>\n\nAudit round "
+                f"{self.project.meta.get('audit_rounds', 0) + 1}. Decide now.")
         ctx = ToolContext(self.kernel, self.project, role="auditor", workspace=self.project.shared)
         return run_agent(self.kernel, self.project, role="auditor", system=self._with_instructions(prompts.AUDITOR, "auditor"), first_user=user, ctx=ctx,
-                        max_turns=30, purpose="audit", stop_event=self.stop)
+                        max_turns=10, purpose="audit", stop_event=self.stop)
 
     def _gate(self, point: str, instructions: str, yes: str, no: str, context: str) -> bool:
         """System One gate in front of an expensive role; True = run it (also when undecided)."""

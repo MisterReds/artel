@@ -223,6 +223,11 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
     from ..tools import resolve, terminate_tree
 
     cc = codex_settings(kernel.config)
+    from ..routing import model_for
+
+    tiered = None if (persona and getattr(persona, "model", None)) else model_for(kernel.config, "codex", role, project)
+    if tiered:
+        cc = {**cc, "model": tiered}
     actor = persona.name if persona else role
     if not resolve(cc["binary"]):
         out = Outcome(status="error", error="Codex CLI не установлен: «Подключения» → «Установить» "
