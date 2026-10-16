@@ -85,6 +85,12 @@ class ScriptedProvider:
     def _default(self, messages, system):
         return [_text("nothing to do")]
 
+    def _intake(self, messages, system):
+        req = re.search(r"<request>\s*(.*?)\s*</request>", _first_text(messages), re.S).group(1)
+        return [_use("submit_contract", objective=req[:200], deliverables=["shared/deliverable.md"],
+                     success_criteria=["the deliverable exists and is verified"], assumptions=["scripted run"],
+                     complexity="medium")]
+
     def _plan(self, messages, system):
         goal = re.search(r"<goal>\s*(.*?)\s*</goal>", _first_text(messages), re.S).group(1)
         return [_text("Planning the project."), _use(

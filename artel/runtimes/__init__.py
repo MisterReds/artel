@@ -110,9 +110,11 @@ def run_agent(kernel, project, *, role: str, **kw):
     try:
         usage = getattr(out, "usage", None) or {}
         record(project, tier, usage)
-        planned = tier_for(kernel.config, role)  # without the project: the configured tier, before any degradation
-        if planned == "expensive":  # the manager's calls are few; each one is visible in the log
-            project.log.append("tier/usage", role=role, tier=tier, usage=usage, degraded=tier != planned)
+        configured = tier_for(kernel.config, role)
+        planned = tier_for(kernel.config, role, project, budget=False)  # simple-request rule, not the budget
+        if configured == "expensive":  # the manager's calls are few; each one is visible in the log
+            project.log.append("tier/usage", role=role, tier=tier, usage=usage, degraded=tier != planned,
+                               simple_request=planned != configured)
     except Exception:  # noqa: BLE001 - accounting never breaks a run
         pass
     return out

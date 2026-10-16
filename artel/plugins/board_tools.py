@@ -147,6 +147,20 @@ def submit_plan(ctx: ToolContext, project_name: str, workers: list, tasks: list)
     return _terminal(ctx, "submit_plan", {"project_name": project_name, "workers": workers, "tasks": tasks})
 
 
+def submit_contract(ctx: ToolContext, objective: str, deliverables: list, success_criteria: list,
+                    constraints: list = (), out_of_scope: list = (), assumptions: list = (),
+                    open_questions: list = (), complexity: str = "medium") -> str:
+    clean = lambda xs: [str(x).strip()[:400] for x in xs or [] if str(x).strip()][:12]  # noqa: E731
+    if not str(objective).strip() or not clean(deliverables) or not clean(success_criteria):
+        raise ToolError("objective, deliverables and success_criteria must not be empty")
+    return _terminal(ctx, "submit_contract", {
+        "objective": str(objective).strip()[:600], "deliverables": clean(deliverables),
+        "success_criteria": clean(success_criteria), "constraints": clean(constraints),
+        "out_of_scope": clean(out_of_scope), "assumptions": clean(assumptions),
+        "open_questions": clean(open_questions),
+        "complexity": complexity if complexity in ("low", "medium", "high") else "medium"})
+
+
 def review_done(ctx: ToolContext, summary: str) -> str:
     return _terminal(ctx, "review_done", {"summary": summary})
 
@@ -246,6 +260,14 @@ def setup(kernel) -> None:
             "rationale": {"type": "string"}, "guidance": {"type": "string"}, "assignee": {"type": "string"},
             "new_worker": WORKER_ITEM, "subtasks": {"type": "array", "items": TASK_ITEM}},
          "required": ["action", "rationale"]}, replan_decision, roles=("manager",), terminal=True))
+    L = {"type": "array", "items": {"type": "string"}}
+    kernel.register_tool(ToolSpec(
+        "submit_contract", "Submit the task contract made from the person's request (intake).",
+        {**S, "properties": {"objective": {"type": "string"}, "deliverables": L, "success_criteria": L,
+                             "constraints": L, "out_of_scope": L, "assumptions": L, "open_questions": L,
+                             "complexity": {"type": "string", "enum": ["low", "medium", "high"]}},
+         "required": ["objective", "deliverables", "success_criteria"]}, submit_contract, roles=("intake",),
+        terminal=True))
     kernel.register_tool(ToolSpec(
         "submit_plan", "Submit the project plan: the worker roster and the task DAG.",
         {**S, "properties": {"project_name": {"type": "string"},

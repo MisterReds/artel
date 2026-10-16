@@ -330,7 +330,7 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
   <div class="stepper">${STEPS.map((s,i)=>`<div class="step ${si<0?'':i<si?'past':i===si?'now':''}">${STAGE[s]}</div>`).join('')}</div>
   <div class="stat">задач выполнено ${st.tasks_done} из ${st.tasks_total}<span class="dev"> · токены ${num(u.input_tokens)} → ${num(u.output_tokens)} · запросов ${u.requests} · ${money(st.cost_usd)} · раундов аудита ${m.audit_rounds||0}</span></div>
   ${segbar(st.counts,st.tasks_total)}
-  <div class="goal"><b>Цель.</b> ${esc(m.goal)}${root&&root.result?`<div style="margin-top:6px;color:var(--ok)">${esc(root.result)}</div>`:''}</div>
+  <div class="goal"><b>Цель.</b> ${esc(m.goal)}${contractBox(m.contract)}${root&&root.result?`<div style="margin-top:6px;color:var(--ok)">${esc(root.result)}</div>`:''}</div>
   ${st.attention.length?`<h2>Требует внимания</h2>${st.attention.map(a=>`<div class="alert" data-t="${a.task_id}"><b>${esc(a.title)}</b> <span class="stat">· @${esc(a.assignee)} · ${esc(a.reason)} — откройте и напишите исполнителю</span></div>`).join('')}`:''}
   ${activeBox(v,tasks)}
   <h2>Команда</h2><div class="team">${v.workers.map(w=>{const s=st.workers.find(x=>x.name===w.name)||{};return `<div class="worker" data-w="${esc(w.name)}"><b>${esc(w.name)}</b><span class="role">${ri(w.role)}${esc(w.role)}</span>
@@ -348,7 +348,11 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
   const rs=$('#resume');if(rs)rs.onclick=()=>post(`/api/projects/${state.slug}/resume`).then(()=>setTimeout(refresh,800));
   const of=$('#openfeed');if(of)of.onclick=()=>$('#feed').classList.add('show');
   listFiles('shared')}
-const PURPOSE={plan:'составляет план',work:'выполняет задачу',review:'проверяет работу',audit:'аудит цели',test:'тестирует',refine:'улучшает харнесс',librarian:'собирает навыки'};
+const PURPOSE={intake:'уточняет задачу',plan:'составляет план',work:'выполняет задачу',review:'проверяет работу',audit:'аудит цели',test:'тестирует',refine:'улучшает харнесс',librarian:'собирает навыки'};
+// how Artel understood the request (intake contract, cheap model): the person sees it before the work is judged by it
+function contractBox(c){if(!c)return '';const L=(t,xs)=>(xs||[]).length?`<div style="margin-top:6px"><b>${t}</b><ul style="margin:2px 0 0;padding-left:18px">${xs.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:'';
+  return `<details style="margin-top:6px"><summary class="stat">Как понята задача${c.complexity?' · сложность '+esc({low:'низкая',medium:'средняя',high:'высокая'}[c.complexity]||c.complexity):''}</summary>
+    ${L('Результат',c.deliverables)}${L('Критерии успеха',c.success_criteria)}${L('Ограничения',c.constraints)}${L('Не входит',c.out_of_scope)}${L('Допущения',c.assumptions)}${L('Открытые вопросы',c.open_questions)}</details>`}
 function activeBox(v,tasks){const a=v.active||[];
   const rows=a.map(x=>{const t=x.task_id?tasks.find(t=>t.id===x.task_id):null;return `<div class="worker"><b>${ri(x.role||'worker')}${esc(x.actor||x.role)}</b><span class="role">${esc(PURPOSE[x.purpose]||x.purpose||x.role||'')}</span>
     <div class="now">${t?'▶ '+esc(t.title):x.purpose==='plan'?'▶ план проекта':''}</div>

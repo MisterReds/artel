@@ -247,7 +247,8 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                     "--mcp-config", str(cfg_path), "--strict-mcp-config",
                     *([] if session_id else ["--append-system-prompt", system + note]),  # a resumed session keeps it
                     "--permission-mode", cc["permission_mode"], *build_dir_args(grants),
-                    "--allowedTools", *[t for t in BUILTIN_TOOLS if not no_write or t not in WRITE_TOOLS],
+                    "--allowedTools", *[t for t in BUILTIN_TOOLS if role != "intake"  # intake: only submit_contract
+                                        and (not no_write or t not in WRITE_TOOLS)],
                     "mcp__artel", *[f"mcp__{n}" for n in external]]
             if no_write:
                 args += ["--disallowedTools", *WRITE_TOOLS]

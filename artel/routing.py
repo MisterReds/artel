@@ -20,13 +20,14 @@ DEFAULTS = {
     # Manager = expensive; Architect/Executor/Critic = medium; Curator and routine = cheap
     "roles": {"planner": "expensive", "manager": "expensive", "auditor": "expensive",
               "worker": "medium", "reviewer": "medium", "tester": "medium", "absorber": "medium", "evolver": "medium",
-              "librarian": "cheap", "refiner": "cheap", "doctor": "cheap", "curator": "cheap"},
+              "librarian": "cheap", "refiner": "cheap", "doctor": "cheap", "curator": "cheap", "intake": "cheap"},
     # model names per runtime; a missing name keeps the runtime's own configured model
     "models": {"claude_code": {"cheap": "haiku", "medium": "sonnet", "expensive": "opus"},
                "native": {"cheap": "claude-haiku-5-5", "medium": "claude-sonnet-5-5", "expensive": "claude-opus-5-5"},
                "codex": {}},
     "expensive_budget_tokens": 600_000,   # per project: input + output of every expensive call
     "degrade_at": 0.9,                    # share of that budget after which expensive roles run on medium
+    "simple_planner_on_medium": True,     # a request the intake judged simple is planned on the medium tier
 }
 
 
@@ -54,10 +55,24 @@ def expensive_used(project) -> int:
     return total
 
 
-def tier_for(config: dict, role: str, project=None) -> str:
-    """The tier a role runs on now: its configured tier, or medium once the expensive budget is nearly spent."""
+def simple_request(project) -> bool:
+    """The intake judged the request simple — trusted only when the request is short and the contract small (the
+    cheap model's verdict comes from the request text, which could simply claim it)."""
+    c = project.meta.get("contract") or {}
+    return (c.get("complexity") == "low" and len(project.goal or "") <= 600
+            and len(c.get("deliverables") or []) <= 3 and len(c.get("constraints") or []) <= 3)
+
+
+def tier_for(config: dict, role: str, project=None, budget: bool = True) -> str:
+    """The tier a role runs on now: its configured tier; the planner on medium for a simple request; medium for the
+    expensive roles once the expensive budget is nearly spent (``budget=False`` leaves that last rule out)."""
     s = settings(config)
     tier = s["roles"].get(role, "medium")
+    if role == "planner" and tier == "expensive" and project is not None and s["simple_planner_on_medium"] \
+            and simple_request(project):
+        tier = "medium"  # the architect's tier is not needed for a simple request
+    if not budget:
+        return tier
     if tier == "expensive" and project is not None and s["expensive_budget_tokens"]:
         if expensive_used(project) >= float(s["degrade_at"]) * float(s["expensive_budget_tokens"]):
             return "medium"

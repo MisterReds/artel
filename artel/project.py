@@ -40,7 +40,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     },
     "effort": {
         "planner": "high", "manager": "high", "auditor": "medium", "worker": "high",
-        "reviewer": "medium", "librarian": "low", "refiner": "low",
+        "reviewer": "medium", "librarian": "low", "refiner": "low", "intake": "low",
     },
     "roles": {                           # cost control for coordination roles (all overridable)
         "skip_on_easy": True,            # skip the goal audit when the whole run was small and clean

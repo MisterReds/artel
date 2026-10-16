@@ -61,3 +61,41 @@ def test_run_agent_accounts_tokens_per_tier(tmp_path, monkeypatch):
     assert t["expensive_tokens"] == 120 and t["medium_tokens"] == 120 and t["expensive_calls"] == 1
     assert any(e["kind"] == "tier/usage" and e["role"] == "planner" for e in p.log.read())
     assert routing.efficiency(p)["expensive_share"] == 0.5
+
+
+def test_intake_turns_the_request_into_a_contract_the_architect_plans_from(tmp_path, monkeypatch):
+    """A cheap model makes the raw request precise; the expensive planner gets the contract, not just prose."""
+    from artel.manager import run_goal
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    project, status = run_goal("Сделай конвертер CSV в JSON", cfg)
+    assert status == "done"
+    c = project.meta["contract"]
+    assert c["deliverables"] and c["success_criteria"] and c["complexity"] == "medium"
+    starts = [e for e in project.log.read() if e["kind"] == "agent/start"]
+    assert starts[0]["purpose"] == "intake" and starts[1]["purpose"] == "plan"
+    assert "<contract>" in starts[1]["user"]
+    assert project.meta["tiers"]["cheap_calls"] >= 1  # the intake ran on the cheap tier
+    project.set_meta(contract={**c, "complexity": "low"})
+    assert routing.tier_for(cfg, "planner", project) == "medium"  # a simple request does not need the architect
+
+
+def test_a_failed_intake_never_blocks_planning(tmp_path, monkeypatch):
+    from artel.manager import run_goal
+    from artel.plugins import scripted
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(scripted.ScriptedProvider, "_intake", lambda self, m, s: [scripted._text("no idea")],
+                        raising=False)
+    project, status = run_goal("goal", deep_merge(DEFAULT_CONFIG, {"provider": "scripted"}))
+    assert status == "done" and "contract" not in project.meta
+    assert any(e["kind"] == "manager/intake_skipped" for e in project.log.read())
+
+
+def test_a_request_cannot_talk_its_way_onto_a_cheaper_architect(tmp_path, monkeypatch):
+    cfg, p = _project(tmp_path, monkeypatch)  # the goal here is 3000 characters long
+    p.set_meta(contract={"complexity": "low", "deliverables": ["x"], "success_criteria": ["y"]})
+    assert routing.tier_for(cfg, "planner", p) == "expensive"  # long request: the "low" verdict is not trusted
+    off = deep_merge(cfg, {"tiers": {"simple_planner_on_medium": False}})
+    assert routing.tier_for(off, "planner", p) == "expensive"

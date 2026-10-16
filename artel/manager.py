@@ -172,9 +172,37 @@ class Manager:
         return f"{system}\n\n{block}" if block else system
 
     # --- planning -------------------------------------------------------
+    def intake(self) -> Optional[dict]:
+        """A cheap model turns the raw request into a strict task contract, so the expensive architect plans from a
+        clean, short input (docs/ORCHESTRATION.md). Never blocks a project: on any failure planning uses the goal."""
+        if not (self.cfg.get("intake") or {}).get("enabled", True) or getattr(self, "_intake_done", False):
+            return self.project.meta.get("contract")
+        self._intake_done = True  # one attempt per run: a retried plan (provider limit) does not repeat it
+        if self.project.meta.get("contract"):
+            return self.project.meta["contract"]
+        ctx = ToolContext(self.kernel, self.project, role="intake", workspace=self.project.shared)
+        try:
+            out = run_agent(self.kernel, self.project, role="intake", system=prompts.INTAKE,
+                            first_user=f"<request>\n{self.project.goal}\n</request>\n\nWrite the contract now.",
+                            ctx=ctx, max_turns=3, purpose="intake", stop_event=self.stop, tool_names=["submit_contract"])
+        except Exception as exc:  # noqa: BLE001
+            self.note("intake_skipped", reason=repr(exc)[:300])
+            return None
+        if out.name != "submit_contract":  # stopped, a limit, or no contract: the planner works from the goal
+            self.note("intake_skipped", reason=f"{out.status} {out.error}"[:300])
+            return None
+        self.project.set_meta(contract=out.payload)
+        self.project.log.append("intake/contract", **out.payload)
+        return out.payload
+
     def plan(self) -> None:
         skills = self.kernel.get("skills")
-        user = (f"<goal>\n{self.project.goal}\n</goal>\n\nSkill library index:\n{skills.index(query=self.project.goal, config=self.cfg) or '(empty)'}\n\n"
+        contract = self.intake()
+        spec = (f"\n<contract>\n{json.dumps(contract, ensure_ascii=False, indent=1)}\n</contract>\n"
+                "The contract is a summary derived from the goal by a smaller model; the goal decides wherever they "
+                "differ. Plan so every success criterion is covered by a task's criteria or checks; nothing out of "
+                "scope is planned; assumptions stand unless the goal says otherwise.\n" if contract else "")
+        user = (f"<goal>\n{self.project.goal}\n</goal>\n{spec}\nSkill library index:\n{skills.index(query=self.project.goal, config=self.cfg) or '(empty)'}\n\n"
                 "Plan the project now.")
         ctx = ToolContext(self.kernel, self.project, role="planner", workspace=self.project.shared)
         from .runtimes import runtime_for
@@ -443,7 +471,11 @@ class Manager:
                         f"{ok}/{len(gates)} ok; result: {window_text(t['result'] or '', 160)}")
         files = sorted(str(p.relative_to(self.project.shared)) for p in self.project.shared.rglob("*")
                        if p.is_file() and ".git" not in p.parts)[:20]
+        c = self.project.meta.get("contract") or {}
         return self._brief([f"<goal>{window_text(self.project.goal, 800)}</goal>",
+                            ("<success_criteria derived_from=\"goal\" note=\"the goal decides\">\n"
+                             + _fmt_list(c["success_criteria"]) + "\n</success_criteria>")
+                            if c.get("success_criteria") else "",
                             f"<tasks done=\"{len(done)}\">\n" + "\n".join(rows) + "\n</tasks>",
                             "<deliverables in=\"shared/\">" + ", ".join(files) + "</deliverables>"])
 
