@@ -23,7 +23,7 @@ DEFAULTS = {
               "librarian": "cheap", "refiner": "cheap", "doctor": "cheap", "curator": "cheap", "intake": "cheap"},
     # model names per runtime; a missing name keeps the runtime's own configured model
     "models": {"claude_code": {"cheap": "haiku", "medium": "sonnet", "expensive": "opus"},
-               "native": {"cheap": "claude-haiku-5-5", "medium": "claude-sonnet-5-5", "expensive": "claude-opus-5-5"},
+               "native": {},             # set in artel.yaml: tiers.models.native.{cheap,medium,expensive}
                "codex": {}},
     "expensive_budget_tokens": 600_000,   # per project: input + output of every expensive call
     "degrade_at": 0.9,                    # share of that budget after which expensive roles run on medium

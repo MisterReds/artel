@@ -21,7 +21,7 @@ tiers:
           librarian: cheap, refiner: cheap, doctor: cheap}
   models:
     claude_code: {cheap: haiku, medium: sonnet, expensive: opus}
-    native: {cheap: claude-haiku-5-5, medium: claude-sonnet-5-5, expensive: claude-opus-5-5}
+    native: {cheap: <id модели>, medium: <id модели>, expensive: <id модели>}   # имена провайдера — только здесь
     codex: {}                     # пусто — модель аккаунта Codex
   expensive_budget_tokens: 600000 # на проект
   degrade_at: 0.9                 # доля бюджета, после которой менеджер работает на medium

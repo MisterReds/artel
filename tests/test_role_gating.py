@@ -50,22 +50,28 @@ def test_cheap_roles_model_and_effort(tmp_path, monkeypatch):
     """Tiers (artel/routing.py): the expensive model only manages (plan, decisions, acceptance), the medium one does
     the work and the review, the cheap one the routine."""
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
-    p = Project.create("g", deep_merge(DEFAULT_CONFIG, {"provider": "anthropic"}), name="a", workdir=str(tmp_path / "w"))
+    tiers = {"tiers": {"models": {"native": {"cheap": "m-cheap", "medium": "m-medium", "expensive": "m-top"}}}}
+    p = Project.create("g", deep_merge(DEFAULT_CONFIG, {"provider": "anthropic", **tiers}), name="a",
+                       workdir=str(tmp_path / "w"))
     for role in ("librarian", "refiner", "doctor"):
-        assert p.model_for(role) == "claude-haiku-5-5"
+        assert p.model_for(role) == "m-cheap"
     for role in ("worker", "reviewer"):
-        assert p.model_for(role) == "claude-sonnet-5-5"
+        assert p.model_for(role) == "m-medium"
     for role in ("planner", "manager", "auditor"):
-        assert p.model_for(role) == "claude-opus-5-5"
+        assert p.model_for(role) == "m-top"
+    bare = Project.create("g", deep_merge(DEFAULT_CONFIG, {"provider": "anthropic"}), name="a2",
+                          workdir=str(tmp_path / "w3"))
+    assert bare.model_for("librarian") == DEFAULT_CONFIG["models"]["default"]  # no names configured: the default
     assert [p.effort_for(r) for r in ("librarian", "refiner", "auditor")] == ["low", "low", "medium"]
     assert p.effort_for("worker") == "high"
 
 
 def test_cheap_model_overridable_and_provider_safe(tmp_path, monkeypatch):
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
-    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "anthropic", "models": {"auditor": "my-model"}})
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "anthropic", "models": {"auditor": "my-model"},
+                                      "tiers": {"models": {"native": {"cheap": "m-cheap"}}}})
     p = Project.create("g", cfg, name="b", workdir=str(tmp_path / "w1"))
-    assert p.model_for("auditor") == "my-model" and p.model_for("refiner") == "claude-haiku-5-5"
+    assert p.model_for("auditor") == "my-model" and p.model_for("refiner") == "m-cheap"
     other = Project.create("g", deep_merge(DEFAULT_CONFIG, {"provider": "openai_compat"}), name="c",
                            workdir=str(tmp_path / "w2"))
     assert other.model_for("auditor") == DEFAULT_CONFIG["models"]["default"]  # no claude name on other providers
