@@ -307,18 +307,18 @@ class TelegramBot:
             return self.send(chat, "Этот проект сейчас не ждёт ответа.")
         for t in waiting:
             human_comment(pr, t["id"], text.strip())
-        self.runner.resume(slug)
+        self.runner.resume(slug, via="telegram", after_answer=True)
         self.send(chat, f"Ответ передан ({len(waiting)} задач), проект продолжает работу.")
 
     def c_stop(self, chat, arg):
         slug = self._pick(chat, arg)
-        self.send(chat, "Остановлен." if slug and self.runner.stop(slug) else "Этот проект сейчас не идёт.")
+        self.send(chat, "Остановлен." if slug and self.runner.stop(slug, via="telegram") else "Этот проект сейчас не идёт.")
 
     def c_resume(self, chat, arg):
         slug = self._pick(chat, arg)
         if not slug:
             return self.send(chat, "Какой проект? /projects, затем /resume N")
-        self.runner.resume(slug)
+        self.runner.resume(slug, via="telegram")
         self.send(chat, "Продолжаю.")
 
     def c_update(self, chat, arg):
@@ -341,9 +341,9 @@ class TelegramBot:
             self.pending_goal.pop(chat, None)
             self.send(chat, "Хорошо, не начинаю.")
         elif data.startswith("stop:"):
-            self.send(chat, "Остановлен." if self.runner.stop(data[5:]) else "Уже не идёт.")
+            self.send(chat, "Остановлен." if self.runner.stop(data[5:], via="telegram") else "Уже не идёт.")
         elif data.startswith("resume:"):
-            self.runner.resume(data[7:])
+            self.runner.resume(data[7:], via="telegram")
             self.send(chat, "Продолжаю.")
         elif data == "update":
             out = self.runner.update_apply()

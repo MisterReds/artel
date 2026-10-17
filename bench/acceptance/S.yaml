@@ -1,0 +1,10 @@
+id: S
+idea: >-
+  Сделай CLI-утилиту, которая из выписок банка в CSV собирает расходы по категориям в SQLite и строит HTML-отчёт за месяц
+expected_hours: 1
+thresholds:
+  expensive_token_share_max: 0.05
+  expensive_call_share_max: 0.05
+  autonomy_min: 0.95
+  owner_interventions_max: 1
+  no_limit_stop: true

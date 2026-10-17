@@ -5,6 +5,8 @@
     artel status [<project>]                                projects, or one board
     artel log <project> [--follow] [--kinds a,b]            the event trajectory
     artel comment <project> <task> "<text>"                 message a task as the human (unblocks escalations)
+    artel metrics <project> [--json] [--scenario S|L]       acceptance metrics from the event log
+    artel acceptance run S|L | verify <project>             acceptance scenarios, independent final check
     artel web [--port 8765] [--remote [--host H]]           live dashboard (remote: login, docs/REMOTE.md)
     artel web token [--new]                                 remote-mode access token (--new rotates it)
     artel skills list|view|import|curate|pin|unpin|ledger|rollback|restore
@@ -18,6 +20,7 @@ import argparse
 import json
 import sys
 import threading
+from typing import Optional
 import time
 
 from .manager import human_comment, new_kernel, resume, run_goal
@@ -86,7 +89,14 @@ def _event_line(e: dict, cfg: dict | None = None) -> str:
     return f"{e['seq']:>6} {t} {k:<22} {who:<10} {body}"
 
 
-def cmd_run(args) -> int:
+def _note_owner_stop(result) -> None:
+    """Ctrl+C is the owner stopping the project; the log should say so (the project is known once the run returns)."""
+    if result:
+        result[0].log.append("owner/stop", via="cli")
+
+
+def _run_goal_cli(args) -> tuple[Project, str]:
+    """Run ``args.goal`` to the end with the Ctrl+C handling of ``artel run``."""
     cfg = _cfg(args)
     stop = threading.Event()
     if args.web:
@@ -111,7 +121,12 @@ def cmd_run(args) -> int:
         print("\nstopping: finishing in-flight turns…")
         stop.set()
         th.join()
-    project, status = holder["result"]
+        _note_owner_stop(holder.get("result"))
+    return holder["result"]
+
+
+def cmd_run(args) -> int:
+    project, status = _run_goal_cli(args)
     print_board(project)
     print(f"\nproject: {project.root}\ndeliverables: {project.shared}\nstatus: {status}")
     return 0 if status == "done" else 2
@@ -120,7 +135,7 @@ def cmd_run(args) -> int:
 def cmd_resume(args) -> int:
     stop = threading.Event()
     holder: dict = {}
-    th = threading.Thread(target=lambda: holder.update(r=resume(args.project, _cfg(args), stop_event=stop)))
+    th = threading.Thread(target=lambda: holder.update(r=resume(args.project, _cfg(args), stop_event=stop, via="cli")))
     th.start()
     try:
         while th.is_alive():
@@ -128,6 +143,7 @@ def cmd_resume(args) -> int:
     except KeyboardInterrupt:
         stop.set()
         th.join()
+        _note_owner_stop(holder.get("r"))
     project, status = holder["r"]
     print_board(project)
     print(f"status: {status}")
@@ -164,6 +180,83 @@ def cmd_comment(args) -> int:
     t = human_comment(project, args.task, args.text)
     print(f"{t['id']} is now {t['status']}")
     return 0
+
+
+METRIC_LINES = (  # (key in measure(), label, threshold key in check(), format)
+    ("duration_h", "Длительность, ч", "hours_min", "{}"),
+    ("ended", "Итоговый статус", None, "{}"),
+    ("stopped_by_limit", "Остановка по лимиту", "no_limit_stop", "{}"),
+    ("limit_waits", "Ожиданий лимита", None, "{}"),
+    ("expensive_token_share", "Доля дорогих токенов", "expensive_token_share_max", "{:.1%}"),
+    ("expensive_call_share", "Доля дорогих вызовов", "expensive_call_share_max", "{:.1%}"),
+    ("tokens_total", "Токенов всего", None, "{}"),
+    ("tasks_done", "Задач принято", None, "{}"),
+    ("tokens_per_accepted", "Токенов на принятую задачу", None, "{}"),
+    ("success_rate", "Доля успешных задач", None, "{:.1%}"),
+    ("steps", "Шагов агентов", None, "{}"),
+    ("owner_asks", "Обращений к владельцу", None, "{}"),
+    ("owner_interventions", "Вмешательств владельца", "owner_interventions_max", "{}"),
+    ("autonomy_share", "Автономность", "autonomy_min", "{:.1%}"),
+    ("cost_usd", "Стоимость, $", None, "{}"),
+)
+
+
+def format_metrics(m: dict, checks: Optional[dict] = None) -> str:
+    lines = []
+    for key, label, check_key, fmt in METRIC_LINES:
+        v = m.get(key)
+        text = "нет данных" if v is None else ("да" if v is True else "нет" if v is False else fmt.format(v))
+        mark = ""
+        if checks is not None and check_key in checks:
+            c = checks[check_key]
+            mark = "  " + ("·" if c["ok"] is None else "✓" if c["ok"] else "✗") + f" (порог {c['limit']})"
+        lines.append(f"{label}: {text}{mark}")
+    for rt, n in sorted((m.get("tokens_by_runtime") or {}).items()):
+        lines.append(f"Токенов, {rt}: {n}")
+    if m.get("verdict"):
+        v = m["verdict"]
+        lines.append(f"Вердикт независимой проверки ({v.get('runtime')}): "
+                     f"{'выполнено' if v.get('complete') else 'не выполнено'} — {v.get('summary', '')}")
+    return "\n".join(lines)
+
+
+def cmd_metrics(args) -> int:
+    from . import acceptance
+
+    project = Project.open(args.project, load_config())
+    scenario = args.scenario or project.meta.get("acceptance")
+    m = acceptance.measure_project(project)
+    try:
+        checks = acceptance.check(m, acceptance.load_scenario(scenario)["thresholds"]) if scenario else None
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        return 2
+    if args.json:
+        print(json.dumps({"metrics": m, "check": checks}, ensure_ascii=False, indent=1))
+    else:
+        print(format_metrics(m, checks))
+    return 0
+
+
+def cmd_acceptance(args) -> int:
+    from . import acceptance
+
+    if args.action == "verify":
+        project = Project.open(args.target, _cfg(args))
+        res = acceptance.verify(project, _cfg(args))
+        print(json.dumps(res, ensure_ascii=False, indent=1))
+        return 2 if "error" in res else 0
+    try:
+        scenario = acceptance.load_scenario(args.target)
+    except FileNotFoundError as e:
+        print(e, file=sys.stderr)
+        return 2
+    run_args = argparse.Namespace(**{**vars(args), "goal": scenario["idea"], "workdir": None, "ref": None,
+                                     "seed": None, "web": False, "port": 8765})
+    project, status = _run_goal_cli(run_args)
+    project.set_meta(acceptance=args.target)
+    print(f"проект: {project.slug}\nстатус: {status}\n")
+    return cmd_metrics(argparse.Namespace(project=project.slug, scenario=args.target, json=False))
 
 
 def cmd_web(args) -> int:
@@ -808,6 +901,24 @@ def main(argv=None) -> int:
                    help="native | claude_code | codex | dsh | acp | acp:<preset> (e.g. acp:gemini)")
     r.add_argument("--port", type=int, default=8765)
     r.set_defaults(fn=cmd_run)
+
+    me = sub.add_parser("metrics", help="метрики приёмки проекта из журнала событий")
+    me.add_argument("project")
+    me.add_argument("--json", action="store_true")
+    me.add_argument("--scenario", choices=["S", "L"], help="сверить с порогами сценария")
+    me.set_defaults(fn=cmd_metrics)
+
+    ac = sub.add_parser("acceptance", help="приёмка: сценарий S или L; независимая проверка проекта")
+    acs = ac.add_subparsers(dest="action", required=True)
+    ar = acs.add_parser("run", help="прогнать сценарий S или L")
+    ar.add_argument("target", choices=["S", "L"], help="сценарий")
+    ar.add_argument("--name")
+    ar.add_argument("--provider", choices=["anthropic", "openai_compat", "scripted"])
+    ar.add_argument("--runtime", type=_runtime_arg)
+    av = acs.add_parser("verify", help="независимая проверка проекта на другом рантайме")
+    av.add_argument("target", help="проект")
+    av.add_argument("--provider", choices=["anthropic", "openai_compat", "scripted"])
+    ac.set_defaults(fn=cmd_acceptance)
 
     rs = sub.add_parser("resume")
     rs.add_argument("project")

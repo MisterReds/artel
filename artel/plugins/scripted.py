@@ -159,6 +159,9 @@ class ScriptedProvider:
                  "checks": ["test -s CHANGELOG.md"]}])]
         return [_use("audit_verdict", complete=True, summary="Every requirement of the goal is met.")]
 
+    def _verify(self, messages, system):
+        return [_use("audit_verdict", complete=True, summary="Every requirement of the goal is met.")]
+
     def _skill_review(self, messages, system):
         rounds = _tool_rounds(messages)
         last = _last_result(messages)

@@ -107,6 +107,8 @@ def run_agent(kernel, project, *, role: str, **kw):
 
     tier = tier_for(kernel.config, role, project)
     out = _run_agent(kernel, project, role=role, **kw)
+    if kw.get("purpose") == "verify":  # the acceptance check must not distort the account of the run it measures
+        return out
     try:
         usage = getattr(out, "usage", None) or {}
         record(project, tier, usage)

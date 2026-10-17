@@ -111,7 +111,7 @@ class Runner:
             project.log.append("manager/fatal", error=repr(exc))
             project.set_meta(status="error")
 
-    def resume(self, slug: str) -> None:
+    def resume(self, slug: str, via: str = "web", after_answer: bool = False) -> None:
         if slug in self.active:
             return
         from ..manager import continue_after_human
@@ -119,6 +119,7 @@ class Runner:
         stop = threading.Event()
         project = Project.open(slug, self.config)
         continue_after_human(project)
+        project.log.append("owner/resume", via=via, **({"after_answer": True} if after_answer else {}))
         self._spawn(slug, stop, lambda: self._drive(project, stop))
 
     def _spawn(self, slug: str, stop: threading.Event, fn) -> None:
@@ -133,10 +134,14 @@ class Runner:
             self.active[slug] = stop
         threading.Thread(target=wrapped, daemon=True, name=f"artel-{slug}").start()
 
-    def stop(self, slug: str) -> bool:
-        ev = self.active.get(slug)
-        if ev:
-            ev.set()
+    def stop(self, slug: str, via: str = "web") -> bool:
+        with self.lock:
+            ev = self.active.get(slug)
+            first = bool(ev) and not ev.is_set()  # one owner/stop per stop, however many times it is pressed
+            if ev:
+                ev.set()
+        if first:
+            Project.open(slug, self.config).log.append("owner/stop", via=via)
         return bool(ev)
 
 

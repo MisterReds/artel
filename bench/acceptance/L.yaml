@@ -1,0 +1,11 @@
+id: L
+idea: >-
+  Сделай веб-приложение учёта домашних расходов: импорт CSV разных банков, автокатегории с обучением на правках пользователя, бюджеты с предупреждениями, отчёты, тесты, инструкция по развёртыванию
+expected_hours: 6
+thresholds:
+  expensive_token_share_max: 0.05
+  expensive_call_share_max: 0.05
+  autonomy_min: 0.95
+  owner_interventions_max: 1
+  no_limit_stop: true
+  hours_min: 6

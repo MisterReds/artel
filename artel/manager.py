@@ -1059,11 +1059,14 @@ def continue_after_human(project: Project) -> list:
     return reopened
 
 
-def resume(slug: str, config: dict, stop_event: Optional[threading.Event] = None, kernel=None) -> tuple[Project, str]:
+def resume(slug: str, config: dict, stop_event: Optional[threading.Event] = None, kernel=None,
+           via: Optional[str] = None) -> tuple[Project, str]:
     own = kernel is None
     kernel = kernel or new_kernel(config)
     try:
         project = Project.open(slug, config)
+        if via:
+            project.log.append("owner/resume", via=via)
         continue_after_human(project)
         return project, Manager(kernel, project, stop_event).run()
     finally:
