@@ -334,6 +334,8 @@ def server_present() -> bool:
 
 
 def install(name: str, log: Callable[[str], None] = print) -> dict:
+    if name not in TOOLS:
+        return {"ok": False, "error": f"unknown tool: {name}"}
     spec = TOOLS[name]
     if name == "embeddings":
         path = install_embeddings(log)
@@ -350,6 +352,8 @@ def install(name: str, log: Callable[[str], None] = print) -> dict:
 
 def uninstall(name: str) -> dict:
     """Remove a CLI that Artel installed (a system-wide install is left alone)."""
+    if name not in TOOLS:
+        return {"ok": False, "error": f"unknown tool: {name}"}
     spec = TOOLS[name]
     if not installed_by_artel(name):
         return {"ok": False, "error": f"{spec['label']} установлен не Artel — удалите его тем же способом, каким ставили"}

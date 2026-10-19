@@ -75,13 +75,17 @@ def native_ready(config: dict) -> bool:
     return bool(os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN"))
 
 
+# runtimes that no longer exist; an old config naming one gets the auto choice instead of failing every run
+RETIRED = frozenset({"dsh", "acp"})
+
+
 def runtime_for(config: dict, role: str) -> str:
     """The runtime a role runs on. An explicit choice is a preference: while it is out on a provider limit (or
     switched off) and another connected executor is free, work goes there (``failover: false`` keeps it waiting)."""
     name = (config.get("runtime_by_role") or {}).get(role) or config.get("runtime", "auto")
-    if name == "auto":
-        return detect_runtime(config)
     base = name.split(":")[0]
+    if name == "auto" or base in RETIRED:
+        return detect_runtime(config)
     if config.get("failover", True) and config.get("provider") != "scripted":
         from .. import limits
 
