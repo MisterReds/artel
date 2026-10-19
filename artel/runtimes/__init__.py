@@ -1,12 +1,11 @@
 """Agent runtimes. ``native`` is Artel's own loop over the Messages API; ``claude_code`` drives the Claude Code CLI
-and ``codex`` the Codex CLI headless, exposing Artel's tools to them over MCP; ``acp`` drives any agent that speaks
-the Agent Client Protocol (Gemini CLI, Claude Code and Codex through their ACP adapters, goose, OpenHands…).
+and ``codex`` the Codex CLI headless, exposing Artel's tools to them over MCP.
 
-A runtime name may carry a variant after a colon: ``acp:gemini`` runs the ``acp`` runtime with the ``gemini`` preset,
-so different roles can use different ACP agents. The variant is passed to the runtime as ``variant=``.
+A runtime name may carry a variant after a colon (``name:variant``); the variant is passed to the runtime as
+``variant=``.
 
 ``runtime: auto`` (the default) picks what is connected, in this order: Claude Code (Claude subscription), Codex
-(ChatGPT subscription), DeepSeek Harness (installed, and the model chosen in it has a credential), an API key for the native loop. With nothing connected, runs end with a clear setup error
+(ChatGPT subscription), an API key for the native loop. With nothing connected, runs end with a clear setup error
 instead of a crash.
 """
 
@@ -20,11 +19,11 @@ from contextlib import contextmanager
 from pathlib import Path
 
 NO_EXECUTOR = ("Нет подключённого исполнителя (not installed): откройте «Подключения» и подключите Codex, "
-               "Claude Code или DeepSeek Harness, или задайте ключ API в переменной окружения (ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY)")
+               "Claude Code, или задайте ключ API в переменной окружения (ANTHROPIC_API_KEY / OPENAI_API_KEY / DEEPSEEK_API_KEY)")
 _auto_cache: dict = {}
 
 
-AUTO_ORDER = ("claude_code", "codex", "dsh", "native")
+AUTO_ORDER = ("claude_code", "codex", "native")
 
 
 def connected_runtimes(config: dict, ttl: float = 120.0) -> list[str]:
@@ -37,7 +36,7 @@ def connected_runtimes(config: dict, ttl: float = 120.0) -> list[str]:
 
     checks = {"claude_code": lambda: claude_code_status(config).get("logged_in"),
               "codex": lambda: codex_status(config).get("logged_in"),
-              "dsh": lambda: dsh_ready(config), "native": lambda: native_ready(config)}
+              "native": lambda: native_ready(config)}
     found = []
     for name in AUTO_ORDER:
         try:
@@ -66,13 +65,6 @@ def detect_runtime(config: dict, ttl: float = 120.0) -> str:
     out = limits.load()
     free = [r for r in usable if r not in out]
     return free[0] if free else min(usable, key=lambda r: out[r])
-
-
-def dsh_ready(config: dict) -> bool:
-    from .dsh import dsh_settings, key_available, sdk_available
-
-    cfg = dsh_settings(config)
-    return sdk_available(cfg) and key_available(cfg)  # the model chosen in DeepSeek Harness has its credential
 
 
 def native_ready(config: dict) -> bool:

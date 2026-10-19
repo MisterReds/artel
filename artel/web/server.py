@@ -594,10 +594,6 @@ def make_handler(runner: Runner, auth=None):
                     proj = self._project(data["slug"]) if data.get("slug") else None
                     return self._json(runner.doctor.start(runner.config, problem, proj, data.get("task_id") or None,
                                                           data.get("exclude_runtime") or None))
-                if parts == ["api", "providers", "dsh", "settings"]:  # DeepSeek Harness's own model settings page
-                    from ..providers import DSH_GUI
-
-                    return self._json(DSH_GUI.start(runner.config))
                 if parts == ["api", "providers", "claude", "login"]:
                     return self._json(runner.claude_login.start())
                 if parts == ["api", "providers", "claude", "code"]:
@@ -757,9 +753,6 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
                                        "после следующего `artel web`." if live else ""), flush=True)
     finally:
         httpd.server_close()
-        from ..providers import DSH_GUI
-
-        DSH_GUI.stop()
         runner.kernel.shutdown(reason="server_stop")
 
 

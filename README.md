@@ -108,16 +108,9 @@ models: {default: deepseek-chat}
   приходят по MCP, все действия Codex пишутся в журнал.
 - **Claude Code — подписка Claude.** «Войти через подписку Claude» даёт ссылку; код со страницы входа вставляется в
   дашборд и передаётся CLI (`claude auth login`). «Выйти» — `claude auth logout`. В терминале: `artel providers login|logout claude`.
-- **DeepSeek Harness — отдельный харнесс со своими настройками моделей.** «Установить» ставит pip-пакет
-  `deepseek-harness-sdk` с готовым рантаймом `dsh`. Модель и доступ выбираются в самом DeepSeek Harness
-  («Настроить модели» открывает его страницу Settings → Models): ключ DeepSeek или любой провайдер из его каталога —
-  Anthropic, OpenAI, Kimi, GLM, OpenRouter, подписка Codex — или свой шлюз. Воркеры Artel работают на выбранной там
-  модели. Подробнее — раздел «DeepSeek Harness как исполнитель».
 - **Ключи API** (Anthropic, OpenAI, OpenRouter, DeepSeek…) — только признак «задан / не задан»; значения задаются
   в переменных окружения и нигде не показываются.
-- **ACP-агенты.** Любой агент с Agent Client Protocol (Gemini CLI, goose, OpenHands, Claude Code и Codex через
-  ACP-адаптеры) — исполнитель; см. «Любой ACP-агент как исполнитель».
-- **Роли → рантайм.** Для каждой роли можно выбрать Artel / Claude Code / Codex / ACP-агента и модель; сохраняется в
+- **Роли → рантайм.** Для каждой роли можно выбрать Artel / Claude Code / Codex и модель; сохраняется в
   `ARTEL_HOME/artel.yaml`. Разные подписки на разных ролях разносят нагрузку по их лимитам.
 - **Модели — из списка.** Модели Codex берутся у самого CLI (`codex debug models`) и выбираются из списка; имя
   в любом регистре или отображаемое имя («GPT-6-Luna») приводится к id, неизвестное отклоняется с перечнем
@@ -356,104 +349,6 @@ worktree к текущему `shared/`; отменённая задача уда
 Windows), команда выполняется без неё, а в результате и в журнале (`sandbox/unavailable`) есть явная пометка;
 `require: true` вместо этого отказывает. Правила политики команд (`policy`) действуют как прежде. Рантаймы Claude
 Code и Codex запускают команды своими инструментами и своей песочницей (у Codex — `workspace-write` с worktree задачи).
-
-## DeepSeek Harness как исполнитель
-
-[DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (`dsh`, лицензия MIT) — харнесс, в котором всё —
-плагин (Cordis). Рантайм `dsh` исполняет роль Artel внутри dsh, поэтому плагины dsh работают в воркерах Artel
-без изменений.
-
-Как устроено: Artel использует официальный Python SDK dsh (`deepseek_harness`). SDK запускает встроенный в пакет
-рантайм `dsh --profile sdk` той же версии (Node.js не нужен) и получает по JSON-RPC каждое событие сессии. Профиль
-собирается как обычно в dsh: бандлы профиля, плагины, установленные в профиль, и слои `--patch`. Artel добавляет
-поверх один свой слой: строку `@deepseek-ai/dsh-mcp-client` с инструментами Artel (`mcp__artel__task_submit`, доска,
-скиллы, память, вердикты) через тот же MCP-прокси, что у Claude Code и Codex. Все сообщения, вызовы инструментов и их
-результаты пишутся в журнал. Если dsh закончил ход без терминального инструмента, та же сессия получает
-продолжение (до `max_resumes` раз). Роли планирования и проверки работают в песочнице dsh `read-only`, исполнители —
-в `workspace-write` (запись только в рабочую папку роли). Команды оболочки проходят политику Artel: запрещённая
-команда останавливает рантайм.
-
-Как включить:
-
-1. «Подключения» → карточка DeepSeek Harness → «Установить» (или `artel providers install dsh`). Ставится
-   `pip install --pre deepseek-harness-sdk` в окружение Artel; пакет приносит рантайм для Linux x64/arm64,
-   macOS и Windows x64.
-2. «Настроить модели» открывает собственную страницу настроек DeepSeek Harness (`dsh web` → Settings → Models):
-   там вводится ключ DeepSeek или добавляется другой провайдер и выбирается модель. Artel пользуется тем же домом dsh
-   (`$DSH_HOME`, по умолчанию `~/.dsh`, как и сам dsh): ключи из хранилища dsh, провайдеры и выбранная модель
-   передаются воркерам. Значения ключей Artel не читает, не показывает и не хранит. Ключ можно задать и переменной
-   окружения провайдера (`DEEPSEEK_API_KEY`, `ANTHROPIC_API_KEY`…).
-3. Выбрать рантайм `dsh` для всех ролей или для части ролей (режим разработчика → «Подключения») либо в
-   `~/.artel/artel.yaml`. В режиме `runtime: auto` dsh выбирается после Codex, если он установлен и у выбранной в нём
-   модели есть доступ.
-
-```yaml
-runtime_by_role: {worker: dsh, tester: dsh}
-dsh:
-  model: null              # пусто — модель, выбранная в самом DeepSeek Harness
-  provider: null           #   (оба поля задают модель только для Artel, например anthropic / claude-sonnet-4-5)
-  plugins:                 # плагины dsh: пакеты npm/git ставятся в профиль один раз (`dsh plugin add`),
-    - "@scope/dsh-plugin"  #   файлы .yml/.yaml подключаются как слои --patch при каждом запуске
-    - github:owner/dsh-plugin
-    - ~/my-dsh/extra.cordis.yml
-  timeout_s: 2400
-  max_resumes: 3
-  # home: ~/.dsh          DSH_HOME: по умолчанию тот же, что у самого dsh ($DSH_HOME или ~/.dsh)
-  # profile: sdk           свой профиль должен содержать сервер @deepseek-ai/dsh-sdk-app
-  # sandbox: workspace-write
-  # share_session_log: false   по умолчанию Artel выключает выгрузку журнала сессии в DeepSeek
-```
-
-Как добавить плагины dsh: впишите пакет в `dsh.plugins` — перед первым запуском Artel выполнит
-`dsh plugin --profile sdk add <пакеты>` в своём `DSH_HOME` (менеджер пакетов — pnpm, он нужен только для установки).
-Можно поставить и вручную: `DSH_HOME=~/.artel/dsh dsh plugin --profile sdk add <пакет>`. Разовые изменения
-композиции (например, свой MCP-сервер или `str_replace_editor`) — файлом патча Cordis в том же списке. Ошибка
-установки плагина, отсутствие SDK или ключа сразу уходят человеку как ошибка настройки; лимит или нехватка баланса
-DeepSeek (`RATE_LIMIT`, `QUOTA`) — как лимит провайдера, который ждёт сброса.
-
-## Любой ACP-агент как исполнитель
-
-Рантайм `acp` подключает любого агента, говорящего на [Agent Client Protocol](https://agentclientprotocol.com)
-(JSON-RPC через stdio, тот же протокол, которым Zed управляет агентами): Gemini CLI, Claude Code и Codex через их
-ACP-адаптеры, goose, OpenHands, OpenCode, Qwen Code и другие. Artel выступает клиентом протокола версии 1:
-
-- `initialize` — Artel объявляет `fs/read_text_file` и `fs/write_text_file` (терминал не объявляется: агент
-  пользуется своей оболочкой); при `acp.auth_method` вызывается `authenticate`;
-- `session/new` — `cwd` = рабочая папка роли, в `mcpServers` передаётся MCP-прокси Artel (stdio), поэтому агент
-  получает инструменты Artel (`task_submit`, доска, скиллы, вердикты) через тот же мост, что Claude Code и Codex;
-  общая папка и refs передаются как `additionalDirectories`, если агент их поддерживает;
-- `session/prompt` — инструкции роли и задача; если ход кончился без терминального инструмента, в ту же сессию
-  уходит ещё один `session/prompt` с подсказкой-продолжением (до `max_resumes` раз);
-- `session/update` — фрагменты ответа и размышлений → `llm/response`, `tool_call` / `tool_call_update` →
-  `tool/call` / `tool/result` (незавершённый вызов получает результат-ошибку, пары не рвутся), `plan` →
-  `agent/plan`, `usage_update` и `usage` хода учитываются; повторы ловит детектор зацикливания;
-- `session/request_permission` — ответ по политике роли: роли только для чтения не получают правок, команды
-  проверяются `artel.policy` (запрещённые отклоняются и объясняются в продолжении, «спросить человека» —
-  задача уходит человеку), правки вне рабочей и общей папки отклоняются;
-- `fs/read_text_file` — только рабочая папка, общая папка и refs; `fs/write_text_file` — только рабочая и общая
-  папка, никогда refs и никогда для ролей только для чтения; путь должен быть абсолютным;
-- `session/cancel` — как только Artel принял терминальный инструмент, при остановке, зацикливании, лимите ходов.
-
-Нет команды агента — сразу ошибка настройки человеку; агент требует входа (`auth_required`) — тоже; сообщения о
-лимитах провайдера («Quota exceeded», 429…) ждут сброса, как у остальных рантаймов.
-
-```yaml
-acp:
-  agent: gemini                 # пресет для runtime: acp
-  # command: [my-agent, --acp]  # своя команда вместо пресета
-  env: {}                       # переменные окружения агента
-  timeout_s: 2400
-  max_resumes: 3
-  presets:                      # свои агенты в дополнение к встроенным
-    kimi: [kimi, --acp]
-runtime_by_role: {worker: "acp:gemini", reviewer: "acp:claude"}
-```
-
-Встроенные пресеты: `gemini` (`gemini --experimental-acp`), `claude` (`claude-agent-acp`, npm
-`@agentclientprotocol/claude-agent-acp`), `codex` (`codex-acp`), `goose` (`goose acp`), `openhands`
-(`openhands acp`), `opencode` (`opencode acp`), `qwen` (`qwen --experimental-acp`). На странице «Провайдеры»
-карточка «ACP-агенты» показывает, какие из них установлены; в таблице ролей выбирается «ACP-агент: имя». Вход
-выполняется в CLI самого агента. В терминале: `artel run … --runtime acp:gemini`.
 
 ## Самоулучшение: Artel улучшает Artel
 

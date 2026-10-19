@@ -3,11 +3,7 @@
 - Codex (ChatGPT subscription): device-code login driven through the official CLI (`codex login --device-auth`);
   the code and link are shown in the dashboard, the CLI stores and refreshes the tokens itself.
 - Claude Code (Claude subscription): status of the installed CLI; login happens in the CLI.
-- DeepSeek Harness: whether the SDK is installed, which model it runs (chosen in dsh itself) and whether that model has a credential; its own settings page.
 - API keys: only whether the configured environment variable is set — values are never read out or stored.
-- ACP agents (Gemini CLI, Claude Code / Codex via ACP adapters, goose, OpenHands…): which presets are installed;
-  login happens in each agent's own CLI.
-- Local System One model: whether its server answers.
 - Routing: which runtime and model each role uses (saved to ARTEL_HOME/artel.yaml).
 """
 
@@ -29,7 +25,7 @@ from .tools import installed_by_artel, resolve, terminate_tree
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
 ROLES = ["manager", "planner", "worker", "tester", "reviewer", "auditor", "librarian", "refiner", "evolver", "absorber", "doctor", "intake"]
-RUNTIMES = ["auto", "native", "claude_code", "codex", "dsh", "acp"]
+RUNTIMES = ["auto", "native", "claude_code", "codex"]
 KEY_VARS = {"ANTHROPIC_API_KEY": "Anthropic API", "OPENAI_API_KEY": "OpenAI API", "OPENROUTER_API_KEY": "OpenRouter",
             "DEEPSEEK_API_KEY": "DeepSeek"}
 
@@ -246,137 +242,9 @@ def claude_code_status(config: dict) -> dict:
             "detail": "вход: кнопка «Войти» ниже или `artel providers login claude`"}
 
 
-def dsh_status(config: dict) -> dict:
-    """DeepSeek Harness: installed, which model it will run (chosen in dsh itself), whether that model's provider has
-    a credential (names only, never values), and dsh's own settings page."""
-    from .runtimes.dsh import access, dsh_home, dsh_settings, provider_keys, sdk_available
-
-    cfg = dsh_settings(config)
-    installed = sdk_available(cfg)
-    version = ""
-    if installed:
-        try:
-            from importlib.metadata import version as _v
-
-            version = _v("deepseek-harness-sdk")
-        except Exception:  # noqa: BLE001 - a custom SDK module without distribution metadata
-            version = ""
-    acc = access(cfg) if installed else {"ok": False, "provider": "", "model": None, "source": "", "why": ""}
-    home = dsh_home(cfg)
-    shown = str(home).replace(str(Path.home()), "~", 1)
-    return {"installed": installed, "by_artel": installed_by_artel("dsh"), "version": version,
-            "logged_in": bool(installed and acc["ok"]), "provider": acc.get("provider") or "",
-            "model": acc.get("model") or "", "source": acc.get("source") or "", "providers": sorted(provider_keys(cfg)),
-            "home": shown, "profile": cfg.get("profile"), "plugins": [str(p) for p in cfg.get("plugins") or []],
-            "settings": DSH_GUI.status(), "detail": acc.get("why") or ""}
-
-
-class _DshGui:
-    """DeepSeek Harness's own settings page (`dsh web`) on the shared home, started on request from the dashboard:
-    models, keys, other providers and sign-ins are configured there, by dsh, not by Artel."""
-
-    def __init__(self):
-        self.proc = None
-        self.url = ""
-        self.error = ""
-        self.lock = threading.Lock()
-
-    def status(self) -> dict:
-        alive = self.proc is not None and self.proc.poll() is None
-        return {"running": alive, "url": self.url if alive else "", "error": "" if alive else self.error}
-
-    def start(self, config: dict) -> dict:
-        from .runtimes.dsh import dsh_home, dsh_settings, launcher
-
-        with self.lock:
-            if self.proc is not None and self.proc.poll() is None and self.url:
-                return self.status()
-            cfg = dsh_settings(config)
-            home = dsh_home(cfg)
-            home.mkdir(parents=True, exist_ok=True)
-            env = {**os.environ, "DSH_HOME": str(home)}
-            # the newest dsh first: one installed with npm, the SDK's bundled runtime, then npx (needs Node.js)
-            candidates = []
-            if cfg.get("binary") or resolve("dsh"):
-                candidates.append([resolve(cfg.get("binary") or "dsh") or "dsh"])
-            sdk = launcher({**cfg, "binary": None})
-            if sdk and sdk not in candidates:
-                candidates.append(sdk)
-            if resolve("npx"):
-                candidates.append([resolve("npx"), "-y", "@deepseek-ai/dsh@latest"])
-            self.url, self.error = "", ""
-            tails = []
-            for argv in candidates:
-                url, tail = self._try(argv, env)
-                if url:
-                    self.url = url
-                    return self.status()
-                tails.append(f"{os.path.basename(argv[0])}: {tail}")
-            self.error = ("Настройки DeepSeek Harness не открылись" + (":\n" + "\n".join(tails) if tails else
-                          ": DeepSeek Harness не установлен") + "\nЗапустите вручную: "
-                          f"DSH_HOME={home} npx @deepseek-ai/dsh web")
-            return self.status()
-
-    def _try(self, argv: list, env: dict) -> tuple:
-        try:
-            proc = subprocess.Popen([*argv, "web", "--no-open", "--port", "0"], env=env, text=True,
-                                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, encoding="utf-8",
-                                    errors="replace", start_new_session=True)
-        except OSError as e:
-            return "", str(e)
-        lines: list = []
-        deadline = time.time() + 180
-        while time.time() < deadline:
-            line = proc.stdout.readline()
-            if not line:
-                break
-            lines.append(line.rstrip())
-            m = re.search(r"https?://\S+", line)
-            if m and "dsh web" in line:
-                self.proc = proc
-                threading.Thread(target=lambda: [None for _ in proc.stdout], daemon=True).start()
-                return m.group(0), ""
-        proc.kill()
-        err = next((ln for ln in reversed(lines) if "Error" in ln or "error" in ln), lines[-1] if lines else "")
-        return "", err.strip()[:300]
-
-    def stop(self) -> None:
-        if self.proc is not None and self.proc.poll() is None:
-            if os.name == "posix":  # npx → node: the whole process group started for it
-                import signal
-
-                try:
-                    os.killpg(self.proc.pid, signal.SIGTERM)
-                except OSError:
-                    pass
-            else:
-                terminate_tree(self.proc)
-
-
-DSH_GUI = _DshGui()
-
-
 def runtimes(config: dict) -> list[str]:
-    """Selectable runtimes: the base ones plus one ``acp:<preset>`` per ACP agent preset."""
-    from .runtimes.acp import presets
-
-    return RUNTIMES + [f"acp:{n}" for n in presets(config)]
-
-
-def acp_status(config: dict) -> dict:
-    """ACP presets with their command lines and whether the command is installed; nothing is started."""
-    from .runtimes.acp import AcpError, acp_settings, presets
-
-    a = config.get("acp") or {}
-    items = [{"name": n, "command": p["command"], "installed": bool(p["command"] and resolve(p["command"][0]))}
-             for n, p in presets(config).items()]
-    try:
-        eff = acp_settings(config)
-        command, err = eff["command"], ""
-    except AcpError as e:
-        command, err = [], str(e)
-    return {"agent": a.get("agent", "gemini"), "command": command, "custom": bool(a.get("command")),
-            "installed": bool(command and resolve(command[0])), "presets": items, "error": err}
+    """Selectable runtimes."""
+    return list(RUNTIMES)
 
 
 def api_keys(config: dict) -> list[dict]:
@@ -384,25 +252,12 @@ def api_keys(config: dict) -> list[dict]:
     oc = config.get("openai_compat") or {}
     if oc.get("api_key_env"):
         names.setdefault(oc["api_key_env"], f"OpenAI-совместимый ({oc.get('base_url', '')})")
-    dec = config.get("decide") or {}
-    if dec.get("api_key_env"):
-        names.setdefault(dec["api_key_env"], "System One")
     return [{"env": k, "label": v, "set": bool(os.environ.get(k))} for k, v in names.items()]
-
-
-def system_one_status(config: dict) -> dict:
-    """Whether a System One is connected (plugin service or HTTP endpoint) and which decision points are on."""
-    dec = config.get("decide") or {}
-    plugins = [p for p in config.get("plugins", []) if "system_one" in p or "system1" in p]
-    http = dec.get("backend") == "http" and bool(dec.get("url"))
-    name = plugins[0] if plugins else (dec.get("url") if http else "")
-    return {"connected": bool(plugins or http), "name": name,
-            "points": [k for k, v in (dec.get("points") or {}).items() if v]}
 
 
 CLAUDE_MODELS = [{"id": "sonnet", "name": "Sonnet (последняя)"}, {"id": "opus", "name": "Opus (последняя)"},
                  {"id": "haiku", "name": "Haiku (последняя)"}]
-TOGGLABLE = ["claude_code", "codex", "dsh", "native"]
+TOGGLABLE = ["claude_code", "codex", "native"]
 
 
 def model_catalog(config: dict, runtime: str) -> list[dict]:
@@ -456,17 +311,13 @@ def routing(config: dict) -> dict:
             "limited": limited(config), "runtime_by_role": config.get("runtime_by_role") or {},
             "roles": ROLES, "runtimes": runtimes(config),
             "models": {"claude_code": (config.get("claude_code") or {}).get("model", "sonnet"),
-                       "codex": (config.get("codex") or {}).get("model") or "",
-                       "dsh": (config.get("dsh") or {}).get("model") or ""},
-            "catalogs": {rt: model_catalog(config, rt) for rt in ("claude_code", "codex")},
-            "acp_agent": (config.get("acp") or {}).get("agent", "gemini")}
+                       "codex": (config.get("codex") or {}).get("model") or ""},
+            "catalogs": {rt: model_catalog(config, rt) for rt in ("claude_code", "codex")}}
 
 
 def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
     """Persist runtime choices to ARTEL_HOME/artel.yaml and apply them to the live config."""
     from .project import artel_home, deep_merge
-
-    from .runtimes.acp import presets
 
     upd: dict = {}
     allowed = runtimes(config)
@@ -474,11 +325,9 @@ def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
         upd["runtime"] = data["runtime"]
     if isinstance(data.get("runtime_by_role"), dict):
         upd["runtime_by_role"] = {r: v for r, v in data["runtime_by_role"].items() if r in ROLES and v in allowed}
-    if data.get("acp_agent") in presets(config):
-        upd["acp"] = {"agent": data["acp_agent"]}
     if isinstance(data.get("disabled_runtimes"), list):
         upd["disabled_runtimes"] = [r for r in data["disabled_runtimes"] if r in TOGGLABLE]
-    for rt in ("claude_code", "codex", "dsh"):
+    for rt in ("claude_code", "codex"):
         m = (data.get("models") or {}).get(rt)
         if isinstance(m, str):
             m = m.strip()
@@ -564,9 +413,8 @@ def save_embeddings(config: dict, data: dict, path: Optional[Path] = None) -> di
 
 
 def overview(config: dict) -> dict:
-    return {"embeddings": embeddings_status(config),"codex": codex_status(config), "claude_code": claude_code_status(config), "dsh": dsh_status(config), "acp": acp_status(config),
-            "keys": api_keys(config),
-            "system_one": system_one_status(config), "routing": routing(config),
+    return {"embeddings": embeddings_status(config),"codex": codex_status(config), "claude_code": claude_code_status(config),
+            "keys": api_keys(config), "routing": routing(config),
             "timezone": __import__("artel.tz", fromlist=["info"]).info(config)}
 
 

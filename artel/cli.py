@@ -31,9 +31,9 @@ ICONS = {"todo": "·", "ready": "○", "running": "▶", "review": "◎", "done"
 
 
 def _runtime_arg(value: str) -> str:
-    if value in ("native", "claude_code", "codex", "acp") or (value.startswith("acp:") and len(value) > 4):
+    if value in ("native", "claude_code", "codex"):
         return value
-    raise argparse.ArgumentTypeError(f"unknown runtime {value!r}: native, claude_code, codex, acp, acp:<preset>")
+    raise argparse.ArgumentTypeError(f"unknown runtime {value!r}: native, claude_code, codex")
 
 
 def _cfg(args) -> dict:
@@ -580,8 +580,8 @@ def cmd_providers(args) -> int:
                     print(f"  {'*' if m['id'] == cur else ' '} {m['id']:<18} {m['name']}{eff}")
                 return 0
             if args.action == "model":
-                if rt not in ("claude_code", "codex", "dsh"):
-                    print("модель задаётся для claude_code, codex или dsh")
+                if rt not in ("claude_code", "codex"):
+                    print("модель задаётся для claude_code или codex")
                     return 2
                 r = save_routing(cfg, {"models": {rt: args.value or ""}})
                 print(f"{rt}: модель {r['models'][rt] or 'по умолчанию'}")
@@ -642,22 +642,16 @@ def cmd_providers(args) -> int:
         return 0
     o = overview(cfg)
     print(banner("провайдеры"))
-    for key, label in (("codex", "Codex"), ("claude_code", "Claude Code"), ("dsh", "DeepSeek Harness")):
+    for key, label in (("codex", "Codex"), ("claude_code", "Claude Code")):
         st = o[key]
         state = ("вход выполнен" + (f" ({st['method']})" if st.get("method") else "")) if st["logged_in"] else \
             ("не подключён" if st["installed"] else "не установлен")
         print(f"  {label:<14} {state:<34} {st.get('version', '')}")
-    a = o["acp"]
-    print(f"  {'ACP-агент':<14} {(a['agent'] + (' — найден' if a['installed'] else ' — не установлен')):<34} "
-          f"{' '.join(a['command'])}")
     for k in o["keys"]:
         print(f"  {k['label']:<14} {'задан' if k['set'] else 'не задан':<34} ${k['env']}")
     em = o["embeddings"]
     print(f"  {'Эмбеддинги':<14} {('включены: ' + em['active']) if em['active'] != 'off' else ('выключены' if em['installed'] else 'не установлены — поиск по словам'):<34} "
           f"{'EmbeddingGemma 2 ' + em['quant'] + ', ' + str(em['dim']) + 'd' if em['installed'] else 'artel providers install embeddings'}")
-    s1 = o["system_one"]
-    print(f"  {'System One':<14} {('подключена: ' + s1['name']) if s1['connected'] else 'не подключена':<34} "
-          f"{'точки: ' + ', '.join(s1['points']) if s1['points'] else ''}")
     r = o["routing"]
     print(f"  рантайм по умолчанию: {r['runtime']}" + (f" (сейчас → {r['auto_resolves_to']})" if r["runtime"] == "auto" else "")
           + "".join(f"; {k}: {v}" for k, v in r["runtime_by_role"].items()))
@@ -879,9 +873,6 @@ def _robust_console() -> None:
 def main(argv=None) -> int:
     _robust_console()
     argv = sys.argv[1:] if argv is None else argv
-    if argv[:1] == ["local"]:
-        print("the local System One model was removed; connect a System One as described in docs/SYSTEM_ONE.md")
-        return 2
     ap = argparse.ArgumentParser(prog="artel", description="Artel — a self-improving multi-agent harness")
     ap.add_argument("--config", help="extra YAML config merged over ~/.artel/artel.yaml")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -898,7 +889,7 @@ def main(argv=None) -> int:
     r.add_argument("--ref", action="append", help="read-only source directory the team may study (repeatable)")
     r.add_argument("--seed", help="copy this directory into the deliverables directory before planning")
     r.add_argument("--runtime", type=_runtime_arg,
-                   help="native | claude_code | codex | dsh | acp | acp:<preset> (e.g. acp:gemini)")
+                   help="native | claude_code | codex")
     r.add_argument("--port", type=int, default=8765)
     r.set_defaults(fn=cmd_run)
 
@@ -963,7 +954,7 @@ def main(argv=None) -> int:
         p.add_argument("--repo", help="Artel git repo to evolve (default: this installation)")
         p.add_argument("--tasks", help="comma-separated benchmark task ids")
         p.add_argument("--parallel-bench", type=int, default=2)
-        p.add_argument("--runtime", choices=["native", "claude_code", "codex", "dsh"])
+        p.add_argument("--runtime", choices=["native", "claude_code", "codex"])
         p.add_argument("--provider", choices=["anthropic", "openai_compat", "scripted"])
 
     bn = sub.add_parser("bench", help="run the benchmark suite with hidden checks")
