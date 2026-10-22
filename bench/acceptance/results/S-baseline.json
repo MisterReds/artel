@@ -1,0 +1,68 @@
+{
+  "version": "917c66a",
+  "project": "сделай-cli-утилиту-которая-из-выписок-ба",
+  "metrics": {
+    "metrics": {
+      "duration_h": 0.26,
+      "ended": "waiting_human",
+      "stopped_by_limit": false,
+      "limit_waits": 0,
+      "expensive_token_share": null,
+      "expensive_call_share": 0.161,
+      "tokens_total": 0,
+      "token_note": "токены — как их сообщает рантайм; кэш у разных рантаймов считается по-разному",
+      "tasks_done": 1,
+      "tokens_per_accepted": 0,
+      "success_rate": 0.333,
+      "steps": 56,
+      "owner_asks": 2,
+      "owner_interventions": 0,
+      "autonomy_share": 0.964,
+      "tokens_by_runtime": {
+        "codex": 0
+      },
+      "cost_usd": null,
+      "cost_note": null,
+      "decision_log_coverage": null,
+      "verdict": null
+    },
+    "check": {
+      "expensive_token_share_max": {
+        "value": null,
+        "limit": 0.05,
+        "ok": null
+      },
+      "expensive_call_share_max": {
+        "value": 0.161,
+        "limit": 0.05,
+        "ok": false
+      },
+      "autonomy_min": {
+        "value": 0.964,
+        "limit": 0.95,
+        "ok": true
+      },
+      "owner_interventions_max": {
+        "value": 0,
+        "limit": 1,
+        "ok": true
+      },
+      "no_limit_stop": {
+        "value": false,
+        "limit": true,
+        "ok": true
+      }
+    }
+  },
+  "verify": null,
+  "notes": [
+    "Run started 2026-10-19 on 917c66a; ended in waiting_human after 0.26 h (manager/finished, seq 1447). Process not alive on 2026-10-22; run was NOT restarted.",
+    "Escalations (3 replans without progress): t-709c1ae1 (CSV import), t-ada719df (HTML report). Root cause: task checks call `python`, absent from PATH (only /usr/bin/python3); exit 127. Functional criteria confirmed via python3 by workers.",
+    "Defect: scenario S checks use `python` instead of `python3` (portability).",
+    "verify not run: project did not reach done, no result to verify independently.",
+    "Metrics are for an unfinished run; tokens_total=0 and cost_usd=null (runtime reported no tokens) - counters unreliable, not substituted.",
+    "Intake/planner ran on codex runtime (codex:gpt-6-luna), not Claude Code as the scenario assumed.",
+    "Defect: `artel log <project>` crashes with KeyError on missing stop_reason (artel/cli.py:81).",
+    "Environment fix (python alias) not applied: process is dead, so no resume."
+  ]
+}
