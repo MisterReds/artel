@@ -48,6 +48,16 @@ def test_disabled_runtime_is_never_picked(home):
     assert detect_runtime(cfg) == "claude_code"
 
 
+def test_a_retired_runtime_in_an_old_config_falls_back_to_auto(home):
+    from artel.runtimes import runtime_for
+    from artel.tools import install, uninstall
+
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "anthropic"})
+    assert runtime_for(deep_merge(cfg, {"runtime": "dsh"}), "worker") == "claude_code"
+    assert runtime_for(deep_merge(cfg, {"runtime_by_role": {"planner": "acp:gemini"}}), "planner") == "claude_code"
+    assert install("dsh")["ok"] is False and uninstall("dsh")["ok"] is False
+
+
 def test_limit_from_a_run_is_recorded_for_the_failover(home):
     from artel.agent import Outcome
     from artel.runtimes import _note_limit

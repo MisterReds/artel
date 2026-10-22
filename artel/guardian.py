@@ -2,8 +2,7 @@
 
 After a worker run, ``assess`` scores the run's event log with deterministic heuristics (no model call).
 A ``high`` score switches the task's later runs to blocking review: ``check_command`` is then applied to
-every shell command before it executes. System One may refine a borderline score, only when the
-``decide.points.guardian`` point is enabled; any failure falls back silently to the heuristic result.
+every shell command before it executes.
 
 The two-stage idea (a non-blocking first-step reviewer whose high-risk verdict triggers blocking review of
 future actions) and the risk categories (destructive actions, exfiltration, credential exposure) are adapted
@@ -154,27 +153,6 @@ def assess(events: list[dict], workspace: Optional[Path] = None) -> dict:
                     break
     score = round(best, 2)
     return {"risk": "high" if score >= HIGH else "low", "score": score, "reason": reason}
-
-
-def refine(kernel, project, result: dict, events: list[dict]) -> dict:
-    """Optionally let System One escalate a borderline score. Silent no-op unless decide.points.guardian is on."""
-    if not 0.3 <= result["score"] < HIGH:
-        return result
-    try:
-        from .decide import decide, score
-
-        calls = [f"{e.get('tool')}: {str(e.get('input'))[:200]}" for e in events if e.get("kind") == "tool/call"]
-        ans = decide(kernel, project, "guardian",
-                     {"trajectory": "\n".join(calls[-30:]), "heuristic_reason": result["reason"]},
-                     {"risk": score("How dangerous is this agent trajectory (destructive, exfiltrating, leaking secrets)?",
-                                    ["safe: routine work", "suspicious: unclear intent",
-                                     "dangerous: likely harmful or irreversible"])})
-        r = (ans or {}).get("risk")
-        if r and float(r.get("confidence", 0)) >= 0.6 and round(float(r["score"])) >= 2:
-            return {"risk": "high", "score": max(result["score"], HIGH), "reason": result["reason"] + " (System One: dangerous)"}
-    except Exception:  # noqa: BLE001 - a failing System One must never stop the work
-        pass
-    return result
 
 
 def latest_risk(events: list[dict]) -> dict[str, dict]:

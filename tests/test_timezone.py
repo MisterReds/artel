@@ -47,7 +47,7 @@ def test_persistence_round_trip(tmp_path):
 def test_overview_has_timezone(monkeypatch):
     import artel.providers as pv
 
-    for f in ("codex_status", "claude_code_status", "api_keys", "system_one_status", "routing"):
+    for f in ("codex_status", "claude_code_status", "api_keys", "routing"):
         monkeypatch.setattr(pv, f, lambda c: {})
     assert overview({"ui": {"timezone": "Asia/Sakhalin"}})["timezone"]["configured"] == "Asia/Sakhalin"
 

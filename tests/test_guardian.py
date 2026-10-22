@@ -39,12 +39,6 @@ def test_secret_in_output_and_outside_write(tmp_path):
     assert guardian.assess([w], tmp_path)["risk"] == "low"
 
 
-def test_refine_failure_falls_back():
-    k = SimpleNamespace(config={"decide": {"points": {"guardian": True}}}, get=lambda n: (_ for _ in ()).throw(RuntimeError()))
-    r = {"risk": "low", "score": 0.4, "reason": "x"}
-    assert guardian.refine(k, SimpleNamespace(log=None), r, []) == r
-
-
 def _bash_ctx(tmp_path, blocking):
     ctx = ToolContext(SimpleNamespace(config={}), SimpleNamespace(root=tmp_path, shared=tmp_path,
                       log=SimpleNamespace(append=lambda *a, **k: None)), "worker", tmp_path)
@@ -140,19 +134,3 @@ def test_job_work_switches_to_blocking_after_high_run(tmp_path, monkeypatch):
     t2 = project.board.add_task("t2", "b", criteria=["c"], assignee="Ada")
     m.job_work(project.board.get(t2))
     assert seen[-1] is None  # a different (low risk) task is not blocked
-
-
-def test_system_one_failure_does_not_break_assessment(tmp_path, monkeypatch):
-    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
-    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "decide": {"points": {"guardian": True}}})
-    project = Project.create("g", cfg, name="gs", workdir=str(tmp_path / "wd"))
-    m = Manager(new_kernel(cfg), project)
-    tid = project.board.add_task("t", "b", criteria=["c"], assignee="Ada")
-    task = project.board.get(tid)
-    ctx = ToolContext(m.kernel, project, "worker", tmp_path, task=task, persona=project.persona("Ada"))
-    seq0 = project.log.seq
-    project.log.append("tool/call", actor=ctx.actor, task_id=tid, tool="bash", input={"command": "git reset --hard"})
-    monkeypatch.setattr(m.kernel, "get", lambda n: (_ for _ in ()).throw(RuntimeError("boom")), raising=False)
-    m.assess_run(task, ctx, seq0)
-    ev = [e for e in project.log.read() if e["kind"] == "guardian/assessed"]
-    assert ev and ev[-1]["risk"] == "low"

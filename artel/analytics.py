@@ -64,7 +64,7 @@ def stage_of(project: Project, tasks: list[dict]) -> str:
     return "audit"
 
 
-RUNTIME_OF = (("claude-code", "claude_code"), ("codex", "codex"), ("dsh", "dsh"), ("acp", "acp"))
+RUNTIME_OF = (("claude-code", "claude_code"), ("codex", "codex"))
 
 
 def active_agents(events: list[dict], live: bool = True) -> list[dict]:
@@ -178,11 +178,6 @@ def project_stats(project: Project, live: bool = False) -> dict:
             model = "claude-code:" + (project.config.get("claude_code") or {}).get("model", "sonnet")
         elif runtime_for(project.config, "worker") == "codex":
             model = "codex:" + ((project.config.get("codex") or {}).get("model") or "default")
-        elif runtime_for(project.config, "worker") == "dsh":
-            model = "dsh:" + ((project.config.get("dsh") or {}).get("model") or "default")
-        elif runtime_for(project.config, "worker").split(":")[0] == "acp":
-            rt = runtime_for(project.config, "worker")
-            model = "acp:" + (rt.split(":", 1)[1] if ":" in rt else (project.config.get("acp") or {}).get("agent", "gemini"))
         else:
             model = p.model or project.config["models"].get("worker", default_model)
         workers.append({
