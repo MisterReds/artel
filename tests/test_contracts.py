@@ -299,3 +299,12 @@ def test_blocked_on_iff_blocked():
         ExecutorResult.from_dict({**base, "status": "blocked", "blocked_on": None})
     with pytest.raises(ContractError, match="blocked_on"):
         ExecutorResult.from_dict({**base, "status": "done", "blocked_on": "t2"})
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), {1, 2}, b"x", {(1, 2): 3}])
+def test_free_form_payloads_hold_only_finite_json_values(bad):
+    with pytest.raises(ContractError):
+        Event.from_dict({"seq": 1, "ts": 1.0, "kind": "x/y", "v": {"deep": [bad]}})
+    with pytest.raises(ContractError):
+        NormResponse.from_dict({"content": "", "usage": {"in": 0, "out": 0, "cached": 0}, "latency_ms": 1,
+                                "model": "m", "stop": "end", "tool_calls": [{"id": "1", "name": "t", "args": {"a": bad}}]})

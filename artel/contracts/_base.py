@@ -131,13 +131,23 @@ def mapping_list(d, key, path="", item_types: Optional[Mapping[str, tuple]] = No
     return tuple(out)
 
 
-def freeze(v: Any) -> Any:
-    """Deep, recursive immutability: mappings become read-only proxies over a copy, lists become tuples."""
+def freeze(v: Any, path: str = "") -> Any:
+    """Deep, recursive immutability over JSON values only: mappings with str keys become read-only proxies over a
+    copy, lists become tuples, floats must be finite; anything else (sets, bytes, objects) is rejected."""
     if isinstance(v, Mapping):
-        return types.MappingProxyType({k: freeze(x) for k, x in v.items()})
+        out = {}
+        for k, x in v.items():
+            if not isinstance(k, str):
+                raise ContractError(path or "<root>", f"non-string key {k!r}")
+            out[k] = freeze(x, f"{path}{k}.")
+        return types.MappingProxyType(out)
     if isinstance(v, (list, tuple)):
-        return tuple(freeze(x) for x in v)
-    return v
+        return tuple(freeze(x, f"{path}{i}.") for i, x in enumerate(v))
+    if isinstance(v, float) and not math.isfinite(v):
+        raise ContractError(path.rstrip(".") or "<root>", "must be finite")
+    if v is None or isinstance(v, (str, int, float, bool)):
+        return v
+    raise ContractError(path.rstrip(".") or "<root>", f"not a JSON value: {type(v).__name__}")
 
 
 def thaw(v: Any) -> Any:

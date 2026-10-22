@@ -28,6 +28,7 @@ REQUIRED_FIELDS = {
 
 @dataclass(frozen=True)
 class Event:
+    """Not hashable: data is a read-only mapping proxy; compare with ==, do not use as a set member or key."""
     seq: int
     ts: float
     kind: str

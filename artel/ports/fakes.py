@@ -117,7 +117,10 @@ class RecordingToolRunner:
         if handler is None:
             return ToolResult(f"unknown tool: {name}", True)
         try:
-            return ToolResult(handler(copy.deepcopy(dict(args))), False)
+            out = handler(copy.deepcopy(dict(args)))
+            if not isinstance(out, str):
+                return ToolResult(f"handler returned {type(out).__name__}, not str", True)
+            return ToolResult(out, False)
         except Exception as exc:  # noqa: BLE001 - a failing tool is a result, not a crash
             return ToolResult(f"{type(exc).__name__}: {exc}", True)
 
@@ -126,14 +129,19 @@ class FakeClock:
     """Time moves only when sleep is called."""
 
     def __init__(self, start: float = 0.0) -> None:
+        if isinstance(start, bool) or not isinstance(start, (int, float)) or not math.isfinite(start):
+            raise ValueError("start must be a finite number")
         self._now = float(start)
 
     def now(self) -> float:
         return self._now
 
     def sleep(self, seconds: float) -> None:
-        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) \
-                or seconds < 0:
+        try:
+            finite = not isinstance(seconds, bool) and isinstance(seconds, (int, float)) and math.isfinite(seconds)
+        except OverflowError:
+            finite = False
+        if not finite or seconds < 0:
             raise ValueError("sleep: seconds must be a finite number >= 0")
         self._now += seconds
 

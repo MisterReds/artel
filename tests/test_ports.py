@@ -212,3 +212,12 @@ def test_no_vendor_names_in_packages():
             text = path.read_text().lower()
             for word in VENDORS:
                 assert word not in text, (path, word)
+
+
+def test_fake_clock_and_tool_runner_reject_bad_values():
+    with pytest.raises(ValueError):
+        FakeClock(float("nan"))
+    with pytest.raises(ValueError):
+        FakeClock().sleep(10 ** 400)
+    r = RecordingToolRunner({"t": lambda a: 5})
+    assert r.run("t", {}, ["t"]).is_error
