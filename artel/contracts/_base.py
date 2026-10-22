@@ -1,6 +1,9 @@
 """Validation helpers shared by the contract dataclasses. Every failure names the offending field."""
 from __future__ import annotations
 
+import math
+import types
+from dataclasses import fields as _fields
 from typing import Any, Mapping, Optional, Sequence
 
 
@@ -49,6 +52,8 @@ def number(d, key, path="", minimum=0.0, maximum=None) -> float:
     v = _get(d, key, path)
     if isinstance(v, bool) or not isinstance(v, (int, float)):
         raise ContractError(f"{path}{key}", "expected a number")
+    if not math.isfinite(v):
+        raise ContractError(f"{path}{key}", "must be a finite number")
     if v < minimum or (maximum is not None and v > maximum):
         hi = "" if maximum is None else f" and <= {maximum}"
         raise ContractError(f"{path}{key}", f"must be >= {minimum}{hi}")
@@ -103,10 +108,11 @@ def mapping(d, key, path="", nullable=False) -> Optional[dict]:
         return None
     if not isinstance(v, Mapping):
         raise ContractError(f"{path}{key}", "expected an object")
-    return dict(v)
+    return freeze(v)
 
 
-def mapping_list(d, key, path="", required_keys: Sequence[str] = ()) -> tuple:
+def mapping_list(d, key, path="", item_types: Optional[Mapping[str, tuple]] = None) -> tuple:
+    """A list of objects; item_types maps each required key to the tuple of accepted Python types."""
     v = _get(d, key, path)
     if not isinstance(v, (list, tuple)):
         raise ContractError(f"{path}{key}", "expected a list")
@@ -114,11 +120,40 @@ def mapping_list(d, key, path="", required_keys: Sequence[str] = ()) -> tuple:
     for i, x in enumerate(v):
         if not isinstance(x, Mapping):
             raise ContractError(f"{path}{key}[{i}]", "expected an object")
-        for k in required_keys:
+        for k, types_ in (item_types or {}).items():
             if k not in x:
                 raise ContractError(f"{path}{key}[{i}].{k}", "required field is missing")
-        out.append(dict(x))
+            val = x[k]
+            if not isinstance(val, types_) or (isinstance(val, bool) and bool not in types_):
+                names = " or ".join(t.__name__ if t is not Mapping else "object" for t in types_)
+                raise ContractError(f"{path}{key}[{i}].{k}", f"expected {names}")
+        out.append(freeze(x))
     return tuple(out)
+
+
+def freeze(v: Any) -> Any:
+    """Deep, recursive immutability: mappings become read-only proxies over a copy, lists become tuples."""
+    if isinstance(v, Mapping):
+        return types.MappingProxyType({k: freeze(x) for k, x in v.items()})
+    if isinstance(v, (list, tuple)):
+        return tuple(freeze(x) for x in v)
+    return v
+
+
+def thaw(v: Any) -> Any:
+    """Inverse of freeze: plain dict/list all the way down (a fresh copy, safe to mutate and to JSON-encode)."""
+    if isinstance(v, Mapping):
+        return {k: thaw(x) for k, x in v.items()}
+    if isinstance(v, (list, tuple)):
+        return [thaw(x) for x in v]
+    return v
+
+
+def reject_unknown(d: Mapping[str, Any], cls, path: str) -> None:
+    known = {"in" if f.name == "in_" else f.name for f in _fields(cls)}
+    for k in d:
+        if k not in known:
+            raise ContractError(f"{path}{k}", "unknown field")
 
 
 def check_path(path: str) -> str:

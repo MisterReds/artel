@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Optional
+from typing import Any, Mapping, Optional
 
 from . import _base as b
 
@@ -22,6 +22,7 @@ class Usage:
     def from_dict(cls, d: Any, path: str = "") -> "Usage":
         path = b.check_path(path)
         d = b.obj(d, path)
+        b.reject_unknown(d, cls, path)
         return cls(b.integer(d, "in", path), b.integer(d, "out", path), b.integer(d, "cached", path))
 
     def to_dict(self) -> dict:
@@ -36,21 +37,26 @@ class NormRequest:
     max_tokens: int
     cache_hint: Optional[str]
 
+    def __post_init__(self) -> None:
+        for name in ("messages", "tools", "output_schema"):
+            object.__setattr__(self, name, b.freeze(getattr(self, name)))
+
     @classmethod
     def from_dict(cls, d: Any, path: str = "") -> "NormRequest":
         path = b.check_path(path)
         d = b.obj(d, path)
-        messages = b.mapping_list(d, "messages", path, ("content",))
+        b.reject_unknown(d, cls, path)
+        messages = b.mapping_list(d, "messages", path, {"role": (str,), "content": (str, list, tuple)})
         for i, m in enumerate(messages):
             if m.get("role") not in MESSAGE_ROLES:
                 raise b.ContractError(f"{path}messages[{i}].role", f"must be one of {sorted(MESSAGE_ROLES)}")
-        return cls(messages, b.mapping_list(d, "tools", path, ("name",)),
+        return cls(messages, b.mapping_list(d, "tools", path, {"name": (str,)}),
                    b.mapping(d, "output_schema", path, nullable=True), b.integer(d, "max_tokens", path, 1),
                    b.string(d, "cache_hint", path, nullable=True))
 
     def to_dict(self) -> dict:
-        return {"messages": [dict(m) for m in self.messages], "tools": [dict(t) for t in self.tools],
-                "output_schema": self.output_schema, "max_tokens": self.max_tokens, "cache_hint": self.cache_hint}
+        return {"messages": b.thaw(self.messages), "tools": b.thaw(self.tools),
+                "output_schema": b.thaw(self.output_schema), "max_tokens": self.max_tokens, "cache_hint": self.cache_hint}
 
 
 @dataclass(frozen=True)
@@ -62,16 +68,20 @@ class NormResponse:
     model: str
     stop: str
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "tool_calls", b.freeze(self.tool_calls))
+
     @classmethod
     def from_dict(cls, d: Any, path: str = "") -> "NormResponse":
         path = b.check_path(path)
         d = b.obj(d, path)
-        return cls(b.string(d, "content", path), b.mapping_list(d, "tool_calls", path, ("id", "name", "args")),
+        b.reject_unknown(d, cls, path)
+        return cls(b.string(d, "content", path), b.mapping_list(d, "tool_calls", path, {"id": (str,), "name": (str,), "args": (Mapping,)}),
                    b.nested(d, "usage", Usage, path), b.integer(d, "latency_ms", path),
                    b.string(d, "model", path), b.enum(d, "stop", STOP_REASONS, path))
 
     def to_dict(self) -> dict:
-        return {"content": self.content, "tool_calls": [dict(t) for t in self.tool_calls],
+        return {"content": self.content, "tool_calls": b.thaw(self.tool_calls),
                 "usage": self.usage.to_dict(), "latency_ms": self.latency_ms, "model": self.model,
                 "stop": self.stop}
 
@@ -86,6 +96,7 @@ class ToolResult:
     def from_dict(cls, d: Any, path: str = "") -> "ToolResult":
         path = b.check_path(path)
         d = b.obj(d, path)
+        b.reject_unknown(d, cls, path)
         code = d.get("exit_code")
         if code is not None and (isinstance(code, bool) or not isinstance(code, int)):
             raise b.ContractError(f"{path}exit_code", "expected an integer or null")
@@ -104,17 +115,21 @@ class ModelCard:
     usd_per_mtok_in: float
     usd_per_mtok_out: float
 
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "capabilities", b.freeze(self.capabilities))
+
     @classmethod
     def from_dict(cls, d: Any, path: str = "") -> "ModelCard":
         path = b.check_path(path)
         d = b.obj(d, path)
+        b.reject_unknown(d, cls, path)
         return cls(b.string(d, "id", path, nonempty=True), b.string(d, "provider", path),
                    b.integer(d, "context_tokens", path), b.strings(d, "capabilities", path),
                    b.number(d, "usd_per_mtok_in", path), b.number(d, "usd_per_mtok_out", path))
 
     def to_dict(self) -> dict:
         return {"id": self.id, "provider": self.provider, "context_tokens": self.context_tokens,
-                "capabilities": list(self.capabilities), "usd_per_mtok_in": self.usd_per_mtok_in,
+                "capabilities": b.thaw(self.capabilities), "usd_per_mtok_in": self.usd_per_mtok_in,
                 "usd_per_mtok_out": self.usd_per_mtok_out}
 
 
@@ -128,6 +143,7 @@ class ErrorClass:
     def from_dict(cls, d: Any, path: str = "") -> "ErrorClass":
         path = b.check_path(path)
         d = b.obj(d, path)
+        b.reject_unknown(d, cls, path)
         after = d.get("retry_after_s")
         if after is not None:
             after = b.number(d, "retry_after_s", path)

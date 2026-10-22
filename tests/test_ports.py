@@ -96,23 +96,119 @@ def test_config_read_only():
     assert not hasattr(c, "set")
 
 
-def _imports(pkg):
-    root = pathlib.Path(pkg.__file__).parent
-    for path in root.glob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text())):
-            if isinstance(node, ast.Import):
-                yield path, [a.name for a in node.names], 0
-            elif isinstance(node, ast.ImportFrom):
-                yield path, [node.module or ""], node.level
+def test_deep_copy_on_store_and_read():
+    log = ListEventLog()
+    payload = {"k": [1, {"z": 2}]}
+    ev = Event(0, 0.0, "x/y", payload)
+    log.append(ev)
+    payload["k"].append(99)
+    stored = next(log.read())
+    assert stored.data["k"] == (1, {"z": 2})
+    with pytest.raises(TypeError):
+        stored.data["k"][1]["z"] = 5
+    assert next(log.read()).data["k"] == (1, {"z": 2})
+    mem = DictMemory()
+    delta = {"a": [1, 2]}
+    mem.apply_delta(delta)
+    delta["a"].append(3)
+    assert mem.summary() == "a: [1, 2]"
+
+
+def test_tool_runner_handler_exception_is_error_result():
+    def boom(a):
+        raise RuntimeError("bad")
+
+    t = RecordingToolRunner({"boom": boom})
+    r = t.run("boom", {}, ["boom"])
+    assert r.is_error and "bad" in r.output
+    args = {"l": [1]}
+    t.run("boom", args, ["boom"])
+    args["l"].append(2)
+    assert t.calls[-1][1] == {"l": [1]}
+
+
+@pytest.mark.parametrize("bad", [-1, float("nan"), float("inf"), float("-inf"), "1", None])
+def test_clock_rejects_bad_sleep(bad):
+    c = FakeClock()
+    with pytest.raises(ValueError):
+        c.sleep(bad)
+    assert c.now() == 0.0
+
+
+STDLIB_DENY = {"os", "sys", "socket", "ssl", "urllib", "http", "subprocess", "pathlib", "shutil", "tempfile", "io",
+               "glob", "multiprocessing", "threading", "asyncio"}
+VENDORS = ("anthropic", "openai", "claude", "codex", "gpt", "gemini", "deepseek", "sonnet", "opus", "haiku", "llama",
+           "mistral", "qwen")
+BANNED_NAMES = {"__import__", "importlib"}
+
+
+def scan_source(source, package, allowed):
+    """Return the violations in one module's source. `package` is the dotted package the module lives in."""
+    import sys
+    ok_stdlib = set(sys.stdlib_module_names) - STDLIB_DENY - BANNED_NAMES
+    bad = []
+
+    def check(name, line):
+        top = name.split(".")[0]
+        if top in ok_stdlib or any(name == a or name.startswith(a + ".") for a in allowed):
+            return
+        bad.append(f"line {line}: import of {name}")
+
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.Import):
+            for a in node.names:
+                check(a.name, node.lineno)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                parts = package.split(".")
+                if node.level - 1 > len(parts) - 1:
+                    bad.append(f"line {node.lineno}: relative import escapes the top package")
+                    continue
+                base = parts[:len(parts) - (node.level - 1)]
+                base = ".".join(base + ([node.module] if node.module else []))
+            else:
+                base = node.module or ""
+            if node.module is None and node.level:  # `from . import x` imports submodules named x
+                for a in node.names:
+                    check(f"{base}.{a.name}", node.lineno)
+            else:
+                check(base, node.lineno)
+        elif isinstance(node, ast.Name) and node.id in BANNED_NAMES:
+            bad.append(f"line {node.lineno}: dynamic import via {node.id}")
+        elif isinstance(node, ast.Attribute) and node.attr in BANNED_NAMES:
+            bad.append(f"line {node.lineno}: dynamic import via {node.attr}")
+    return bad
+
+
+PACKAGES = [(artel.contracts, "artel.contracts", {"artel.contracts"}),
+            (artel.ports, "artel.ports", {"artel.contracts", "artel.ports"})]
 
 
 def test_import_boundaries():
-    import sys
-    stdlib = set(sys.stdlib_module_names)
-    for pkg, allowed in [(artel.contracts, {"artel.contracts"}), (artel.ports, {"artel.contracts", "artel.ports"})]:
-        for path, names, level in _imports(pkg):
-            if level:
-                continue  # relative imports stay inside the package
-            for name in names:
-                top = name.split(".")[0]
-                assert top in stdlib or any(name == a or name.startswith(a + ".") for a in allowed), (path, name)
+    for pkg, name, allowed in PACKAGES:
+        files = sorted(pathlib.Path(pkg.__file__).parent.rglob("*.py"))
+        assert files
+        for path in files:
+            rel = path.relative_to(pathlib.Path(pkg.__file__).parent)
+            module_pkg = ".".join([name, *rel.parts[:-1]])
+            assert scan_source(path.read_text(), module_pkg, allowed) == [], path
+
+
+def test_scanner_catches_violations():
+    allowed = {"artel.contracts"}
+    assert scan_source("from ..manager import x", "artel.contracts", allowed)
+    assert scan_source("from .. import manager", "artel.contracts", allowed)
+    assert scan_source("from ..ports import x", "artel.contracts", allowed)
+    assert not scan_source("from .core import x\nfrom . import _base\nimport json", "artel.contracts", allowed)
+    for src in ("import os", "from os import path", "import subprocess", "import importlib",
+                "x = __import__('os')", "import importlib.util", "from pathlib import Path", "import artel.kernel",
+                "from artel import board"):
+        assert scan_source(src, "artel.contracts", allowed), src
+
+
+def test_no_vendor_names_in_packages():
+    for pkg, _name, _allowed in PACKAGES:
+        for path in pathlib.Path(pkg.__file__).parent.rglob("*.py"):
+            text = path.read_text().lower()
+            for word in VENDORS:
+                assert word not in text, (path, word)

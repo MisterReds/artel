@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import math
 from typing import Any, Callable, Iterator, Mapping, Optional, Sequence
 
 from artel.contracts import (ErrorClass, Event, ExecutorResult, ModelCard, NormRequest, NormResponse,
@@ -83,7 +84,7 @@ class DictMemory:
             if v is None:
                 self._state.pop(k, None)
             else:
-                self._state[k] = v
+                self._state[k] = copy.deepcopy(v)
 
 
 class ListEventLog:
@@ -109,13 +110,16 @@ class RecordingToolRunner:
         self.calls: list = []
 
     def run(self, name: str, args: Mapping[str, Any], grants: Sequence[str]) -> ToolResult:
-        self.calls.append((name, dict(args), tuple(grants)))
+        self.calls.append((name, copy.deepcopy(dict(args)), tuple(grants)))
         if name not in grants:
             return ToolResult(f"tool not granted: {name}", True)
         handler = self._handlers.get(name)
         if handler is None:
             return ToolResult(f"unknown tool: {name}", True)
-        return ToolResult(handler(args), False)
+        try:
+            return ToolResult(handler(copy.deepcopy(dict(args))), False)
+        except Exception as exc:  # noqa: BLE001 - a failing tool is a result, not a crash
+            return ToolResult(f"{type(exc).__name__}: {exc}", True)
 
 
 class FakeClock:
@@ -128,8 +132,9 @@ class FakeClock:
         return self._now
 
     def sleep(self, seconds: float) -> None:
-        if seconds < 0:
-            raise ValueError("sleep: seconds must be >= 0")
+        if isinstance(seconds, bool) or not isinstance(seconds, (int, float)) or not math.isfinite(seconds) \
+                or seconds < 0:
+            raise ValueError("sleep: seconds must be a finite number >= 0")
         self._now += seconds
 
 

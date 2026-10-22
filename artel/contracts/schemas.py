@@ -30,9 +30,11 @@ class _Plain:
         return {("in" if f.name == "in_" else f.name): b.to_plain(getattr(self, f.name)) for f in fields(self)}
 
 
-def _head(d: Any, path: str):
+def _head(d: Any, path: str, cls):
     path = b.check_path(path)
-    return b.obj(d, path), path
+    d = b.obj(d, path)
+    b.reject_unknown(d, cls, path)
+    return d, path
 
 
 @dataclass(frozen=True)
@@ -44,7 +46,7 @@ class IntentBudget(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.number(d, "usd", p), b.integer(d, "expensive_tokens", p), b.number(d, "rewrite_usd", p),
                    b.number(d, "amplify_usd", p))
 
@@ -68,7 +70,7 @@ class Intent(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.string(d, "id", p, nonempty=True), b.integer(d, "version", p, 1), b.string(d, "idea", p),
                    b.string(d, "intent", p), b.string(d, "goal_behind_goal", p),
                    b.strings(d, "success_criteria", p), b.strings(d, "constraints", p),
@@ -85,7 +87,7 @@ class ManagerBudget(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.integer(d, "expensive_left", p), b.number(d, "usd_left", p))
 
 
@@ -103,7 +105,7 @@ class ManagerInput(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.string(d, "intent_ref", p), b.enum(d, "decision_needed", DECISIONS, p),
                    b.string(d, "goal", p), b.strings(d, "constraints", p), b.strings(d, "success_criteria", p),
                    b.strings(d, "facts", p, maximum=MAX_FACTS), b.strings(d, "refs", p),
@@ -127,7 +129,7 @@ class TaskContract(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.string(d, "id", p, nonempty=True), b.string(d, "intent_ref", p), b.string(d, "title", p),
                    b.string(d, "input", p), b.strings(d, "refs", p), b.strings(d, "criteria", p),
                    b.strings(d, "checks", p), b.string(d, "output_schema", p), b.integer(d, "max_tokens", p),
@@ -147,7 +149,7 @@ class RangeResearchTask(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.string(d, "discipline", p), b.string(d, "question", p), b.string(d, "method", p),
                    b.strings(d, "raw_inputs", p), b.string(d, "output_schema", p),
                    b.enum(d, "critic", CRITICS, p), b.integer(d, "max_tokens", p))
@@ -160,7 +162,7 @@ class Altitude(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.string(d, "goal_behind", p), b.string(d, "done_means", p))
 
 
@@ -173,7 +175,7 @@ class Depth(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.strings(d, "raw_sources", p), b.strings(d, "methods", p), b.strings(d, "tools", p),
                    b.strings(d, "independent_evidence", p))
 
@@ -185,7 +187,7 @@ class RangeEntry(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.string(d, "discipline", p), b.nested(d, "research_task", RangeResearchTask, p))
 
 
@@ -201,7 +203,7 @@ class AmplifiedTaskContract(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.nested(d, "base", TaskContract, p), b.nested(d, "altitude", Altitude, p),
                    b.nested(d, "depth", Depth, p), b.nested_list(d, "range", RangeEntry, p),
                    b.strings(d, "what_changed", p), b.string(d, "why", p), b.number(d, "cost_usd", p))
@@ -214,7 +216,7 @@ class ArtifactRef(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.string(d, "path", p, nonempty=True), b.string(d, "sha256", p))
 
 
@@ -231,11 +233,17 @@ class ExecutorResult(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
-        return cls(b.string(d, "task", p, nonempty=True), b.enum(d, "status", RESULT_STATUS, p),
+        d, p = _head(d, path, cls)
+        status = b.enum(d, "status", RESULT_STATUS, p)
+        blocked_on = b.string(d, "blocked_on", p, nullable=True)
+        if status == "blocked" and not blocked_on:
+            raise b.ContractError(f"{p}blocked_on", "must be a non-empty string when status is 'blocked'")
+        if status != "blocked" and blocked_on is not None:
+            raise b.ContractError(f"{p}blocked_on", "must be null unless status is 'blocked'")
+        return cls(b.string(d, "task", p, nonempty=True), status,
                    b.string(d, "summary", p), b.strings(d, "evidence", p),
                    b.nested_list(d, "artifacts", ArtifactRef, p), b.number(d, "confidence", p, 0.0, 1.0),
-                   b.string(d, "blocked_on", p, nullable=True), b.nested(d, "usage", Usage, p))
+                   blocked_on, b.nested(d, "usage", Usage, p))
 
 
 @dataclass(frozen=True)
@@ -249,7 +257,7 @@ class EscalationRequest(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.string(d, "task", p), b.enum(d, "kind", ESCALATION_KINDS, p), b.enum(d, "to", ESCALATION_TO, p),
                    b.nested(d, "brief", ManagerInput, p), b.strings(d, "options", p),
                    b.string(d, "recommendation", p))
@@ -262,7 +270,7 @@ class Tokens(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.integer(d, "in", p), b.integer(d, "out", p))
 
 
@@ -288,7 +296,7 @@ class DecisionLogEntry(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.integer(d, "seq", p), b.string(d, "ts", p), b.string(d, "actor", p),
                    b.string(d, "capability", p), b.string(d, "provider", p), b.string(d, "model", p),
                    b.string(d, "decision", p), b.string(d, "why", p), b.strings(d, "alternatives", p),
@@ -311,7 +319,7 @@ class CapabilityProfile(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.string(d, "id", p, nonempty=True), b.enum(d, "reasoning", REASONING, p),
                    b.number(d, "max_cost_per_mtok_usd", p), b.number(d, "max_latency_s", p),
                    b.integer(d, "min_context_tokens", p), b.strings(d, "needs", p), b.strings(d, "prefers", p),
@@ -327,7 +335,7 @@ class RewriteModule(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.string(d, "name", p, nonempty=True), b.enum(d, "paradigm", PARADIGMS, p),
                    b.string(d, "contract", p), b.strings(d, "behaviour_tests", p))
 
@@ -339,7 +347,7 @@ class RewriteBudget(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.number(d, "usd", p), b.integer(d, "expensive_tokens", p))
 
 
@@ -359,7 +367,7 @@ class RewriteProposal(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         keeps = b.strings(d, "keeps", p)
         for i, k in enumerate(keeps):
             if k not in KEEPS:
@@ -383,7 +391,7 @@ class RewriteTaskContract(_Plain):
 
     @classmethod
     def from_dict(cls, d, path=""):
-        d, p = _head(d, path)
+        d, p = _head(d, path, cls)
         return cls(b.nested(d, "base", TaskContract, p), b.string(d, "module", p, nonempty=True),
                    b.enum(d, "paradigm", PARADIGMS, p), b.string(d, "public_interface", p),
                    b.strings(d, "behaviour_tests", p), b.strings(d, "known_problems", p),

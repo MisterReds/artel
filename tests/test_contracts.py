@@ -1,4 +1,6 @@
 import copy
+import dataclasses
+import json
 
 import pytest
 
@@ -131,7 +133,7 @@ def test_nested_error_path_and_types():
 
 def test_frozen():
     x = TaskContract.from_dict(TASK)
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         x.title = "other"
 
 
@@ -146,11 +148,154 @@ def test_event_envelope_and_required_fields():
         Event.from_dict({"seq": 1, "ts": 0})
 
 
+# One realistic payload per kind; field types match the writers in artel/ (agent.py, runtimes/, manager.py, board.py).
+FIXTURES = {
+    "llm/response": {"actor": "w1", "role": "executor", "task_id": "t1", "turn": 2, "model": "m",
+                     "stop_reason": "end_turn", "usage": {"input_tokens": 3, "output_tokens": 4},
+                     "blocks": [{"type": "text", "text": "hi"}]},
+    "llm/error": {"actor": "w1", "task_id": "t1", "error": "boom"},
+    "tool/call": {"actor": "w1", "task_id": "t1", "tool": "shell", "input": {"command": "ls"}, "call_id": "c1"},
+    "tool/result": {"actor": "w1", "task_id": "t1", "tool": "shell", "call_id": "c1", "is_error": False,
+                    "output": "ok"},
+    "agent/start": {"actor": "w1", "role": "executor", "purpose": "work", "task_id": "t1", "model": "m",
+                    "effort": "default", "system": "s", "user": "u", "tools": ["shell"]},
+    "agent/end": {"actor": "w1", "role": "executor", "purpose": "work", "task_id": "t1", "status": "done",
+                  "terminal": "finish", "turns": 3, "tool_calls": 2,
+                  "usage": {"input_tokens": 3, "output_tokens": 4}, "error": None},
+    "tier/usage": {"role": "manager", "tier": "expensive", "usage": {"input_tokens": 1, "output_tokens": 2},
+                   "degraded": False, "simple_request": False},
+    "review/verdict": {"task_id": "t1", "passed": True, "feedback": "fine",
+                       "gates": [{"command": "pytest", "exit": 0}]},
+    "audit/verdict": {"round": 1, "complete": False, "summary": "gaps", "gaps": ["x"]},
+    "gate/result": {"task_id": "t1", "command": "pytest", "exit": 0, "output": "ok"},
+    "board/task_created": {"task_id": "t1", "title": "T", "task_kind": "task", "assignee": None,
+                           "depends_on": [], "criteria": ["c"], "checks": [], "created_by": "owner"},
+    "board/task_moved": {"task_id": "t1", "frm": "ready", "to": "running", "actor": "w1"},
+    "board/comment": {"task_id": "t1", "author": "auditor", "body": "text"},
+    "run/started": {"task_id": "t1", "worker": "w1", "run_id": 7},
+    "run/finished": {"run_id": 7, "status": "done", "summary": "ok", "turns": 3},
+}
+
+
+def test_every_kind_has_a_fixture():
+    assert set(FIXTURES) == set(REQUIRED_FIELDS)
+
+
 @pytest.mark.parametrize("kind", sorted(REQUIRED_FIELDS))
 def test_every_event_kind_requires_each_field(kind):
-    full = {"seq": 1, "ts": 0.0, "kind": kind, **{f: 1 for f in REQUIRED_FIELDS[kind]}}
-    Event.from_dict(full)
+    full = {"seq": 1, "ts": 0.0, "kind": kind, **FIXTURES[kind]}
+    ev = Event.from_dict(full)
+    assert Event.from_dict(ev.to_dict()) == ev
+    json.dumps(ev.to_dict())
     for f in REQUIRED_FIELDS[kind]:
         broken = {k: v for k, v in full.items() if k != f}
         with pytest.raises(ContractError, match=f):
             Event.from_dict(broken)
+
+
+def test_deep_immutability():
+    ev = Event.from_dict({"seq": 1, "ts": 0.0, "kind": "tool/call", "tool": "t", "call_id": "c",
+                          "input": {"a": [1, {"b": 2}]}})
+    with pytest.raises(TypeError):
+        ev.data["input"]["a"] = 1
+    with pytest.raises(TypeError):
+        ev.data["input"]["a"][1]["b"] = 3
+    assert isinstance(ev.data["input"]["a"], tuple)
+    d = ev.to_dict()
+    d["input"]["a"].append(9)
+    assert ev.data["input"]["a"] == (1, {"b": 2}) and type(d["input"]) is dict
+    json.dumps(d)
+    src = copy.deepcopy(SAMPLES[NormRequest])
+    src["tools"] = [{"name": "t", "schema": {"p": ["x"]}}]
+    src["output_schema"] = {"type": {"k": [1]}}
+    req = NormRequest.from_dict(src)
+    src["tools"][0]["schema"]["p"].append("y")
+    assert req.tools[0]["schema"]["p"] == ("x",)
+    with pytest.raises(TypeError):
+        req.messages[0]["role"] = "x"
+    with pytest.raises(TypeError):
+        req.tools[0]["schema"]["q"] = 1
+    with pytest.raises(TypeError):
+        req.output_schema["type"] = 2
+    assert NormRequest.from_dict(req.to_dict()) == req
+    json.dumps(req.to_dict())
+    resp = NormResponse.from_dict({**SAMPLES[NormResponse], "tool_calls": [{"id": "1", "name": "t",
+                                                                          "args": {"x": [1]}}]})
+    with pytest.raises(TypeError):
+        resp.tool_calls[0]["args"]["x"] = 2
+    json.dumps(resp.to_dict())
+    card = ModelCard("m", "p", 1, ["a"], 0.0, 0.0)
+    assert card.capabilities == ("a",)
+    direct = Event(1, 0.0, "x/y", {"k": [1]})
+    with pytest.raises(TypeError):
+        direct.data["k"] = 1
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_number_rejects_non_finite(bad):
+    with pytest.raises(ContractError, match="confidence"):
+        ExecutorResult.from_dict({**SAMPLES[ExecutorResult], "confidence": bad})
+    with pytest.raises(ContractError, match="cost_usd"):
+        AmplifiedTaskContract.from_dict({**SAMPLES[AmplifiedTaskContract], "cost_usd": bad})
+    with pytest.raises(ContractError, match="latency"):
+        CapabilityProfile.from_dict({**SAMPLES[CapabilityProfile], "max_latency_s": bad})
+    with pytest.raises(ContractError, match="ts"):
+        Event.from_dict({"seq": 1, "ts": bad, "kind": "a/b"})
+    with pytest.raises(ContractError, match="retry_after_s"):
+        ErrorClass.from_dict({"kind": "network", "retryable": True, "retry_after_s": bad})
+
+
+def test_item_types():
+    resp = SAMPLES[NormResponse]
+    for call in ({"id": 1, "name": "t", "args": {}}, {"id": "1", "name": None, "args": {}},
+                 {"id": "1", "name": "t", "args": []}, {"id": "1", "name": "t"}):
+        with pytest.raises(ContractError, match=r"tool_calls\[0\]"):
+            NormResponse.from_dict({**resp, "tool_calls": [call]})
+    req = SAMPLES[NormRequest]
+    for msg in ({"role": 1, "content": "x"}, {"role": "user", "content": 5}, {"role": "user"},
+                {"content": "x"}):
+        with pytest.raises(ContractError, match=r"messages\[0\]"):
+            NormRequest.from_dict({**req, "messages": [msg]})
+    NormRequest.from_dict({**req, "messages": [{"role": "user", "content": [{"type": "text"}]}]})
+    for tool in ({"name": 3}, {}):
+        with pytest.raises(ContractError, match=r"tools\[0\]\.name"):
+            NormRequest.from_dict({**req, "tools": [tool]})
+
+
+def test_wrong_container_types():
+    with pytest.raises(ContractError, match="refs"):
+        TaskContract.from_dict({**TASK, "refs": "abc"})
+    with pytest.raises(ContractError, match="title"):
+        TaskContract.from_dict({**TASK, "title": ["x"]})
+    with pytest.raises(ContractError, match="usage"):
+        ExecutorResult.from_dict({**SAMPLES[ExecutorResult], "usage": [1]})
+
+
+def test_missing_nested_required_key():
+    d = copy.deepcopy(SAMPLES[EscalationRequest])
+    del d["brief"]["budget"]["usd_left"]
+    with pytest.raises(ContractError, match=r"brief\.budget\.usd_left"):
+        EscalationRequest.from_dict(d)
+
+
+@pytest.mark.parametrize("cls", [c for c in SAMPLES])
+def test_unknown_key_rejected(cls):
+    with pytest.raises(ContractError, match="surprise"):
+        cls.from_dict({**SAMPLES[cls], "surprise": 1})
+
+
+def test_unknown_key_nested_but_event_open():
+    d = copy.deepcopy(SAMPLES[ExecutorResult])
+    d["usage"]["extra"] = 1
+    with pytest.raises(ContractError, match=r"usage\.extra"):
+        ExecutorResult.from_dict(d)
+    assert Event.from_dict({"seq": 1, "ts": 0, "kind": "a/b", "anything": 1}).data["anything"] == 1
+
+
+def test_blocked_on_iff_blocked():
+    base = SAMPLES[ExecutorResult]
+    ExecutorResult.from_dict({**base, "status": "blocked", "blocked_on": "t2"})
+    with pytest.raises(ContractError, match="blocked_on"):
+        ExecutorResult.from_dict({**base, "status": "blocked", "blocked_on": None})
+    with pytest.raises(ContractError, match="blocked_on"):
+        ExecutorResult.from_dict({**base, "status": "done", "blocked_on": "t2"})

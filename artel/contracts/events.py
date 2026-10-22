@@ -31,11 +31,14 @@ class Event:
     seq: int
     ts: float
     kind: str
-    data: dict
+    data: Any
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "data", b.freeze(self.data))
 
     @classmethod
     def from_dict(cls, d: Any, path: str = "") -> "Event":
-        """Accepts the flat journal line: seq, ts, kind plus the payload fields at the top level."""
+        """Extra payload fields are allowed (data is open). Accepts the flat journal line: seq, ts, kind plus the payload fields at the top level."""
         path = b.check_path(path)
         d = b.obj(d, path)
         seq = b.integer(d, "seq", path)
@@ -48,4 +51,4 @@ class Event:
         return cls(seq, ts, kind, data)
 
     def to_dict(self) -> dict:
-        return {"seq": self.seq, "ts": self.ts, "kind": self.kind, **self.data}
+        return {"seq": self.seq, "ts": self.ts, "kind": self.kind, **b.thaw(self.data)}
