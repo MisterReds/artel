@@ -80,3 +80,32 @@ def test_a_diagnosis_becomes_a_report(home):
     doctor.diagnose(cfg, "No module named pytest", use_model=False)
     rows = reports.load()
     assert rows and rows[0]["title"] == "No module named pytest" and "pytest" in rows[0]["diagnosis"]["cause"]
+
+
+def test_redaction_is_linear_on_long_runs():
+    import base64
+    import os
+    import time
+
+    from artel.reports import redact_deep
+
+    n = 1_000_000
+    cases = ["a" * n, "x" * n + "@", base64.b64encode(os.urandom(n * 3 // 4)).decode(), os.urandom(n // 2).hex(),
+             "a." * (n // 2), "key=\"" * (n // 5), "bearer " * (n // 7)]
+    for text in cases:
+        t0 = time.time()
+        redact_deep({"a": text})
+        assert time.time() - t0 < 1.0, text[:12]
+    assert redact_deep({"a": "mail me: bob@example.com"})["a"] == "mail me: <e-mail>"
+
+
+def test_journal_redacts_outside_its_lock(tmp_path, monkeypatch):
+    import artel.reports as reports
+    from artel.kernel import EventLog
+
+    log = EventLog(tmp_path / "events.jsonl")
+    held = []
+    real = reports.redact_deep
+    monkeypatch.setattr(reports, "redact_deep", lambda v: (held.append(log._lock.locked()), real(v))[1])
+    log.append("x", note="hi")
+    assert held and not any(held)

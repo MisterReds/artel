@@ -157,3 +157,20 @@ def test_external_servers_do_not_inherit_artels_secrets(monkeypatch):
     monkeypatch.setenv("PATH", "/usr/bin")
     env = mcp_client.server_environ()
     assert "ANTHROPIC_API_KEY" not in env and env["PATH"] == "/usr/bin"
+
+
+def test_stdio_server_gets_allowlisted_env_only(env, monkeypatch):
+    cfg, project = env
+    monkeypatch.setenv("DATABASE_URL", "postgres://u:p@h/db")
+    monkeypatch.setenv("UNDECLARED_THING", "x")
+    k = new_kernel(cfg)
+    ctx = ctx_for(k, project, "worker")
+    assert execute_tool(k, ctx, "mcp__fake__env", {"name": "DATABASE_URL"})[0] != "postgres://u:p@h/db"
+    assert execute_tool(k, ctx, "mcp__fake__env", {"name": "UNDECLARED_THING"})[0] != "x"
+    assert execute_tool(k, ctx, "mcp__fake__env", {"name": "TOKEN"}) == ("s3cret", False)  # declared by the entry
+    assert execute_tool(k, ctx, "mcp__fake__env", {"name": "PATH"})[0]  # allowlisted
+    # the person can pass a name through for every agent process
+    cfg2 = deep_merge(cfg, {"agent_env": {"pass": ["DATABASE_URL"]}})
+    k2 = new_kernel(cfg2)
+    assert execute_tool(k2, ctx_for(k2, project, "worker"), "mcp__fake__env",
+                        {"name": "DATABASE_URL"}) == ("postgres://u:p@h/db", False)

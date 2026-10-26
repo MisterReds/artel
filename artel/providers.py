@@ -116,7 +116,7 @@ class ClaudeLogin:
             if not binary:
                 self.state = {"phase": "error", "error": "Claude Code CLI не установлен — сначала «Установить»"}
                 return self.state
-            env = {**child_env(), "BROWSER": "true"}  # no browser on a server: the link is shown in the dashboard
+            env = {**child_env(self.config), "BROWSER": "true"}  # no browser on a server: the link is shown in the dashboard
             self.proc = subprocess.Popen([binary, "auth", "login", "--claudeai"], stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, env=env,
                                          bufsize=1, encoding="utf-8", errors="replace")
@@ -175,7 +175,7 @@ def logout_claude(config: dict) -> dict:
     binary = resolve((config.get("claude_code") or {}).get("binary", "claude"))
     if not binary:
         return {"ok": False, "detail": "Claude Code CLI не установлен"}
-    rc, text = _run([binary, "auth", "logout"], env=child_env())
+    rc, text = _run([binary, "auth", "logout"], env=child_env(config))
     _invalidate()
     return {"ok": rc == 0, "detail": text}
 
@@ -206,7 +206,7 @@ def codex_status(config: dict) -> dict:
 def _codex_sandbox(cfg: dict) -> str:
     from .runtimes.codex import sandbox_mode, sandbox_note
 
-    mode = sandbox_mode(cfg)
+    mode = sandbox_mode(cfg, config=cfg)
     return {"sandbox": "песочница Codex работает",
             "sandbox+network": "песочница Codex работает (с доступом к сети)",
             "none": "песочница Codex на этой машине не запускается — команды идут без неё, действуют права и политика "
@@ -227,9 +227,9 @@ def claude_code_status(config: dict) -> dict:
     binary = resolve(cc.get("binary", "claude"))
     if not binary:
         return {"installed": False, "logged_in": False, "detail": "не установлен"}
-    _, ver = _run([binary, "--version"], env=child_env())
+    _, ver = _run([binary, "--version"], env=child_env(config))
 
-    rc, text = _run([binary, "auth", "status"], env=child_env())
+    rc, text = _run([binary, "auth", "status"], env=child_env(config))
     try:
         st = json.loads(text[text.index("{"):]) if rc == 0 else {}
     except ValueError:
@@ -287,7 +287,7 @@ def claude_models(config: dict, ttl: float = 600.0) -> list[dict]:
         return hit[0]
     names: list[str] = []
     if binary:
-        _, text = _run([binary, "--help"], env=child_env())
+        _, text = _run([binary, "--help"], env=child_env(config))
         m = re.search(r"--model <model>(.*?)(?:\n\s*-{1,2}[a-z]|\Z)", text, re.S)
         names = re.findall(r"'([a-z][a-z0-9.-]*)'", m.group(1)) if m else []
     known = {c["id"]: c["name"] for c in CLAUDE_MODELS}

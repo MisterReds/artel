@@ -112,11 +112,70 @@ def shell_run(command: str, **kw) -> subprocess.CompletedProcess:
     return subprocess.run(shell_argv(command), **kw)
 
 
-def terminate_tree(proc: subprocess.Popen, force: bool = False) -> bool:
-    """Stop a child CLI and whatever it started; True (so callers can note that the exit was theirs).
+def group_popen_kwargs() -> dict:
+    """Popen kwargs that put an agent CLI in its own process group (POSIX session / Windows process group), so
+    terminate_tree can stop it together with everything it spawned."""
+    if WIN:
+        return {"creationflags": getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0)}
+    return {"start_new_session": True}
 
-    POSIX: SIGTERM (SIGKILL with ``force``). Windows: a CLI is often a .cmd shim (npm installs, test fakes) whose
-    real process would outlive cmd.exe and keep the output pipes open, so ``taskkill /T`` ends the whole tree."""
+
+class StderrTail:
+    """Drains a child's stderr on a daemon thread so a chatty CLI can never block on a full pipe, keeping only the
+    last ``limit`` characters."""
+
+    def __init__(self, proc: subprocess.Popen, limit: int = 65536):
+        self.limit = limit
+        self._buf = ""
+        self._lock = threading.Lock()
+        self._stream = proc.stderr
+        self._thread = threading.Thread(target=self._run, args=(proc.stderr,), daemon=True)
+        if proc.stderr is not None:
+            self._thread.start()
+
+    def _run(self, stream) -> None:
+        try:
+            for chunk in iter(lambda: stream.readline(), ""):
+                with self._lock:
+                    self._buf = (self._buf + chunk)[-self.limit:]
+        except (OSError, ValueError):
+            pass
+
+    def _close_stream(self) -> None:
+        try:
+            self._stream.close()
+        except (OSError, ValueError):
+            pass
+
+    def text(self, wait: float = 2.0) -> str:
+        if self._thread.is_alive():
+            self._thread.join(wait)
+            if self._thread.is_alive() and self._stream is not None:  # a grandchild still holds the pipe: let go
+                # close() waits for the reader's buffer lock on POSIX, so it runs on its own daemon thread: this
+                # call never blocks, and the reader ends as soon as the pipe is closed or reaches EOF
+                threading.Thread(target=self._close_stream, daemon=True).start()
+                self._thread.join(0.5)
+        with self._lock:
+            return self._buf
+
+
+def _group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except OSError:
+        return True
+
+
+def terminate_tree(proc: subprocess.Popen, force: bool = False, grace_s: float = 2.0) -> bool:
+    """Stop a child CLI and whatever it started; True when it is gone (so callers can note that the exit was theirs).
+
+    POSIX: when the child leads its own process group (see group_popen_kwargs) the whole group gets SIGTERM, then
+    SIGKILL after ``grace_s`` (at once with ``force``); otherwise only the child is signalled. Windows: a CLI is
+    often a .cmd shim (npm installs, test fakes) whose real process would outlive cmd.exe and keep the output pipes
+    open, so ``taskkill /T`` ends the whole tree."""
     if WIN:
         if proc.poll() is not None:
             return True
@@ -130,11 +189,42 @@ def terminate_tree(proc: subprocess.Popen, force: bool = False) -> bool:
             except OSError:
                 pass
         return True
+    import signal
+    import time
     try:
-        proc.kill() if force else proc.terminate()
+        pgid = os.getpgid(proc.pid)
     except OSError:
-        pass
-    return True
+        return True  # already gone
+    if pgid == os.getpgrp():  # not a group of its own: never signal ourselves
+        try:
+            proc.kill() if force else proc.terminate()
+        except OSError:
+            pass
+        return True
+    try:
+        os.killpg(pgid, signal.SIGKILL if force else signal.SIGTERM)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    deadline = time.monotonic() + (1.0 if force else grace_s)
+    while time.monotonic() < deadline:
+        proc.poll()  # reaps the leader so only real survivors keep the group alive
+        if not _group_alive(pgid):
+            return True
+        time.sleep(0.02)
+    try:
+        os.killpg(pgid, signal.SIGKILL)
+    except ProcessLookupError:
+        return True
+    except OSError:
+        return False
+    for _ in range(50):
+        proc.poll()
+        if not _group_alive(pgid):
+            return True
+        time.sleep(0.02)
+    return False
 
 
 def installed_by_artel(name: str) -> bool:

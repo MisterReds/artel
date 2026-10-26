@@ -102,3 +102,52 @@ def test_codex_runtime_explains_how_to_install_when_missing(home, monkeypatch):
     ctx = ToolContext(k, project, role="worker", workspace=project.shared, task={"id": "t"})
     out = run_agent(k, project, role="worker", system="s", first_user="u", ctx=ctx, max_turns=5, purpose="p")
     assert out.status == "error" and "artel providers install codex" in out.error
+
+
+import subprocess as _sp
+import sys as _sys
+import time as _time
+
+import pytest as _pytest
+
+
+@_pytest.mark.skipif(_sys.platform == "win32", reason="process groups are POSIX")
+def test_terminate_tree_kills_grandchildren_holding_stdout_and_stderr_is_drained():
+    from artel.tools import StderrTail, group_popen_kwargs, terminate_tree
+
+    code = ("import subprocess,sys,time\n"
+            "g=subprocess.Popen([sys.executable,'-c','import time;time.sleep(60)'])\n"
+            "print(g.pid,flush=True)\n"
+            "sys.stderr.write('e'*1000000)\n"
+            "time.sleep(60)\n")
+    proc = _sp.Popen([_sys.executable, "-c", code], stdout=_sp.PIPE, stderr=_sp.PIPE, text=True, **group_popen_kwargs())
+    tail = StderrTail(proc, limit=1000)
+    gpid = int(proc.stdout.readline())
+    t0 = _time.time()
+    assert terminate_tree(proc) is True
+    assert proc.stdout.read() == ""  # the read loop ends: no one holds the pipe any more
+    assert _time.time() - t0 < 8
+    import os
+    with _pytest.raises(ProcessLookupError):
+        for _ in range(50):
+            os.kill(gpid, 0)
+            _time.sleep(0.05)
+    assert len(tail.text()) <= 1000
+
+
+def test_stderr_tail_closes_the_pipe_when_a_grandchild_holds_it():
+    import subprocess
+    import sys
+
+    from artel.tools import StderrTail
+
+    code = "import subprocess,sys; subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); print('x', file=sys.stderr)"
+    proc = subprocess.Popen([sys.executable, "-c", code], stderr=subprocess.PIPE, text=True)
+    tail = StderrTail(proc)
+    proc.wait()
+    import time
+
+    t0 = time.time()
+    assert "x" in tail.text(wait=0.3)
+    assert time.time() - t0 < 5  # does not wait for the grandchild's 30 seconds
+    assert tail._stream is proc.stderr
