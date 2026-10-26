@@ -36,7 +36,8 @@ def box(tmp_path):
     (ah / "projects" / "x" / "project.json").write_bytes(b'{"goal": "keep me"}\n')
     env = {**os.environ, "HOME": str(home), "ARTEL_HOME": str(ah), "ARTEL_REPO": str(src),
            "ARTEL_DIR": str(ah / "app"), "ARTEL_VENV": str(ah / "venv"), "ARTEL_BIN": str(home / "bin"),
-           "ARTEL_INSTALL_NODEPS": "1", "NO_COLOR": "1"}
+           "ARTEL_INSTALL_NODEPS": "1", "NO_COLOR": "1",
+           "ARTEL_PYTHON": sys.executable}  # the interpreter that has the dependencies (httpx, yaml)
     env.pop("ARTEL_REINSTALL", None)
     return tmp_path, ah, env
 

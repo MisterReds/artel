@@ -24,7 +24,7 @@ import sys
 import threading
 import time
 import uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Optional
 
@@ -125,7 +125,9 @@ class ToolBridge:
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 self._reply(bridge.call(req["name"], req.get("args") or {}))
 
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        from ..httpd import LocalHTTPServer
+
+        self.httpd = LocalHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 

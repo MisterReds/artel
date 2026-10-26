@@ -1,3 +1,4 @@
+import json
 import sys
 from pathlib import Path
 
@@ -95,7 +96,7 @@ def test_cli_runtimes_get_the_servers(env, tmp_path):
     a = build_args({"binary": "codex", "sandbox": "workspace-write"}, workspace=ws, shared=project.shared, role="worker",
                    bridge_url="u", bridge_token="t", effort=None, thread_id=None, last_message=tmp_path / "m",
                    mcp_servers=mcp_client.codex_secrets(ext)[0])
-    assert "mcp_servers.fake.command=" + '"' + sys.executable + '"' in a
+    assert "mcp_servers.fake.command=" + json.dumps(sys.executable) in a
     # the secret reaches Codex's environment by name, never its command line (visible in `ps`)
     assert any(x.startswith("mcp_servers.fake.env_vars=") for x in a) and not any("s3cret" in x for x in a)
     assert "s3cret" in mcp_client.codex_secrets(ext)[1].values()
@@ -109,7 +110,8 @@ def test_cli_runtimes_get_the_servers(env, tmp_path):
 def test_http_transport_json_and_sse():
     import json
     import threading
-    from http.server import BaseHTTPRequestHandler, HTTPServer
+    from http.server import BaseHTTPRequestHandler
+    from artel.httpd import LocalHTTPServer
 
     class H(BaseHTTPRequestHandler):
         def log_message(self, *a):
@@ -131,7 +133,7 @@ def test_http_transport_json_and_sse():
             self.end_headers()
             self.wfile.write((f"event: message\ndata: {body}\n\n" if sse else body).encode())
 
-    srv = HTTPServer(("127.0.0.1", 0), H)
+    srv = LocalHTTPServer(("127.0.0.1", 0), H)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
     try:
         s = mcp_client.McpServer("h", {"type": "http", "url": f"http://127.0.0.1:{srv.server_port}/mcp", "allow": []})

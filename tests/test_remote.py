@@ -1,11 +1,12 @@
 """Remote dashboard: login, sessions, rate limit, hashed token; PWA shell files. No network beyond 127.0.0.1."""
 
 import json
+import os
 import re
 import threading
 import urllib.error
 import urllib.request
-from http.server import ThreadingHTTPServer
+from artel.httpd import LocalHTTPServer
 from pathlib import Path
 
 import pytest
@@ -45,7 +46,7 @@ def server(tmp_path, monkeypatch):
         clock = Clock()
         auth = Auth(home=tmp_path, session_days=30, clock=clock) if remote else None
         token = auth.rotate() if auth else None
-        httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(runner, auth))
+        httpd = LocalHTTPServer(("127.0.0.1", 0), make_handler(runner, auth))
         httpd.daemon_threads = True
         threading.Thread(target=httpd.serve_forever, daemon=True).start()
         started.append(httpd)
@@ -173,7 +174,8 @@ def test_token_and_sessions_stored_hashed_only(tmp_path):
     assert token not in raw and sid not in raw
     rec = json.loads(raw)["token"]
     assert rec["algo"] == "scrypt" and len(bytes.fromhex(rec["salt"])) == 16 and len(rec["hash"]) == 64
-    assert (tmp_path / "web_auth.json").stat().st_mode & 0o077 == 0
+    if os.name != "nt":  # Windows has no group/other mode bits to check
+        assert (tmp_path / "web_auth.json").stat().st_mode & 0o077 == 0
     # salted: the same token hashes differently in another install
     b = Auth(home=tmp_path / "other")
     b.rotate()

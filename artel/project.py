@@ -33,7 +33,7 @@ import yaml
 from .board import Board
 from .kernel import EventLog
 
-_META_TRIES = 10  # project.json read/replace retries (Windows sharing violations)
+_META_TRIES = 40  # project.json read/replace retries (Windows sharing violations)
 _META_WAIT = 0.05
 
 DEFAULT_CONFIG: dict[str, Any] = {
