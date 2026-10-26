@@ -36,7 +36,8 @@ if args[:1] == ["sandbox"]:  # FAKE_CODEX_SANDBOX: nonet = works only with netwo
     if mode == "broken" or (mode == "nonet" and not net):
         print(BWRAP, file=sys.stderr); sys.exit(1)
     cmd = args[args.index("--") + 1:]
-    os.execvp(cmd[0], cmd)
+    import subprocess  # not execvp: on Windows it returns at once with the child's output lost
+    sys.exit(subprocess.run(cmd).returncode)
 assert args[0] == "exec", args
 cfg = {}
 for i, a in enumerate(args):

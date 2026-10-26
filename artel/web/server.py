@@ -11,7 +11,9 @@ import ipaddress
 import json
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+
+from ..httpd import LocalHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
@@ -718,7 +720,7 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
         code = (runner.telegram.store.data.get("pair") or {}).get("code")
         if code:
             print(f"Telegram: отправьте боту /pair {code} (код действует 15 минут)", flush=True)
-    class Server(ThreadingHTTPServer):
+    class Server(LocalHTTPServer):
         def handle_error(self, request, client_address):  # an unhandled dashboard error becomes a report too
             import traceback
 

@@ -123,13 +123,16 @@ def sandbox_mode(cc: dict, refresh: bool = False, config: Optional[dict] = None)
         _sandbox_mode[key] = "sandbox"
         return "sandbox"
 
+    probe_cmd = (["cmd", "/c", "echo ok> probe && type probe"] if sys.platform == "win32"
+                 else ["sh", "-c", "echo ok > probe && cat probe"])
+
     def works(network: bool) -> tuple[bool, str]:
         cfg = ["-c", 'sandbox_mode="workspace-write"']
         if network:
             cfg += ["-c", "sandbox_workspace_write.network_access=true"]
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                p = subprocess.run([binary, "sandbox", *cfg, "--", "sh", "-c", "echo ok > probe && cat probe"],
+                p = subprocess.run([binary, "sandbox", *cfg, "--", *probe_cmd],
                                    cwd=tmp, capture_output=True, text=True, timeout=60, env=codex_env(cc, config),
                                    encoding="utf-8", errors="replace")
         except (OSError, subprocess.SubprocessError) as e:

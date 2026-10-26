@@ -109,7 +109,8 @@ pkg_install() {  # pkg_install <generic name>...
 }
 
 python_ok() { "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; }
-find_python() { for p in python3.13 python3.12 python3.11 python3.10 python3; do have "$p" && python_ok "$p" && { echo "$p"; return; }; done; }
+find_python() { [ -n "${ARTEL_PYTHON:-}" ] && python_ok "$ARTEL_PYTHON" && { echo "$ARTEL_PYTHON"; return; }
+  for p in python3.13 python3.12 python3.11 python3.10 python3; do have "$p" && python_ok "$p" && { echo "$p"; return; }; done; }
 
 
 service_kind() {  # prints systemd | launchd | nothing: which background service of ours is installed
@@ -252,7 +253,19 @@ if [ ! -x "$VENV/bin/python" ]; then
   if [ "${ARTEL_INSTALL_NODEPS:-}" = 1 ]; then "$PY" -m venv --system-site-packages "$VENV"; else "$PY" -m venv "$VENV"; fi
 fi
 if [ "${ARTEL_INSTALL_NODEPS:-}" = 1 ]; then  # tests only: no network, dependencies come from the system site-packages
-  "$VENV/bin/python" -m pip install --quiet --no-deps --no-build-isolation -e "$DIR"
+  if "$VENV/bin/python" -c 'import setuptools.build_meta' 2>/dev/null; then
+    "$VENV/bin/python" -m pip install --quiet --no-deps --no-build-isolation -e "$DIR"
+  else  # Python 3.12+ venvs have no setuptools and there is no network: link the checkout and write the launcher by hand
+    "$VENV/bin/python" - "$DIR" "$VENV" <<'PYEOF'
+import os, site, sys
+d, v = sys.argv[1:3]
+sp = [p for p in site.getsitepackages() if p.startswith(v)][0]
+open(os.path.join(sp, "artel-checkout.pth"), "w").write(d + "\n")
+launcher = os.path.join(v, "bin", "artel")
+open(launcher, "w").write("#!%s\nimport sys\nfrom artel.cli import main\nsys.exit(main())\n" % sys.executable)
+os.chmod(launcher, 0o755)
+PYEOF
+  fi
 else
   "$VENV/bin/python" -m pip install --quiet --upgrade pip
   "$VENV/bin/python" -m pip install --quiet -e "$DIR[dev]"  # [dev] = pytest: the updater checks a new version before installing it

@@ -168,6 +168,7 @@ def test_a_worker_cannot_point_its_worktree_at_a_repository_of_its_own(cfg, tmp_
                     "--allow-empty", "-m", "x"], check=True)
     marker = tmp_path / "pwned"
     subprocess.run(["git", "-C", str(evil), "config", "core.fsmonitor", f"touch {marker}; false"], check=True)
+    (wt / ".git").unlink()  # Windows: git marks it hidden, and a hidden file cannot be opened for writing
     (wt / ".git").write_text(f"gitdir: {evil / '.git'}\n")
     (wt / "a.txt").write_text("work")
     iso.commit("A")

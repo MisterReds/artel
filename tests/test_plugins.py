@@ -201,12 +201,12 @@ def test_web_plugins_api(cfg):
     import threading
     import urllib.error
     import urllib.request
-    from http.server import ThreadingHTTPServer
+    from artel.httpd import LocalHTTPServer
 
     from artel.web.server import Runner, make_handler
 
     runner = Runner(cfg)
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(runner))
+    httpd = LocalHTTPServer(("127.0.0.1", 0), make_handler(runner))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     base = f"http://127.0.0.1:{httpd.server_address[1]}"
 

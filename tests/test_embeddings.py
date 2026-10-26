@@ -6,7 +6,9 @@ import threading
 import time
 import zlib
 from pathlib import Path
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+
+from artel.httpd import LocalHTTPServer
 
 import pytest
 
@@ -46,7 +48,7 @@ class Fake:
                 self.end_headers()
                 self.wfile.write(out.encode())
 
-        self.srv = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.srv = LocalHTTPServer(("127.0.0.1", 0), H)
         threading.Thread(target=self.srv.serve_forever, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.srv.server_address[1]}"
 

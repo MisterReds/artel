@@ -342,5 +342,6 @@ def test_agent_env_passes_package_manager_settings_but_not_their_tokens(monkeypa
                  "npm_config__authToken": "x", "NPM_TOKEN": "x", "UV_INDEX_PASSWORD": "x"}.items():
         monkeypatch.setenv(k, v)
     env = agent_env("native")
-    assert {"npm_config_registry", "NPM_CONFIG_CAFILE", "UV_INDEX_URL"} <= set(env)
-    assert not {"npm_config__authToken", "NPM_TOKEN", "UV_INDEX_PASSWORD"} & set(env)
+    names = {k.lower() for k in env}  # Windows upper-cases environment names
+    assert {"npm_config_registry", "npm_config_cafile", "uv_index_url"} <= names
+    assert not {"npm_config__authtoken", "npm_token", "uv_index_password"} & names

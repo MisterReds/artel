@@ -1,7 +1,9 @@
 import json
 import threading
 import time
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
+
+from artel.httpd import LocalHTTPServer
 
 import pytest
 
@@ -35,7 +37,7 @@ class FakeTelegram:
                 self.end_headers()
                 self.wfile.write(data)
 
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), H)
+        self.httpd = LocalHTTPServer(("127.0.0.1", 0), H)
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
 

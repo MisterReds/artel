@@ -18,4 +18,8 @@ class H(BaseHTTPRequestHandler):
         vec = lambda t: [((zlib.crc32(f"{w}{i}".encode()) % 7) - 3) for i, w in enumerate((t.split() * 8)[:16])] + [0.0] * 752
         self._send({"data": [{"index": i, "embedding": vec(t)} for i, t in enumerate(inp)]})
 
-HTTPServer(("127.0.0.1", port), H).serve_forever()
+class S(HTTPServer):
+    def server_bind(self):  # no getfqdn(): a reverse DNS lookup that takes ~35 s on macOS CI runners
+        import socketserver; socketserver.TCPServer.server_bind(self); self.server_name, self.server_port = self.server_address[:2]
+
+S(("127.0.0.1", port), H).serve_forever()

@@ -144,7 +144,8 @@ class ToolContext:
         allowed = self.grants()["write" if write else "read"]
         if not any(inside(Path(g)) for g in allowed):
             kind = "write" if write else "read"
-            raise ToolError(f"{kind} to {path!r} denied: not in {kind} grants {allowed}; "
+            shown = "[" + ", ".join(f"'{g}'" for g in allowed) + "]"  # not repr(): it doubles Windows backslashes
+            raise ToolError(f"{kind} to '{path}' denied: not in {kind} grants {shown}; "
                             "use a workspace-relative path or shared/...")
         if write:
             protected = {"events.jsonl", "board.db", "project.json"}
