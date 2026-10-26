@@ -46,6 +46,8 @@ SECRET_PATTERNS = [
         ((?:key|token|secret|passw(?:or)?d|passwd|credentials?)["']?\s{0,8}[:=]\s{0,8})
         (?:"[^"\n]*"?|'[^'\n]*'?|[^\s,;}\]"']+)"""), r"\1<скрыто>"),
     (re.compile(r"""(?i)\b(passw(?:or)?d|passwd|secret)(\s{1,16})(?:"[^"\n]*"|'[^'\n]*')"""), r"\1\2<скрыто>"),
+    (re.compile(r"(?<=://)[^\s/:@]{1,64}:[^\s/@]{1,128}@"), "<creds>@"),
+    (re.compile(r"\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}"), "<jwt>"),
     (re.compile(r"\b[\w.+-]{1,64}@[\w-]{1,63}\.[\w.-]{1,253}"), "<e-mail>"),
 ]
 

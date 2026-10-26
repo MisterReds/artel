@@ -325,3 +325,22 @@ def test_agent_env_allowlist_additions(monkeypatch):
                  "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_FOUNDRY_RESOURCE"):
         assert name in cc and name not in native
     assert "SSH_AUTH_SOCK" not in cc and "DISPLAY" not in cc
+
+
+def test_redact_url_credentials_and_jwt():
+    from artel.reports import redact
+
+    assert redact("https://user:p4ss@host.com/x") == "https://<creds>@host.com/x"
+    assert "secret" not in redact("postgres://u:secret@db:5432/x")
+    assert redact("t eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0.SflKxwRJSMeKKF2Q") == "t <jwt>"
+
+
+def test_agent_env_passes_package_manager_settings_but_not_their_tokens(monkeypatch):
+    from artel.agent_env import agent_env
+
+    for k, v in {"npm_config_registry": "r", "NPM_CONFIG_CAFILE": "c", "UV_INDEX_URL": "u",
+                 "npm_config__authToken": "x", "NPM_TOKEN": "x", "UV_INDEX_PASSWORD": "x"}.items():
+        monkeypatch.setenv(k, v)
+    env = agent_env("native")
+    assert {"npm_config_registry", "NPM_CONFIG_CAFILE", "UV_INDEX_URL"} <= set(env)
+    assert not {"npm_config__authToken", "NPM_TOKEN", "UV_INDEX_PASSWORD"} & set(env)

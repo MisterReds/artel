@@ -151,6 +151,8 @@ app_is_disposable() {  # 0 only when nothing in $DIR can be lost; any git failur
   local out
   [ -d "$DIR/.git" ] || return 1
   out="$(git -C "$DIR" status --porcelain --ignored 2>/dev/null)" || return 1
+  # build and tool caches that an install itself creates are not the owner's work; anything else is
+  out="$(printf '%s\n' "$out" | grep -Ev '^!! (.*/)?(__pycache__|[^/]+\.egg-info|\.pytest_cache|\.ruff_cache|\.mypy_cache)/$' | grep -v '^$' || true)"
   [ -z "$out" ] || return 1
   out="$(git -C "$DIR" stash list 2>/dev/null)" || return 1
   [ -z "$out" ] || return 1

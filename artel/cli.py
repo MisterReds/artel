@@ -633,10 +633,10 @@ def cmd_providers(args) -> int:
         if not binary:
             print("Claude Code CLI не установлен: artel providers install claude")
             return 1
-        return subprocess.call([binary, "auth", "login", "--claudeai"], env=child_env())  # link, then paste the code
+        return subprocess.call([binary, "auth", "login", "--claudeai"], env=child_env(cfg))  # link, then paste the code
     if args.action == "login" and args.name == "codex":
         c = codex_settings(cfg)  # the CLI prints the link and the one-time code, then waits for the browser
-        return subprocess.call([c["binary"], "login", "--device-auth"], env=codex_env(c))
+        return subprocess.call([c["binary"], "login", "--device-auth"], env=codex_env(c, cfg))
     if args.action == "logout" and args.name == "codex":
         print(logout_codex(cfg)["detail"])
         return 0

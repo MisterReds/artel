@@ -18,7 +18,9 @@ COMMON = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM"
           "PYTHONIOENCODING", "ARTEL_SHARED", "ARTEL_WORKSPACE",
           "ARTEL_HOME",  # the policy hook and Artel's MCP proxy find policy.yaml through it (a path, not a secret)
           "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy"}
-COMMON_RE = re.compile(r"^(LC_.*|XDG_.*)$")
+# package-manager settings MCP presets (npx, uvx) need behind a private registry or CA; never their auth tokens
+COMMON_RE = re.compile(r"^(LC_.*|XDG_.*|(?i:npm_config_(registry|proxy|https_proxy|cafile|strict_ssl|cache|prefix|userconfig))"
+                       r"|UV_(INDEX_URL|EXTRA_INDEX_URL|CACHE_DIR|PYTHON)|PLAYWRIGHT_BROWSERS_PATH)$")
 RUNTIME = {
     "claude_code": {"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
                     "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",

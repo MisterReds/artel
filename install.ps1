@@ -95,7 +95,10 @@ function Is-Default-Path($p, $name) {
 }
 function App-Is-Disposable {  # $true only when nothing in $Dir can be lost; any git failure = not sure = $false
   if (-not (Test-Path -LiteralPath (Join-Path $Dir ".git") -PathType Container)) { return $false }
-  $r = Git-Run -C $Dir status --porcelain --ignored; if (-not $r.Ok -or $r.Out) { return $false }
+  $r = Git-Run -C $Dir status --porcelain --ignored; if (-not $r.Ok) { return $false }
+  # build and tool caches that an install itself creates are not the owner's work; anything else is
+  $left = @("$($r.Out)" -split "`r?`n" | Where-Object { $_ -and $_ -notmatch '^!! (.*/)?(__pycache__|[^/]+\.egg-info|\.pytest_cache|\.ruff_cache|\.mypy_cache)/$' })
+  if ($left.Count) { return $false }
   $r = Git-Run -C $Dir stash list; if (-not $r.Ok -or $r.Out) { return $false }
   $r = Git-Run -C $Dir log HEAD --branches --tags --not --remotes --oneline; if (-not $r.Ok -or $r.Out) { return $false }
   $r = Git-Run -C $Dir worktree list --porcelain; if (-not $r.Ok) { return $false }

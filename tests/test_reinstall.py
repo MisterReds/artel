@@ -63,8 +63,8 @@ def test_reinstall_keeps_user_data_and_recreates_app(box):
     assert snapshot(ah) == before
     assert not marker_venv.exists() and (ah / "venv" / "bin" / "python").exists()
     assert (ah / "app" / ".git").is_dir() and (ah / "app" / "install.sh").exists()
-    # an editable install leaves ignored files (egg-info, __pycache__) in the clone: "not sure" => moved aside
-    assert len(list(ah.glob("app.bak-*"))) <= 1
+    # the caches an editable install leaves (egg-info, __pycache__) do not count: the clean clone is replaced, not kept
+    assert not list(ah.glob("app.bak-*"))
     r = subprocess.run([str(Path(env["ARTEL_BIN"]) / "artel"), "--help"], env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
 
