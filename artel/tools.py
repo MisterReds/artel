@@ -128,6 +128,7 @@ class StderrTail:
         self.limit = limit
         self._buf = ""
         self._lock = threading.Lock()
+        self._stream = proc.stderr
         self._thread = threading.Thread(target=self._run, args=(proc.stderr,), daemon=True)
         if proc.stderr is not None:
             self._thread.start()
@@ -140,9 +141,20 @@ class StderrTail:
         except (OSError, ValueError):
             pass
 
+    def _close_stream(self) -> None:
+        try:
+            self._stream.close()
+        except (OSError, ValueError):
+            pass
+
     def text(self, wait: float = 2.0) -> str:
         if self._thread.is_alive():
             self._thread.join(wait)
+            if self._thread.is_alive() and self._stream is not None:  # a grandchild still holds the pipe: let go
+                # close() waits for the reader's buffer lock on POSIX, so it runs on its own daemon thread: this
+                # call never blocks, and the reader ends as soon as the pipe is closed or reaches EOF
+                threading.Thread(target=self._close_stream, daemon=True).start()
+                self._thread.join(0.5)
         with self._lock:
             return self._buf
 

@@ -348,14 +348,18 @@ class Manager:
         sb = sandbox.settings(self.cfg)
         for cmd in task["checks"]:
             # a check is a shell command like any other: the command policy applies (nobody to ask: prompt = fail)
-            try:
-                verdict = policy.evaluate(cmd, self.project.root)
-                reason = None if verdict.decision == "allow" else (
-                    f"{verdict.rule.id}: {verdict.justification or verdict.decision} ({verdict.decision})")
-            except policy.PolicyError as exc:
-                reason = f"policy cannot be read: {exc}"
+            reason = None
+            if str((self.cfg.get("gates") or {}).get("policy", "enforce")).lower() != "off":
+                try:
+                    verdict = policy.evaluate(cmd, self.project.root)
+                    if verdict.decision != "allow":
+                        reason = (f"blocked by policy ({verdict.decision}): "
+                                  f"{verdict.rule.id}: {verdict.justification or verdict.decision}")
+                except policy.PolicyError as exc:
+                    reason = f"blocked by policy (error): policy cannot be read: {exc}"
             if reason:
-                res = {"command": cmd, "exit": -1, "output": f"blocked by policy: {reason}"}
+                res = {"command": cmd, "exit": -1,
+                       "output": f"{reason}; task checks cannot ask for approval — change the check or the policy"}
                 results.append(res)
                 self.project.log.append("gate/result", task_id=task["id"], **res)
                 continue

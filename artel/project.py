@@ -38,6 +38,7 @@ _META_WAIT = 0.05
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "agent_env": {"pass": []},          # extra env var names agents' shells and CLIs may inherit (artel/agent_env.py)
+    "gates": {"policy": "enforce"},      # enforce | off: task checks (gates) obey policy.yaml; they cannot ask, so "prompt" fails
     "provider": "anthropic",            # anthropic | openai_compat | scripted
     "openai_compat": {"base_url": "https://api.deepseek.com/v1", "api_key_env": "DEEPSEEK_API_KEY"},
     "models": {                          # per role; a worker persona may override

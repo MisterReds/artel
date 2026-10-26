@@ -23,12 +23,18 @@ def fake_codex(tmp_path) -> str:
     return str(shim)
 
 
+FAKE_CODEX_VARS = ["FAKE_CODEX_CMD", "FAKE_CODEX_LAZY", "FAKE_CODEX_LIMIT", "FAKE_CODEX_LOG", "FAKE_CODEX_NO_USAGE",
+                   "FAKE_CODEX_SANDBOX", "FAKE_CODEX_STDERR_KB", "FAKE_CODEX_USAGE_DELAY", "FAKE_CODEX_WRITE"]
+
+
 @pytest.fixture
 def env(tmp_path, monkeypatch):
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.setenv("FAKE_CODEX_LOG", str(tmp_path / "calls.jsonl"))
-    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05, "codex": {"binary": fake_codex(tmp_path)}})
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05, "codex": {"binary": fake_codex(tmp_path)},
+                                      # the fake CLI is steered by FAKE_* variables: name them, as a person would
+                                      "agent_env": {"pass": FAKE_CODEX_VARS}})
     project, _ = run_goal("codex", cfg)
     return cfg, project, tmp_path
 
@@ -154,9 +160,9 @@ def test_sandbox_probe_picks_the_mode_that_runs_commands(env, monkeypatch):
                                 ("broken", True, "none")):
         _reset_sandbox()
         monkeypatch.setenv("FAKE_CODEX_SANDBOX", fake)
-        assert sandbox_mode({**cc, "network": network}) == want, fake
+        assert sandbox_mode({**cc, "network": network}, config=cfg) == want, fake
     _reset_sandbox()
-    assert sandbox_mode({**cc, "sandbox_fallback": False}) == "sandbox"  # no fallback: keep it, fail loudly later
+    assert sandbox_mode({**cc, "sandbox_fallback": False}, config=cfg) == "sandbox"  # no fallback: keep it, fail loudly later
 
 
 def test_bots_never_get_the_owners_apps_or_screen_and_have_network(env, tmp_path):

@@ -49,11 +49,12 @@ class EventLog:
         return self._seq
 
     def append(self, kind: str, **payload: Any) -> dict:
+        from .reports import redact_deep  # the journal is pushed to git by evolution: no secrets in it
+
+        clean = redact_deep(payload)  # before the lock: redaction of a big payload must not stall other writers
         with self._cond:
             self._seq += 1
-            from .reports import redact_deep  # the journal is pushed to git by evolution: no secrets in it
-
-            event = {"seq": self._seq, "ts": time.time(), "kind": kind, **redact_deep(payload)}
+            event = {"seq": self._seq, "ts": time.time(), "kind": kind, **clean}
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
             self._cond.notify_all()

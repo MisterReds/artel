@@ -280,3 +280,48 @@ def test_journal_is_redacted(home, tmp_path):
                nested={"cmd": ["echo ghp_" + "b" * 36]})
     text = (tmp_path / "events.jsonl").read_text()
     assert "sk-ant-api03-abcdefghij" not in text and "ghp_" + "a" * 36 not in text and "ghp_" + "b" * 36 not in text
+
+
+def test_gate_policy_message_and_switch(home, tmp_path):
+    from artel.manager import Manager
+
+    def run(extra):
+        cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", **extra})
+        project = Project.create("g", cfg, name="gates" + str(len(extra)), workdir=str(tmp_path / ("wd" + str(len(extra)))))
+        mgr = Manager.__new__(Manager)
+        mgr.project, mgr.cfg = project, cfg
+        return mgr.run_gates({"id": "t1", "checks": ["rm -rf / --no-preserve-root --dry-run-nonexistent-flag; echo hi"]})[0]
+
+    assert DEFAULT_CONFIG["gates"] == {"policy": "enforce"}
+    res = run({})
+    assert res["exit"] == -1 and res["output"].startswith("blocked by policy (")
+    assert "task checks cannot ask for approval — change the check or the policy" in res["output"]
+
+
+def test_gate_policy_off_skips_the_policy(home, tmp_path, monkeypatch):
+    from artel import policy
+    from artel.manager import Manager
+
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "gates": {"policy": "off"}})
+    project = Project.create("g", cfg, name="gatesoff", workdir=str(tmp_path / "wdoff"))
+    monkeypatch.setattr(policy, "evaluate", lambda *a, **k: pytest.fail("policy must not be consulted"))
+    mgr = Manager.__new__(Manager)
+    mgr.project, mgr.cfg = project, cfg
+    assert mgr.run_gates({"id": "t1", "checks": ["echo ok"]})[0]["exit"] == 0
+
+
+def test_agent_env_allowlist_additions(monkeypatch):
+    from artel.agent_env import agent_env
+
+    for name in ("HOMEDRIVE", "PROGRAMFILES(X86)", "COMPUTERNAME", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO",
+                 "ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                 "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_FOUNDRY_RESOURCE", "SSH_AUTH_SOCK", "DISPLAY"):
+        monkeypatch.setenv(name, "v")
+    monkeypatch.setenv("CLAUDE_CODE_USE_FOUNDRY", "1")
+    native, cc = agent_env("native"), agent_env("claude_code")
+    for name in ("HOMEDRIVE", "PROGRAMFILES(X86)", "COMPUTERNAME", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO"):
+        assert name in native
+    for name in ("ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                 "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_FOUNDRY_RESOURCE"):
+        assert name in cc and name not in native
+    assert "SSH_AUTH_SOCK" not in cc and "DISPLAY" not in cc

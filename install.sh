@@ -9,8 +9,11 @@
 # Public repository:     curl -fsSL https://raw.githubusercontent.com/MisterReds/artel/master/install.sh | bash
 #
 # --reinstall (or ARTEL_REINSTALL=1): fresh copy of the app and a fresh virtual environment. Only the app clone and
-# the venv are removed (a clone with local changes or unpushed commits is moved to app.bak-<time> instead); config,
-# projects, credentials and everything else in ARTEL_HOME stay. A running background service is stopped and restarted.
+# the venv are replaced. The app dir is DELETED only when it is $HOME/.artel/app or $ARTEL_HOME/app and git shows nothing
+# to lose (no changes, ignored files, stash, unpushed commits, extra worktrees; any git error counts as "not sure");
+# in every other case it is MOVED to <dir>.bak-<time>, never deleted. Same for a venv that is not the default one.
+# Empty / "/" / $HOME / ARTEL_HOME itself / a dir holding artel.yaml or projects/ is refused. Config, projects,
+# credentials and everything else in ARTEL_HOME stay. A running background service is stopped and restarted.
 
 # Installs only what Artel itself needs (git, Python 3.10+, GitHub access for the private repository), clones Artel
 # into ~/.artel/app as a git clone (so the built-in updater works), creates a virtual environment, puts `artel` on
@@ -36,8 +39,8 @@ USAGE
 
 REPO="${ARTEL_REPO:-https://github.com/MisterReds/artel.git}"
 GH_REPO="MisterReds/artel"
-DIR="${ARTEL_DIR:-$HOME/.artel/app}"
-VENV="${ARTEL_VENV:-$HOME/.artel/venv}"
+DIR="${ARTEL_DIR-$HOME/.artel/app}"
+VENV="${ARTEL_VENV-$HOME/.artel/venv}"
 BIN="${ARTEL_BIN:-$HOME/.local/bin}"
 CODEX=0 CLAUDE=0 SERVICE=0 START=1 YES=0 REINSTALL=0
 [ "${ARTEL_REINSTALL:-}" = 1 ] && REINSTALL=1
@@ -115,39 +118,84 @@ service_kind() {  # prints systemd | launchd | nothing: which background service
   fi
 }
 
-safe_path() {  # refuse to delete anything that is not clearly a private artel directory
-  case "$1" in ""|/|"$HOME"|"$HOME/") return 1 ;; esac
-  [ "${#1}" -gt 8 ]
+canon() {  # absolute path with symlinks resolved; for a path that does not exist yet, its parent resolved + the name
+  local p="${1%/}" d
+  [ -n "$p" ] || { printf ''; return; }
+  if [ -d "$p" ]; then ( cd "$p" 2>/dev/null && pwd -P ) || printf '%s' "$p"
+  else d="$(dirname "$p")"; if [ -d "$d" ]; then printf '%s/%s' "$( cd "$d" 2>/dev/null && pwd -P )" "$(basename "$p")"; else printf '%s' "$p"; fi
+  fi
+}
+
+ARTEL_HOME_DIR="${ARTEL_HOME:-$HOME/.artel}"
+
+refuse_path() {  # refuse_path <label> <path>: exit non-zero unless the path is clearly a private artel directory
+  local label="$1" p c h ah
+  p="$2"
+  [ -n "$p" ] || die "refusing: $label is empty"
+  c="$(canon "$p")"; h="$(canon "$HOME")"; ah="$(canon "$ARTEL_HOME_DIR")"
+  case "$c" in ""|/) die "refusing: $label is '$p'" ;; esac
+  [ "$c" != "$h" ] || die "refusing: $label is your home directory ($p)"
+  [ "$c" != "$ah" ] || die "refusing: $label is the Artel data directory itself ($p)"
+  if [ -e "$c/artel.yaml" ] || [ -d "$c/projects" ]; then die "refusing: $label ($p) contains Artel data (artel.yaml or projects/)"; fi
+  case "$ah/" in "$c/"*) die "refusing: $label ($p) contains the Artel data directory" ;; esac
+  case "$h/" in "$c/"*) die "refusing: $label ($p) contains your home directory" ;; esac
+}
+
+is_default_path() {  # is_default_path <path> <name>: $HOME/.artel/<name> or $ARTEL_HOME/<name>
+  local c; c="$(canon "$1")"
+  [ -n "$c" ] || return 1
+  [ "$c" = "$(canon "$HOME/.artel/$2")" ] || [ "$c" = "$(canon "$ARTEL_HOME_DIR/$2")" ]
+}
+
+app_is_disposable() {  # 0 only when nothing in $DIR can be lost; any git failure means "not sure" = 1
+  local out
+  [ -d "$DIR/.git" ] || return 1
+  out="$(git -C "$DIR" status --porcelain --ignored 2>/dev/null)" || return 1
+  [ -z "$out" ] || return 1
+  out="$(git -C "$DIR" stash list 2>/dev/null)" || return 1
+  [ -z "$out" ] || return 1
+  out="$(git -C "$DIR" log HEAD --branches --tags --not --remotes --oneline 2>/dev/null)" || return 1
+  [ -z "$out" ] || return 1
+  out="$(git -C "$DIR" worktree list --porcelain 2>/dev/null)" || return 1
+  [ "$(printf '%s\n' "$out" | grep -c '^worktree ')" = 1 ] || return 1
+  return 0
+}
+
+move_aside() {  # move_aside <path> <label>: never deletes; prints where it went
+  local src="$1" dst="$1.bak-$TS"
+  [ ! -e "$dst" ] || dst="$dst-$$"
+  mv "$src" "$dst" || die "cannot move $src aside"
+  note "old $2 kept at: $dst"
 }
 
 reinstall_prepare() {
-  local svc dirty="" bak="" ts
-  safe_path "$DIR" || die "refusing to remove '$DIR'"
-  safe_path "$VENV" || die "refusing to remove '$VENV'"
-  if [ -d "$DIR/.git" ]; then
-    [ -z "$(git -C "$DIR" status --porcelain 2>/dev/null)" ] || dirty="uncommitted changes"
-    [ -n "$dirty" ] || [ -z "$(git -C "$DIR" log --branches --not --remotes --oneline 2>/dev/null)" ] || dirty="unpushed commits"
-  elif [ -e "$DIR" ]; then dirty="not a git clone"
+  local svc app_action="" venv_action="" why=""
+  TS="$(date +%Y%m%d-%H%M%S)"
+  refuse_path "app directory" "$DIR"
+  refuse_path "virtual environment" "$VENV"
+  if [ -e "$DIR" ]; then
+    if ! is_default_path "$DIR" app; then app_action=move; why="not the default location"
+    elif app_is_disposable; then app_action=delete
+    else app_action=move; why="uncommitted/ignored files, stash, unpushed commits, extra worktrees, or git could not be checked"
+    fi
   fi
-  ts="$(date +%Y%m%d-%H%M%S)"
+  if [ -e "$VENV" ]; then
+    if [ -f "$VENV/pyvenv.cfg" ] && is_default_path "$VENV" venv; then venv_action=delete; else venv_action=move; fi
+  fi
   step "Reinstall"
-  note "will remove: $VENV (virtual environment)"
-  if [ -n "$dirty" ]; then note "will move aside (${dirty}): $DIR -> $DIR.bak-$ts"
-  elif [ -e "$DIR" ]; then note "will remove: $DIR (app clone)"; fi
+  case "$venv_action" in delete) note "will remove: $VENV (virtual environment)" ;; move) note "will move aside (never deleted): $VENV -> $VENV.bak-$TS" ;; esac
+  case "$app_action" in
+    delete) note "will remove: $DIR (clean app clone, nothing to lose)" ;;
+    move) note "will move aside, NOT delete (${why}): $DIR -> $DIR.bak-$TS" ;;
+  esac
   note "kept untouched: everything else (config, projects, credentials, tools)"
   confirm "Reinstall Artel?" || die "cancelled"
   svc="$(service_kind)"
   if [ "$svc" = systemd ]; then systemctl --user stop artel.service 2>/dev/null || true; SERVICE=1
   elif [ "$svc" = launchd ]; then launchctl unload "$HOME/Library/LaunchAgents/ai.artel.dashboard.plist" 2>/dev/null || true; SERVICE=1
   fi
-  if [ -n "$dirty" ]; then
-    bak="$DIR.bak-$ts"; mv "$DIR" "$bak"; note "old app kept at: $bak"
-  elif [ -e "$DIR" ]; then rm -rf "$DIR"
-  fi
-  if [ -e "$VENV" ]; then
-    [ -f "$VENV/pyvenv.cfg" ] || die "$VENV is not a virtual environment; not removing it"
-    rm -rf "$VENV"
-  fi
+  case "$app_action" in delete) rm -rf "$DIR" ;; move) move_aside "$DIR" app ;; esac
+  case "$venv_action" in delete) rm -rf "$VENV" ;; move) move_aside "$VENV" "virtual environment" ;; esac
 }
 
 main() {

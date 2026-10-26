@@ -63,7 +63,8 @@ def test_reinstall_keeps_user_data_and_recreates_app(box):
     assert snapshot(ah) == before
     assert not marker_venv.exists() and (ah / "venv" / "bin" / "python").exists()
     assert (ah / "app" / ".git").is_dir() and (ah / "app" / "install.sh").exists()
-    assert not list(ah.glob("app.bak-*"))
+    # an editable install leaves ignored files (egg-info, __pycache__) in the clone: "not sure" => moved aside
+    assert len(list(ah.glob("app.bak-*"))) <= 1
     r = subprocess.run([str(Path(env["ARTEL_BIN"]) / "artel"), "--help"], env=env, capture_output=True, text=True)
     assert r.returncode == 0, r.stderr
 
@@ -106,3 +107,113 @@ def test_install_ps1_parse_check():
     code = ("$e=$null; [System.Management.Automation.Language.Parser]::ParseFile('%s',[ref]$null,[ref]$e)|Out-Null; "
             "if($e){$e|Out-String;exit 1}" % (ROOT / "install.ps1"))
     assert subprocess.run([pwsh, "-NoProfile", "-Command", code], capture_output=True).returncode == 0
+
+
+def clone_to(env, dest):
+    subprocess.run(["git", "clone", "-q", env["ARTEL_REPO"], str(dest)], check=True, capture_output=True)
+    return dest
+
+
+def baks(path):
+    return sorted(path.parent.glob(path.name + ".bak-*"))
+
+
+@posix_only
+def test_reinstall_deletes_only_a_clean_default_clone(box):
+    _, ah, env = box
+    clone_to(env, ah / "app")
+    out = run_sh(env, "--reinstall")
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert not baks(ah / "app") and (ah / "app" / ".git").is_dir()
+
+
+@posix_only
+def test_reinstall_moves_clean_non_default_checkout_aside(box):
+    tmp, ah, env = box
+    mine = clone_to(env, tmp / "dev" / "checkout")
+    (mine / "README.md").write_text("x", encoding="utf-8")  # then restore: clean tree
+    g(mine, "checkout", "--", "README.md")
+    out = run_sh({**env, "ARTEL_DIR": str(mine)}, "--reinstall")
+    assert out.returncode == 0, out.stdout + out.stderr
+    kept = baks(mine)
+    assert len(kept) == 1 and (kept[0] / ".git").is_dir() and str(kept[0]) in out.stdout
+
+
+@posix_only
+def test_reinstall_moves_default_clone_with_ignored_env_aside(box):
+    _, ah, env = box
+    app = clone_to(env, ah / "app")
+    (app / ".gitignore").write_text(".env\n", encoding="utf-8")
+    g(app, "add", ".gitignore")
+    g(app, "commit", "-q", "-m", "ignore env")
+    g(app, "update-ref", "refs/remotes/origin/master", "HEAD")  # pretend the commit is pushed
+    (app / ".env").write_text("SECRET=1\n", encoding="utf-8")
+    out = run_sh(env, "--reinstall")
+    assert out.returncode == 0, out.stdout + out.stderr
+    kept = baks(ah / "app")
+    assert len(kept) == 1 and (kept[0] / ".env").read_text(encoding="utf-8") == "SECRET=1\n"
+
+
+@posix_only
+def test_reinstall_fails_closed_on_git_error(box):
+    _, ah, env = box
+    app = clone_to(env, ah / "app")
+    (app / ".git" / "HEAD").write_text("garbage\n", encoding="utf-8")
+    out = run_sh(env, "--reinstall")
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert len(baks(ah / "app")) == 1
+
+
+@posix_only
+def test_reinstall_moves_default_clone_with_stash_or_unpushed_commits_aside(box):
+    _, ah, env = box
+    app = clone_to(env, ah / "app")
+    (app / "new.txt").write_text("local\n", encoding="utf-8")
+    g(app, "add", "new.txt")
+    g(app, "commit", "-q", "-m", "local only")
+    out = run_sh(env, "--reinstall")
+    assert out.returncode == 0, out.stdout + out.stderr
+    kept = baks(ah / "app")
+    assert len(kept) == 1 and (kept[0] / "new.txt").exists()
+
+
+@posix_only
+def test_reinstall_refuses_dangerous_directories(box):
+    tmp, ah, env = box
+    home = Path(env["HOME"])
+    for key, value in (("ARTEL_DIR", str(home)), ("ARTEL_DIR", ""), ("ARTEL_DIR", "/"), ("ARTEL_DIR", str(ah)),
+                       ("ARTEL_VENV", str(home)), ("ARTEL_VENV", str(ah))):
+        out = run_sh({**env, key: value}, "--reinstall")
+        assert out.returncode != 0 and "refusing" in out.stderr, (key, value, out.stdout, out.stderr)
+    assert (ah / "artel.yaml").exists() and (ah / "projects" / "x").is_dir()
+    # a directory that holds ARTEL_HOME data directly is refused too
+    data_dir = tmp / "data"
+    (data_dir / "projects").mkdir(parents=True)
+    out = run_sh({**env, "ARTEL_DIR": str(data_dir)}, "--reinstall")
+    assert out.returncode != 0 and "refusing" in out.stderr
+
+
+@posix_only
+def test_reinstall_moves_foreign_venv_aside(box):
+    tmp, ah, env = box
+    venv = tmp / "other-venv"
+    venv.mkdir()
+    (venv / "pyvenv.cfg").write_text("home = /usr\n", encoding="utf-8")
+    (venv / "mine.txt").write_text("keep", encoding="utf-8")
+    out = run_sh({**env, "ARTEL_VENV": str(venv)}, "--reinstall")
+    assert out.returncode == 0, out.stdout + out.stderr
+    kept = baks(venv)
+    assert len(kept) == 1 and (kept[0] / "mine.txt").exists()
+
+
+def test_windows_reinstall_uses_only_create_new_console(monkeypatch):
+    import subprocess
+
+    from artel import cli
+
+    seen = {}
+    monkeypatch.setattr(subprocess, "CREATE_NEW_CONSOLE", 0x10, raising=False)
+    monkeypatch.setattr(subprocess, "DETACHED_PROCESS", 0x8, raising=False)
+    monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: seen.update(kw) or object())
+    cli._spawn_windows_reinstall(["powershell"], {})
+    assert seen["creationflags"] == 0x10

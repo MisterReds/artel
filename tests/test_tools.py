@@ -133,3 +133,21 @@ def test_terminate_tree_kills_grandchildren_holding_stdout_and_stderr_is_drained
             os.kill(gpid, 0)
             _time.sleep(0.05)
     assert len(tail.text()) <= 1000
+
+
+def test_stderr_tail_closes_the_pipe_when_a_grandchild_holds_it():
+    import subprocess
+    import sys
+
+    from artel.tools import StderrTail
+
+    code = "import subprocess,sys; subprocess.Popen([sys.executable,'-c','import time; time.sleep(30)']); print('x', file=sys.stderr)"
+    proc = subprocess.Popen([sys.executable, "-c", code], stderr=subprocess.PIPE, text=True)
+    tail = StderrTail(proc)
+    proc.wait()
+    import time
+
+    t0 = time.time()
+    assert "x" in tail.text(wait=0.3)
+    assert time.time() - t0 < 5  # does not wait for the grandchild's 30 seconds
+    assert tail._stream is proc.stderr

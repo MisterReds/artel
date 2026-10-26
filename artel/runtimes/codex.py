@@ -109,7 +109,7 @@ def _toml_table(d: dict) -> str:
     return "{" + ", ".join(f"{_toml(k)}={_toml(v)}" for k, v in d.items()) + "}"
 
 
-def sandbox_mode(cc: dict, refresh: bool = False) -> str:
+def sandbox_mode(cc: dict, refresh: bool = False, config: Optional[dict] = None) -> str:
     """How Codex's own sandbox can run on this machine, probed once with `codex sandbox -- true`:
     "sandbox" (as configured), "sandbox+network" (works only with network on — e.g. bubblewrap may not set up a
     loopback in a new network namespace), or "none" (unusable; Artel's grants and command policy still apply)."""
@@ -130,7 +130,7 @@ def sandbox_mode(cc: dict, refresh: bool = False) -> str:
         try:
             with tempfile.TemporaryDirectory() as tmp:
                 p = subprocess.run([binary, "sandbox", *cfg, "--", "sh", "-c", "echo ok > probe && cat probe"],
-                                   cwd=tmp, capture_output=True, text=True, timeout=60, env=codex_env(cc),
+                                   cwd=tmp, capture_output=True, text=True, timeout=60, env=codex_env(cc, config),
                                    encoding="utf-8", errors="replace")
         except (OSError, subprocess.SubprocessError) as e:
             return False, str(e)
@@ -279,7 +279,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
             if reason:
                 out.status, out.error = "budget", reason
                 break
-            mode = sandbox_mode(cc)
+            mode = sandbox_mode(cc, config=kernel.config)
             if mode == "none" and not ctx.state.get("codex_sandbox_noted"):
                 ctx.state["codex_sandbox_noted"] = True
                 project.log.append("codex/sandbox", actor=actor, task_id=task_id, mode=mode, reason=sandbox_note(cc),
@@ -363,8 +363,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                     grace.cancel()
                     stopped_by_us = True
                 proc.wait()
-            if not got_usage:
-                usage_missing = True
+            usage_missing = not got_usage  # the last attempt decides
             stderr = err_tail.text()
             broken = ctx.state.pop("codex_sandbox_broken", None)
             if broken and not ctx.terminal:

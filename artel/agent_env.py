@@ -12,6 +12,8 @@ from typing import Optional
 
 COMMON = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "TZ", "TMPDIR", "TEMP", "TMP",
           "SYSTEMROOT", "COMSPEC", "PATHEXT", "WINDIR", "APPDATA", "LOCALAPPDATA", "USERPROFILE", "PROGRAMDATA",
+          "HOMEDRIVE", "HOMEPATH", "SYSTEMDRIVE", "PROGRAMFILES", "PROGRAMFILES(X86)", "PROGRAMW6432",
+          "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS", "OS", "COMPUTERNAME", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO",
           "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "VIRTUAL_ENV",
           "PYTHONIOENCODING", "ARTEL_SHARED", "ARTEL_WORKSPACE",
           "ARTEL_HOME",  # the policy hook and Artel's MCP proxy find policy.yaml through it (a path, not a secret)
@@ -19,11 +21,14 @@ COMMON = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM"
 COMMON_RE = re.compile(r"^(LC_.*|XDG_.*)$")
 RUNTIME = {
     "claude_code": {"ANTHROPIC_API_KEY", "ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_OAUTH_TOKEN",
-                    "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"},
+                    "CLAUDE_CONFIG_DIR", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX", "CLAUDE_CODE_USE_FOUNDRY",
+                    "ANTHROPIC_MODEL", "ANTHROPIC_SMALL_FAST_MODEL", "CLAUDE_CODE_MAX_OUTPUT_TOKENS"},
     "codex": {"OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_HOME"},
     "native": set(),
 }
-_CLOUD_FLAGS = {"CLAUDE_CODE_USE_BEDROCK": re.compile(r"^AWS_"), "CLAUDE_CODE_USE_VERTEX": re.compile(r"^GOOGLE_|^CLOUD_ML_")}
+RUNTIME_RE = {"claude_code": re.compile(r"^ANTHROPIC_DEFAULT_[A-Z0-9_]*_MODEL$")}
+# no SSH_AUTH_SOCK, DISPLAY: agents must not use the owner's ssh agent or screen
+_CLOUD_FLAGS = {"CLAUDE_CODE_USE_FOUNDRY": re.compile(r"^ANTHROPIC_FOUNDRY_"), "CLAUDE_CODE_USE_BEDROCK": re.compile(r"^AWS_"), "CLAUDE_CODE_USE_VERTEX": re.compile(r"^GOOGLE_|^CLOUD_ML_")}
 _TRUE = {"1", "true", "yes", "on"}
 
 
@@ -31,7 +36,8 @@ def agent_env(runtime: str, extra: Optional[dict] = None, config: Optional[dict]
     src = os.environ
     allowed = set(COMMON) | RUNTIME.get(runtime, set())
     allowed |= {str(n) for n in ((config or {}).get("agent_env") or {}).get("pass") or []}
-    env = {k: v for k, v in src.items() if k in allowed or COMMON_RE.match(k)}
+    rt_re = RUNTIME_RE.get(runtime)
+    env = {k: v for k, v in src.items() if k in allowed or COMMON_RE.match(k) or (rt_re and rt_re.match(k))}
     if runtime == "claude_code":
         for flag, pat in _CLOUD_FLAGS.items():
             if src.get(flag, "").strip().lower() in _TRUE:

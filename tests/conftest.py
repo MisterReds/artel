@@ -32,11 +32,3 @@ def no_host_evolve_process(monkeypatch):
     import artel.evolve.supervisor as sv
     monkeypatch.setattr(sv, "evolve_process_running", lambda **kw: False)
 
-
-@pytest.fixture(autouse=True)
-def fake_cli_env_passes_the_allowlist(monkeypatch):
-    """The fake CLIs in tests/fakes are steered by FAKE_* variables; the agent env allowlist must let them through."""
-    import re
-
-    import artel.agent_env
-    monkeypatch.setattr(artel.agent_env, "COMMON_RE", re.compile(r"^(LC_.*|XDG_.*|FAKE_.*)$"))

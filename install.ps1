@@ -10,7 +10,10 @@
 # ARTEL_NOSTART=1, ARTEL_SERVICE=1, ARTEL_WITH_CODEX=1, ARTEL_WITH_CLAUDE=1. The script does not depend on its own path.
 #
 # -Reinstall (or ARTEL_REINSTALL=1): fresh app clone and fresh virtual environment; config, projects and credentials
-# in %USERPROFILE%\.artel are kept. A clone with local changes or unpushed commits is moved to app.bak-<time>.
+# in %USERPROFILE%\.artel are kept. The app dir is DELETED only when it is %USERPROFILE%\.artel\app or %ARTEL_HOME%\app and
+# git shows nothing to lose (no changes, ignored files, stash, unpushed commits, extra worktrees; a git error counts as
+# "not sure"); otherwise it is MOVED to <dir>.bak-<time>, never deleted. Same for a venv that is not the default one.
+# An empty path, a drive root, the home directory, ARTEL_HOME itself or a dir holding artel.yaml / projects is refused.
 #
 # Installs only what Artel itself needs (git, Python 3.12, and the GitHub CLI when the private repository is not
 # reachable) with winget, signs in to GitHub with a device code, clones Artel into %USERPROFILE%\.artel\app (a git
@@ -59,32 +62,78 @@ function Confirm-Step($q) {
   try { $a = Read-Host "  $q [Y/n]" } catch { return $true }
   return ([string]::IsNullOrEmpty($a) -or $a -match '^[YyДд]')
 }
-function Safe-Path($p) { return ($p -and $p.Length -gt 8 -and $p.TrimEnd('\') -ne $env:USERPROFILE.TrimEnd('\')) }
+function Git-Run {  # git with stderr tolerated (Windows PowerShell 5.1 turns native stderr into errors under Stop)
+  $old = $ErrorActionPreference; $ErrorActionPreference = "Continue"
+  $out = @(); $ok = $false
+  try { $out = @(& git @args 2>$null | ForEach-Object { "$_" }); $ok = ($LASTEXITCODE -eq 0) } catch { $ok = $false } finally { $ErrorActionPreference = $old }
+  return [pscustomobject]@{ Ok = $ok; Out = (($out) -join "`n").Trim() }
+}
+function Canon($p) {
+  if (-not $p) { return "" }
+  try { return ([IO.Path]::GetFullPath($p)).TrimEnd('\', '/') } catch { return "" }
+}
+function Same-Path($a, $b) { $x = Canon $a; $y = Canon $b; return ($x -and $y -and $x.Equals($y, [StringComparison]::OrdinalIgnoreCase)) }
+function Inside-Path($child, $parent) {  # $child is $parent or lies below it
+  $c = Canon $child; $p = Canon $parent
+  if (-not $c -or -not $p) { return $false }
+  return ($c.Equals($p, [StringComparison]::OrdinalIgnoreCase) -or $c.StartsWith($p + "\", [StringComparison]::OrdinalIgnoreCase))
+}
+function Artel-Home { if ($env:ARTEL_HOME) { $env:ARTEL_HOME } else { Join-Path $env:USERPROFILE ".artel" } }
+function Refuse-Path($label, $p) {
+  $c = Canon $p
+  if (-not $p -or -not $c) { throw "refusing: $label is empty or invalid" }
+  if (-not (Split-Path -Parent $c)) { throw "refusing: $label is a drive root ($p)" }
+  if (Same-Path $c $env:USERPROFILE) { throw "refusing: $label is your home directory ($p)" }
+  if (Same-Path $c (Artel-Home)) { throw "refusing: $label is the Artel data directory itself ($p)" }
+  if ((Test-Path -LiteralPath (Join-Path $c "artel.yaml")) -or (Test-Path -LiteralPath (Join-Path $c "projects") -PathType Container)) {
+    throw "refusing: $label ($p) contains Artel data (artel.yaml or projects)"
+  }
+  if ((Inside-Path (Artel-Home) $c) -or (Inside-Path $env:USERPROFILE $c)) { throw "refusing: $label ($p) contains the Artel data or home directory" }
+}
+function Is-Default-Path($p, $name) {
+  return ((Same-Path $p (Join-Path (Join-Path $env:USERPROFILE ".artel") $name)) -or (Same-Path $p (Join-Path (Artel-Home) $name)))
+}
+function App-Is-Disposable {  # $true only when nothing in $Dir can be lost; any git failure = not sure = $false
+  if (-not (Test-Path -LiteralPath (Join-Path $Dir ".git") -PathType Container)) { return $false }
+  $r = Git-Run -C $Dir status --porcelain --ignored; if (-not $r.Ok -or $r.Out) { return $false }
+  $r = Git-Run -C $Dir stash list; if (-not $r.Ok -or $r.Out) { return $false }
+  $r = Git-Run -C $Dir log HEAD --branches --tags --not --remotes --oneline; if (-not $r.Ok -or $r.Out) { return $false }
+  $r = Git-Run -C $Dir worktree list --porcelain; if (-not $r.Ok) { return $false }
+  if (@($r.Out -split "`n" | Where-Object { $_ -like "worktree *" }).Count -ne 1) { return $false }
+  return $true
+}
+function Move-Aside($path, $label) {  # never deletes
+  $dst = "$path.bak-$script:Ts"
+  if (Test-Path -LiteralPath $dst) { $dst = "$dst-$PID" }
+  Move-Item -LiteralPath $path -Destination $dst
+  Note "old $label kept at: $dst"
+}
 function Reinstall-Prepare {
-  if (-not (Safe-Path $Dir)) { throw "refusing to remove '$Dir'" }
-  if (-not (Safe-Path $Venv)) { throw "refusing to remove '$Venv'" }
-  $dirty = ""
-  if (Test-Path "$Dir\.git") {
-    if (git -C $Dir status --porcelain 2>$null) { $dirty = "uncommitted changes" }
-    elseif (git -C $Dir log --branches --not --remotes --oneline 2>$null) { $dirty = "unpushed commits" }
-  } elseif (Test-Path $Dir) { $dirty = "not a git clone" }
-  $bak = "$Dir.bak-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+  $script:Ts = Get-Date -Format "yyyyMMdd-HHmmss"
+  Refuse-Path "app directory" $Dir
+  Refuse-Path "virtual environment" $Venv
+  $appAction = ""; $venvAction = ""; $why = ""
+  if (Test-Path -LiteralPath $Dir) {
+    if (-not (Is-Default-Path $Dir "app")) { $appAction = "move"; $why = "not the default location" }
+    elseif (App-Is-Disposable) { $appAction = "delete" }
+    else { $appAction = "move"; $why = "uncommitted/ignored files, stash, unpushed commits, extra worktrees, or git could not be checked" }
+  }
+  if (Test-Path -LiteralPath $Venv) {
+    if ((Test-Path -LiteralPath (Join-Path $Venv "pyvenv.cfg")) -and (Is-Default-Path $Venv "venv")) { $venvAction = "delete" } else { $venvAction = "move" }
+  }
   Step "Reinstall"
-  Note "will remove: $Venv (virtual environment)"
-  if ($dirty) { Note "will move aside ($dirty): $Dir -> $bak" } elseif (Test-Path $Dir) { Note "will remove: $Dir (app clone)" }
+  if ($venvAction -eq "delete") { Note "will remove: $Venv (virtual environment)" } elseif ($venvAction -eq "move") { Note "will move aside (never deleted): $Venv -> $Venv.bak-$script:Ts" }
+  if ($appAction -eq "delete") { Note "will remove: $Dir (clean app clone, nothing to lose)" }
+  elseif ($appAction -eq "move") { Note "will move aside, NOT delete ($why): $Dir -> $Dir.bak-$script:Ts" }
   Note "kept untouched: everything else (config, projects, credentials, tools)"
   if (-not (Confirm-Step "Reinstall Artel?")) { throw "cancelled" }
   if ($env:ARTEL_PARENT_PID) { try { Wait-Process -Id ([int]$env:ARTEL_PARENT_PID) -Timeout 60 -ErrorAction SilentlyContinue } catch {} }
   $task = Get-ScheduledTask -TaskName "Artel dashboard" -ErrorAction SilentlyContinue
   if ($task) { Stop-ScheduledTask -TaskName "Artel dashboard" -ErrorAction SilentlyContinue; $script:Service = $true }
-  Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path -like "$Venv\*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+  Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith("$Venv\", [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Milliseconds 500
-  if ($dirty) { Move-Item $Dir $bak; Note "old app kept at: $bak" }
-  elseif (Test-Path $Dir) { Remove-Item -Recurse -Force $Dir }
-  if (Test-Path $Venv) {
-    if (-not (Test-Path "$Venv\pyvenv.cfg")) { throw "$Venv is not a virtual environment; not removing it" }
-    Remove-Item -Recurse -Force $Venv
-  }
+  if ($appAction -eq "delete") { Remove-Item -LiteralPath $Dir -Recurse -Force } elseif ($appAction -eq "move") { Move-Aside $Dir "app" }
+  if ($venvAction -eq "delete") { Remove-Item -LiteralPath $Venv -Recurse -Force } elseif ($venvAction -eq "move") { Move-Aside $Venv "virtual environment" }
 }
 function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" } }
 function Py { $rest = @($script:py | Select-Object -Skip 1); & $script:py[0] @rest @args }
@@ -95,32 +144,36 @@ if (-not (Have git)) { Note "installing git"; Winget "Git.Git" }
 $py = Find-Python
 if (-not $py) { Note "installing Python 3.12"; Winget "Python.Python.3.12"; $py = Find-Python }
 if (-not $py) { throw "Python 3.10+ is required" }
-Note ("git " + (git --version) + " · " + (Py --version))
+Note ("git " + (Git-Run --version).Out + " · " + (Py --version))
 
 Step "Access to the repository"
-git ls-remote $Repo HEAD 2>$null | Out-Null
-if ($LASTEXITCODE -ne 0) {
+if (-not (Git-Run ls-remote $Repo HEAD).Ok) {
   if (-not (Have gh)) { Note "installing GitHub CLI for sign-in"; Winget "GitHub.cli" }
   gh auth status 2>$null | Out-Null
   if ($LASTEXITCODE -ne 0) { Note "sign in to GitHub (device code: open the link, enter the code)"; gh auth login --hostname github.com --git-protocol https --web }
   gh auth setup-git
-  git ls-remote $Repo HEAD 2>$null | Out-Null
-  if ($LASTEXITCODE -ne 0) { throw "no access to the repository with this GitHub account" }
+  if (-not (Git-Run ls-remote $Repo HEAD).Ok) { throw "no access to the repository with this GitHub account" }
 }
 Note "ok"
 
 if ($Reinstall) { Reinstall-Prepare }
 
 Step "Artel → $Dir"
-if (Test-Path "$Dir\.git") { git -C $Dir pull --ff-only --quiet; Check "git pull"; Note ("updated to " + (git -C $Dir rev-parse --short HEAD)) }
-else { New-Item -ItemType Directory -Force -Path (Split-Path $Dir) | Out-Null; git clone --quiet $Repo $Dir; Check "git clone"; Note ("cloned " + (git -C $Dir rev-parse --short HEAD)) }
+if (Test-Path -LiteralPath "$Dir\.git") {
+  if (-not (Git-Run -C $Dir pull --ff-only --quiet).Ok) { throw "git pull failed" }
+  Note ("updated to " + (Git-Run -C $Dir rev-parse --short HEAD).Out)
+} else {
+  New-Item -ItemType Directory -Force -Path (Split-Path $Dir) | Out-Null
+  if (-not (Git-Run clone --quiet $Repo $Dir).Ok) { throw "git clone failed" }
+  Note ("cloned " + (Git-Run -C $Dir rev-parse --short HEAD).Out)
+}
 
 Step "Python environment → $Venv"
-if (-not (Test-Path "$Venv\Scripts\python.exe")) { Py -m venv $Venv; Check "python -m venv" }
+if (-not (Test-Path -LiteralPath "$Venv\Scripts\python.exe")) { Py -m venv $Venv; Check "python -m venv" }
 & "$Venv\Scripts\python.exe" -m pip install --quiet --upgrade pip; Check "pip upgrade"
 & "$Venv\Scripts\python.exe" -m pip install --quiet -e "${Dir}[dev]"; Check "pip install"  # [dev] = pytest for the updater's checks
 $userPath = [Environment]::GetEnvironmentVariable("Path", "User")
-if ($userPath -notlike "*$Venv\Scripts*") {
+if (($userPath + "").IndexOf("$Venv\Scripts", [StringComparison]::OrdinalIgnoreCase) -lt 0) {
   [Environment]::SetEnvironmentVariable("Path", "$userPath;$Venv\Scripts", "User"); Refresh-Path
   Note "added $Venv\Scripts to the user PATH (new terminals pick it up)"
 }

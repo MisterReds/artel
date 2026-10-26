@@ -147,7 +147,8 @@ def test_claude_login_with_pasted_code_logout_and_models_from_the_cli(tmp_path, 
     from artel.providers import ClaudeLogin, claude_code_status, logout_claude, model_catalog
 
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
-    cfg = deep_merge(DEFAULT_CONFIG, {"claude_code": {"binary": fake_claude(tmp_path, monkeypatch)}})
+    cfg = deep_merge(DEFAULT_CONFIG, {"claude_code": {"binary": fake_claude(tmp_path, monkeypatch)},
+                                      "agent_env": {"pass": ["FAKE_CLAUDE_HOME"]}})
     assert [m["id"] for m in model_catalog(cfg, "claude_code")] == ["fable", "opus", "sonnet", "haiku"]
     assert not claude_code_status(cfg)["logged_in"]
     login = ClaudeLogin(cfg)
