@@ -31,7 +31,7 @@ from typing import Optional
 from .. import policy
 from ..agent import LoopDetector, Outcome, _short, execute_tool
 from ..prompts import CONTINUATION
-from ..tools import terminate_tree
+from ..tools import StderrTail, group_popen_kwargs, terminate_tree
 from . import mcp_client
 from ..tooling import READONLY_ROLES, ToolContext
 
@@ -264,7 +264,9 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                 args += ["--resume", session_id]
             args += list(cc.get("extra_args") or [])
             proc = subprocess.Popen(args, cwd=ctx.workspace, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                    env=child_env(kernel.config), bufsize=1, encoding="utf-8", errors="replace")
+                                    env=child_env(kernel.config), bufsize=1, encoding="utf-8", errors="replace",
+                                    **group_popen_kwargs())
+            err_tail = StderrTail(proc)
             killer = threading.Timer(float(cc["timeout_s"]), terminate_tree, (proc, True))
             killer.start()
             pending: dict[str, tuple] = {}
@@ -337,7 +339,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
             finally:
                 killer.cancel()
                 proc.wait()
-            stderr = proc.stderr.read() if proc.stderr else ""
+            stderr = err_tail.text()
             if result_ev:
                 u = result_ev.get("usage") or {}
                 tin = (u.get("input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0) + \
