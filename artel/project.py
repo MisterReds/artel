@@ -21,6 +21,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import threading
 import time
 from dataclasses import asdict, dataclass, field
@@ -31,6 +32,9 @@ import yaml
 
 from .board import Board
 from .kernel import EventLog
+
+_META_TRIES = 10  # project.json read/replace retries (Windows sharing violations)
+_META_WAIT = 0.05
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "agent_env": {"pass": []},          # extra env var names agents' shells and CLIs may inherit (artel/agent_env.py)
@@ -246,12 +250,35 @@ class Project:
     # --- metadata -------------------------------------------------------
     @property
     def meta(self) -> dict:
-        return json.loads((self.root / "project.json").read_text(encoding="utf-8"))
+        path = self.root / "project.json"
+        for attempt in range(_META_TRIES):
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except (PermissionError, json.JSONDecodeError):
+                # Windows: a concurrent os.replace briefly denies opening the file. Not a real error.
+                if attempt == _META_TRIES - 1:
+                    raise
+                time.sleep(_META_WAIT)
+        raise AssertionError("unreachable")
 
     def _write_meta(self, m: dict) -> None:
-        tmp = self.root / f".project.json.{threading.get_ident()}.tmp"
-        tmp.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.root / "project.json")
+        target = self.root / "project.json"
+        fd, tmp_name = tempfile.mkstemp(dir=self.root, prefix=".project.json.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(json.dumps(m, ensure_ascii=False, indent=2))
+            for attempt in range(_META_TRIES):
+                try:
+                    os.replace(tmp_name, target)
+                    return
+                except PermissionError:
+                    # Windows refuses to replace a file another handle has open (a concurrent reader).
+                    if attempt == _META_TRIES - 1:
+                        raise
+                    time.sleep(_META_WAIT)
+        finally:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
 
     def set_meta(self, **fields: Any) -> dict:
         with self._meta_lock:

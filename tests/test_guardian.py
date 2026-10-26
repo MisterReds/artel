@@ -1,3 +1,4 @@
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -134,3 +135,11 @@ def test_job_work_switches_to_blocking_after_high_run(tmp_path, monkeypatch):
     t2 = project.board.add_task("t2", "b", criteria=["c"], assignee="Ada")
     m.job_work(project.board.get(t2))
     assert seen[-1] is None  # a different (low risk) task is not blocked
+
+
+def test_symlinked_system_dirs_still_count_as_system_paths(tmp_path, monkeypatch):
+    """macOS: /etc resolves to /private/etc, which must not hide a write to a system path."""
+    real = Path.resolve
+    monkeypatch.setattr(Path, "resolve", lambda self, *a, **k: Path("/private" + str(self)) if str(self).startswith("/etc") else real(self, *a, **k))
+    w = {"kind": "tool/call", "tool": "write_file", "input": {"path": "/etc/cron.d/x"}}
+    assert guardian.assess([w], tmp_path)["risk"] == "high"
