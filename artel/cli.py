@@ -765,6 +765,55 @@ def cmd_update(args) -> int:
         return 1
 
 
+def cmd_reinstall(args) -> int:
+    """Fresh app clone + fresh venv via the installer; user data in ARTEL_HOME is kept."""
+    import os
+    import shutil
+    import subprocess
+    import tempfile
+    from pathlib import Path
+
+    import artel
+
+    app = Path(artel.__file__).resolve().parents[1]
+    windows = os.name == "nt"
+    script = app / ("install.ps1" if windows else "install.sh")
+    expected = Path(os.environ.get("ARTEL_DIR") or Path.home() / ".artel" / "app")
+    try:
+        installed = app.resolve() == expected.resolve()
+    except OSError:
+        installed = False
+    if not script.is_file() or not installed:
+        if not args.force:
+            why = f"{script.name} not found next to the package" if not script.is_file() else (
+                f"{app} is not the installed copy ({expected})")
+            print(f"reinstall refused: this looks like a source checkout, not an installation ({why}). "
+                  "Install with the one-line command from the README, or pass --force.", file=sys.stderr)
+            return 2
+        if not script.is_file():
+            print(f"reinstall refused: {script} does not exist", file=sys.stderr)
+            return 2
+    env = dict(os.environ)
+    if not installed:
+        env["ARTEL_DIR"] = str(app)
+    tmpdir = tempfile.mkdtemp(prefix="artel-reinstall-")  # the app dir is about to be removed: run a copy
+    tmp = Path(tmpdir) / script.name
+    shutil.copyfile(script, tmp)
+    if windows:
+        env["ARTEL_PARENT_PID"] = str(os.getpid())
+        cmd = ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(tmp), "-Reinstall"]
+        if args.yes:
+            cmd.append("-Yes")
+        flags = getattr(subprocess, "CREATE_NEW_CONSOLE", 0) | getattr(subprocess, "DETACHED_PROCESS", 0)
+        subprocess.Popen(cmd, env=env, creationflags=flags, close_fds=True)
+        print("Переустановка продолжается в новом окне PowerShell.")
+        return 0
+    cmd = ["bash", str(tmp), "--reinstall"] + (["--yes"] if args.yes else [])
+    sys.stdout.flush()
+    os.execve("/bin/bash", cmd, env)  # replaces this process, so the venv is released
+    return 1
+
+
 def cmd_roadmap(args) -> int:
     from .roadmap import Roadmap
 
@@ -1040,6 +1089,11 @@ def main(argv=None) -> int:
     upd.add_argument("--no-verify", action="store_true", help="skip running the pillar tests on the new version")
     upd.add_argument("--config")
     upd.set_defaults(fn=cmd_update)
+
+    rei = sub.add_parser("reinstall", help="переустановить Artel: свежая копия и окружение, данные сохраняются")
+    rei.add_argument("--yes", "-y", action="store_true", help="не спрашивать подтверждение")
+    rei.add_argument("--force", action="store_true", help="разрешить из исходного checkout (не установленной копии)")
+    rei.set_defaults(fn=cmd_reinstall)
 
     rmp = sub.add_parser("roadmap", help="roadmap.yaml: status, next items, render docs/ROADMAP.md")
     rmp.add_argument("action", choices=["status", "next", "study", "render", "html"], nargs="?", default="status")

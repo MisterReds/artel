@@ -1,6 +1,16 @@
 ﻿# Artel installer for Windows (PowerShell 5+).
 #
-#   powershell -ExecutionPolicy Bypass -File install.ps1 [-Dir PATH] [-WithCodex] [-WithClaude] [-Service] [-NoStart]
+#   powershell -ExecutionPolicy Bypass -File install.ps1 [-Dir PATH] [-WithCodex] [-WithClaude] [-Service] [-NoStart] [-Reinstall] [-Yes]
+#
+# One command (private repository, GitHub CLI signed in):
+#   iex (gh api repos/MisterReds/artel/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String)
+# Public repository:
+#   irm https://raw.githubusercontent.com/MisterReds/artel/master/install.ps1 | iex
+# `iex` cannot pass parameters, so options may also be given as environment variables: ARTEL_REINSTALL=1, ARTEL_YES=1,
+# ARTEL_NOSTART=1, ARTEL_SERVICE=1, ARTEL_WITH_CODEX=1, ARTEL_WITH_CLAUDE=1. The script does not depend on its own path.
+#
+# -Reinstall (or ARTEL_REINSTALL=1): fresh app clone and fresh virtual environment; config, projects and credentials
+# in %USERPROFILE%\.artel are kept. A clone with local changes or unpushed commits is moved to app.bak-<time>.
 #
 # Installs only what Artel itself needs (git, Python 3.12, and the GitHub CLI when the private repository is not
 # reachable) with winget, signs in to GitHub with a device code, clones Artel into %USERPROFILE%\.artel\app (a git
@@ -8,10 +18,17 @@
 # dashboard. Safe to run again: it updates in place. Agent CLIs (Codex, Claude Code) are installed only when needed:
 # dashboard "Провайдеры" → "Установить", or `artel providers install codex|claude` (into ~\.artel\tools).
 # Environment overrides: ARTEL_REPO (URL or local path to clone), ARTEL_DIR (the clone), ARTEL_VENV (the venv).
-param(
-  [string]$Dir = $(if ($env:ARTEL_DIR) { $env:ARTEL_DIR } else { "$env:USERPROFILE\.artel\app" }),
-  [switch]$WithCodex, [switch]$WithClaude, [switch]$Service, [switch]$NoStart
-)
+# No param() block on purpose: it does not work through `iex`. Options come from $args (-File) or the environment.
+$Opt = @{}
+$Dir = if ($env:ARTEL_DIR) { $env:ARTEL_DIR } else { "$env:USERPROFILE\.artel\app" }
+for ($i = 0; $i -lt $args.Count; $i++) {
+  $a = "$($args[$i])".TrimStart("-").ToLower()
+  if ($a -eq "dir") { $i++; $Dir = $args[$i] } else { $Opt[$a] = $true }
+}
+function Flag($name, $envName) { [bool]($Opt[$name] -or ([Environment]::GetEnvironmentVariable($envName) -in @("1", "true", "yes"))) }
+$WithCodex = Flag "withcodex" "ARTEL_WITH_CODEX"; $WithClaude = Flag "withclaude" "ARTEL_WITH_CLAUDE"
+$Service = Flag "service" "ARTEL_SERVICE"; $NoStart = Flag "nostart" "ARTEL_NOSTART"
+$Reinstall = Flag "reinstall" "ARTEL_REINSTALL"; $Yes = Flag "yes" "ARTEL_YES"
 $ErrorActionPreference = "Stop"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
 $Repo = if ($env:ARTEL_REPO) { $env:ARTEL_REPO } else { "https://github.com/MisterReds/artel.git" }
@@ -37,6 +54,38 @@ function Find-Python {  # returns the command as an array: @("py", "-3.12") or @
   }
   return $null
 }
+function Confirm-Step($q) {
+  if ($Yes) { return $true }
+  try { $a = Read-Host "  $q [Y/n]" } catch { return $true }
+  return ([string]::IsNullOrEmpty($a) -or $a -match '^[YyДд]')
+}
+function Safe-Path($p) { return ($p -and $p.Length -gt 8 -and $p.TrimEnd('\') -ne $env:USERPROFILE.TrimEnd('\')) }
+function Reinstall-Prepare {
+  if (-not (Safe-Path $Dir)) { throw "refusing to remove '$Dir'" }
+  if (-not (Safe-Path $Venv)) { throw "refusing to remove '$Venv'" }
+  $dirty = ""
+  if (Test-Path "$Dir\.git") {
+    if (git -C $Dir status --porcelain 2>$null) { $dirty = "uncommitted changes" }
+    elseif (git -C $Dir log --branches --not --remotes --oneline 2>$null) { $dirty = "unpushed commits" }
+  } elseif (Test-Path $Dir) { $dirty = "not a git clone" }
+  $bak = "$Dir.bak-" + (Get-Date -Format "yyyyMMdd-HHmmss")
+  Step "Reinstall"
+  Note "will remove: $Venv (virtual environment)"
+  if ($dirty) { Note "will move aside ($dirty): $Dir -> $bak" } elseif (Test-Path $Dir) { Note "will remove: $Dir (app clone)" }
+  Note "kept untouched: everything else (config, projects, credentials, tools)"
+  if (-not (Confirm-Step "Reinstall Artel?")) { throw "cancelled" }
+  if ($env:ARTEL_PARENT_PID) { try { Wait-Process -Id ([int]$env:ARTEL_PARENT_PID) -Timeout 60 -ErrorAction SilentlyContinue } catch {} }
+  $task = Get-ScheduledTask -TaskName "Artel dashboard" -ErrorAction SilentlyContinue
+  if ($task) { Stop-ScheduledTask -TaskName "Artel dashboard" -ErrorAction SilentlyContinue; $script:Service = $true }
+  Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path -like "$Venv\*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+  Start-Sleep -Milliseconds 500
+  if ($dirty) { Move-Item $Dir $bak; Note "old app kept at: $bak" }
+  elseif (Test-Path $Dir) { Remove-Item -Recurse -Force $Dir }
+  if (Test-Path $Venv) {
+    if (-not (Test-Path "$Venv\pyvenv.cfg")) { throw "$Venv is not a virtual environment; not removing it" }
+    Remove-Item -Recurse -Force $Venv
+  }
+}
 function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" } }
 function Py { $rest = @($script:py | Select-Object -Skip 1); & $script:py[0] @rest @args }
 
@@ -59,6 +108,8 @@ if ($LASTEXITCODE -ne 0) {
   if ($LASTEXITCODE -ne 0) { throw "no access to the repository with this GitHub account" }
 }
 Note "ok"
+
+if ($Reinstall) { Reinstall-Prepare }
 
 Step "Artel → $Dir"
 if (Test-Path "$Dir\.git") { git -C $Dir pull --ff-only --quiet; Check "git pull"; Note ("updated to " + (git -C $Dir rev-parse --short HEAD)) }
