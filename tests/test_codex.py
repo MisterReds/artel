@@ -224,3 +224,33 @@ def test_artel_tools_reach_the_bridge_even_with_a_system_http_proxy(env, monkeyp
     assert mcp_proxy._DIRECT.handlers and all(not getattr(h, "proxies", None) for h in mcp_proxy._DIRECT.handlers)
     out, _ = _run(cfg, project)
     assert out.status == "terminal" and out.name == "task_submit", out.error
+
+
+def test_codex_with_a_megabyte_of_stderr_does_not_deadlock(env, monkeypatch):
+    cfg, project, _ = env
+    monkeypatch.setenv("FAKE_CODEX_STDERR_KB", "1024")
+    t0 = time.time()
+    out, ctx = _run(cfg, project)
+    assert out.status == "terminal" and time.time() - t0 < 10
+
+
+def test_codex_usage_arriving_after_the_terminal_tool_is_recorded(env, monkeypatch):
+    cfg, project, _ = env
+    monkeypatch.setenv("FAKE_CODEX_USAGE_DELAY", "1")
+    out, ctx = _run(cfg, project)
+    assert out.status == "terminal"
+    assert out.usage["input_tokens"] == 1000 and out.usage["output_tokens"] == 200 and out.usage["cached"] == 400
+    end = [e for e in project.log.read() if e["kind"] == "agent/end" and e.get("runtime") == "codex"][-1]
+    assert not end.get("usage_missing")
+
+
+def test_codex_killed_without_usage_is_flagged_not_silently_zero(env, monkeypatch):
+    from artel.runtimes import codex
+
+    cfg, project, _ = env
+    monkeypatch.setattr(codex, "TERMINAL_GRACE_S", 0.5)
+    monkeypatch.setenv("FAKE_CODEX_NO_USAGE", "1")
+    out, ctx = _run(cfg, project)
+    assert out.status == "terminal" and out.usage["input_tokens"] == 0
+    end = [e for e in project.log.read() if e["kind"] == "agent/end" and e.get("runtime") == "codex"][-1]
+    assert end["usage_missing"] is True and end["usage"]["input_tokens"] == 0
