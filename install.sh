@@ -1,8 +1,17 @@
 #!/usr/bin/env bash
 # Artel installer for Linux and macOS.
 #
-#   bash install.sh [--dir DIR] [--with-codex] [--with-claude] [--service] [--no-start] [--yes]
+#   bash install.sh [--dir DIR] [--with-codex] [--with-claude] [--service] [--no-start] [--yes] [--reinstall]
 #
+# One command (private repository, GitHub CLI signed in):
+#   gh api repos/MisterReds/artel/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
+# Flags through a pipe:  ... | bash -s -- --reinstall
+# Public repository:     curl -fsSL https://raw.githubusercontent.com/MisterReds/artel/master/install.sh | bash
+#
+# --reinstall (or ARTEL_REINSTALL=1): fresh copy of the app and a fresh virtual environment. Only the app clone and
+# the venv are removed (a clone with local changes or unpushed commits is moved to app.bak-<time> instead); config,
+# projects, credentials and everything else in ARTEL_HOME stay. A running background service is stopped and restarted.
+
 # Installs only what Artel itself needs (git, Python 3.10+, GitHub access for the private repository), clones Artel
 # into ~/.artel/app as a git clone (so the built-in updater works), creates a virtual environment, puts `artel` on
 # PATH and starts the dashboard. Safe to run again: it updates in place.
@@ -11,13 +20,27 @@
 # --with-codex / --with-claude do that right away.
 # Secrets are never asked for here: GitHub and Codex sign in through their own device-code flows.
 set -euo pipefail
+# The whole body lives in main(), called on the last line: when the script is piped into bash, bash must have read
+# all of it before any child process (git, pip) gets a chance to consume stdin.
+
+usage() {
+  cat <<'USAGE'
+Artel installer for Linux and macOS.
+  bash install.sh [--dir DIR] [--with-codex] [--with-claude] [--service] [--no-start] [--yes] [--reinstall]
+  --reinstall  fresh app clone + fresh venv; config, projects and credentials in ARTEL_HOME are kept
+  --yes        do not ask for confirmation
+Piped:  gh api repos/MisterReds/artel/contents/install.sh -H "Accept: application/vnd.github.raw" | bash -s -- --reinstall
+Env:    ARTEL_REPO ARTEL_DIR ARTEL_VENV ARTEL_BIN ARTEL_REINSTALL=1
+USAGE
+}
 
 REPO="${ARTEL_REPO:-https://github.com/MisterReds/artel.git}"
 GH_REPO="MisterReds/artel"
 DIR="${ARTEL_DIR:-$HOME/.artel/app}"
 VENV="${ARTEL_VENV:-$HOME/.artel/venv}"
 BIN="${ARTEL_BIN:-$HOME/.local/bin}"
-CODEX=0 CLAUDE=0 SERVICE=0 START=1 YES=0
+CODEX=0 CLAUDE=0 SERVICE=0 START=1 YES=0 REINSTALL=0
+[ "${ARTEL_REINSTALL:-}" = 1 ] && REINSTALL=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --dir) DIR="$2"; shift ;;
@@ -27,7 +50,8 @@ while [ $# -gt 0 ]; do
     --service) SERVICE=1 ;;
     --no-start) START=0 ;;
     --yes|-y) YES=1 ;;
-    -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
+    --reinstall) REINSTALL=1 ;;
+    -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
   shift
@@ -38,7 +62,16 @@ step() { printf '%s▲%s %s\n' "$C" "$R" "$*"; }
 note() { printf '  %s%s%s\n' "$M" "$*" "$R"; }
 die() { printf '%s✗%s %s\n' "$C" "$R" "$*" >&2; exit 1; }
 have() { command -v "$1" >/dev/null 2>&1; }
-confirm() { [ "$YES" = 1 ] && return 0; [ -t 0 ] || return 0; read -r -p "  $1 [Y/n] " a; [ -z "$a" ] || [[ "$a" =~ ^[YyДд] ]]; }
+# Asks on the terminal even when stdin is a pipe (curl | bash); without any terminal the answer is yes.
+confirm() {
+  [ "$YES" = 1 ] && return 0
+  local a=""
+  if [ -t 0 ]; then read -r -p "  $1 [Y/n] " a
+  elif { : </dev/tty; } 2>/dev/null; then printf '  %s [Y/n] ' "$1" >/dev/tty; read -r a </dev/tty || a=""
+  else return 0
+  fi
+  [ -z "$a" ] || [[ "$a" =~ ^[YyДд] ]]
+}
 
 OS="$(uname -s)"
 SUDO=""; [ "$(id -u)" = 0 ] || SUDO="sudo"
@@ -75,6 +108,49 @@ pkg_install() {  # pkg_install <generic name>...
 python_ok() { "$1" -c 'import sys; sys.exit(0 if sys.version_info >= (3, 10) else 1)' 2>/dev/null; }
 find_python() { for p in python3.13 python3.12 python3.11 python3.10 python3; do have "$p" && python_ok "$p" && { echo "$p"; return; }; done; }
 
+
+service_kind() {  # prints systemd | launchd | nothing: which background service of ours is installed
+  if [ "$OS" = Linux ] && [ -f "$HOME/.config/systemd/user/artel.service" ]; then echo systemd
+  elif [ "$OS" = Darwin ] && [ -f "$HOME/Library/LaunchAgents/ai.artel.dashboard.plist" ]; then echo launchd
+  fi
+}
+
+safe_path() {  # refuse to delete anything that is not clearly a private artel directory
+  case "$1" in ""|/|"$HOME"|"$HOME/") return 1 ;; esac
+  [ "${#1}" -gt 8 ]
+}
+
+reinstall_prepare() {
+  local svc dirty="" bak="" ts
+  safe_path "$DIR" || die "refusing to remove '$DIR'"
+  safe_path "$VENV" || die "refusing to remove '$VENV'"
+  if [ -d "$DIR/.git" ]; then
+    [ -z "$(git -C "$DIR" status --porcelain 2>/dev/null)" ] || dirty="uncommitted changes"
+    [ -n "$dirty" ] || [ -z "$(git -C "$DIR" log --branches --not --remotes --oneline 2>/dev/null)" ] || dirty="unpushed commits"
+  elif [ -e "$DIR" ]; then dirty="not a git clone"
+  fi
+  ts="$(date +%Y%m%d-%H%M%S)"
+  step "Reinstall"
+  note "will remove: $VENV (virtual environment)"
+  if [ -n "$dirty" ]; then note "will move aside (${dirty}): $DIR -> $DIR.bak-$ts"
+  elif [ -e "$DIR" ]; then note "will remove: $DIR (app clone)"; fi
+  note "kept untouched: everything else (config, projects, credentials, tools)"
+  confirm "Reinstall Artel?" || die "cancelled"
+  svc="$(service_kind)"
+  if [ "$svc" = systemd ]; then systemctl --user stop artel.service 2>/dev/null || true; SERVICE=1
+  elif [ "$svc" = launchd ]; then launchctl unload "$HOME/Library/LaunchAgents/ai.artel.dashboard.plist" 2>/dev/null || true; SERVICE=1
+  fi
+  if [ -n "$dirty" ]; then
+    bak="$DIR.bak-$ts"; mv "$DIR" "$bak"; note "old app kept at: $bak"
+  elif [ -e "$DIR" ]; then rm -rf "$DIR"
+  fi
+  if [ -e "$VENV" ]; then
+    [ -f "$VENV/pyvenv.cfg" ] || die "$VENV is not a virtual environment; not removing it"
+    rm -rf "$VENV"
+  fi
+}
+
+main() {
 # ---------------------------------------------------------------------------------------------------------------
 step "Artel installer — $OS"
 if [ "$PM" = brew ] && ! have brew; then
@@ -110,6 +186,8 @@ else
   note "ok"
 fi
 
+[ "$REINSTALL" = 1 ] && reinstall_prepare
+
 step "Artel → $DIR"
 if [ -d "$DIR/.git" ]; then
   git -C "$DIR" pull --ff-only --quiet && note "updated to $(git -C "$DIR" rev-parse --short HEAD)"
@@ -120,9 +198,15 @@ else
 fi
 
 step "Python environment → $VENV"
-[ -x "$VENV/bin/python" ] || "$PY" -m venv "$VENV"
-"$VENV/bin/python" -m pip install --quiet --upgrade pip
-"$VENV/bin/python" -m pip install --quiet -e "$DIR[dev]"  # [dev] = pytest: the updater checks a new version before installing it
+if [ ! -x "$VENV/bin/python" ]; then
+  if [ "${ARTEL_INSTALL_NODEPS:-}" = 1 ]; then "$PY" -m venv --system-site-packages "$VENV"; else "$PY" -m venv "$VENV"; fi
+fi
+if [ "${ARTEL_INSTALL_NODEPS:-}" = 1 ]; then  # tests only: no network, dependencies come from the system site-packages
+  "$VENV/bin/python" -m pip install --quiet --no-deps --no-build-isolation -e "$DIR"
+else
+  "$VENV/bin/python" -m pip install --quiet --upgrade pip
+  "$VENV/bin/python" -m pip install --quiet -e "$DIR[dev]"  # [dev] = pytest: the updater checks a new version before installing it
+fi
 mkdir -p "$BIN"
 ln -sf "$VENV/bin/artel" "$BIN/artel"
 case ":$PATH:" in *":$BIN:"*) ;; *)
@@ -185,3 +269,6 @@ if [ "$START" = 1 ] && [ -t 1 ]; then
   (sleep 2; { have xdg-open && xdg-open "$url"; } || { have open && open "$url"; } || true) >/dev/null 2>&1 &
   exec "$VENV/bin/artel" web
 fi
+}
+
+main "$@"
