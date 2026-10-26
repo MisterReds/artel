@@ -30,6 +30,28 @@ from typing import Optional
 DEFAULTS = {"telegram": True, "github": "ask"}  # github: ask | auto | off
 LABEL = "artel-report"
 
+class _EmailPattern:
+    """local@domain.tld masked in linear time: the regex starts at each '@' and the local part is found by walking
+    back at most 64 characters (a regex that starts the local part anywhere is quadratic on long word runs)."""
+
+    AT = re.compile(r"@[\w-]{1,63}\.[\w.-]{1,253}")
+    LOCAL = frozenset("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_.+-")
+
+    def sub(self, repl: str, text: str) -> str:
+        if "@" not in text:
+            return text
+        out, last = [], 0
+        for m in self.AT.finditer(text):
+            i = m.start()
+            while i > max(last, m.start() - 64) and (text[i - 1] in self.LOCAL or text[i - 1].isalnum()):
+                i -= 1
+            if i == m.start() or (i > 0 and (text[i - 1].isalnum() or text[i - 1] in "_")):
+                continue  # no local part, or it is longer than 64 characters
+            out += [text[last:i], repl]
+            last = m.end()
+        return "".join(out) + text[last:]
+
+
 SECRET_PATTERNS = [
     (re.compile(r"-----BEGIN[^-\n]*PRIVATE KEY-----[\s\S]*?(?:-----END[^-\n]*-----|$)"), "<закрытый ключ>"),
     (re.compile(r"\bsk-(?:ant-|proj-)?[A-Za-z0-9_\-]{12,}"), "<ключ>"),
@@ -48,7 +70,7 @@ SECRET_PATTERNS = [
     (re.compile(r"""(?i)\b(passw(?:or)?d|passwd|secret)(\s{1,16})(?:"[^"\n]*"|'[^'\n]*')"""), r"\1\2<скрыто>"),
     (re.compile(r"(?<=://)[^\s/:@]{1,64}:[^\s/@]{1,128}@"), "<creds>@"),
     (re.compile(r"\beyJ[\w-]{8,}\.[\w-]{8,}\.[\w-]{8,}"), "<jwt>"),
-    (re.compile(r"\b[\w.+-]{1,64}@[\w-]{1,63}\.[\w.-]{1,253}"), "<e-mail>"),
+    (_EmailPattern(), "<e-mail>"),
 ]
 
 
