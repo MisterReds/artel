@@ -44,7 +44,7 @@ def test_external_server_cannot_replace_bridge():
 def test_codex_args_have_granted_servers_and_bridge(tmp_path):
     a = codex("worker", tmp_path)
     assert f"mcp_servers.fake.command={json.dumps(sys.executable)}" in a
-    assert any(x.startswith("mcp_servers.fake.args=") and FAKE in x for x in a)
+    assert any(x.startswith("mcp_servers.fake.args=") and json.dumps(FAKE)[1:-1] in x for x in a)
     assert any(x.startswith("mcp_servers.fake.env_vars=") and "K" in x for x in a)
     assert 'mcp_servers.remote.url="http://h/mcp"' in a
     assert any(x.startswith("mcp_servers.remote.env_http_headers=") and "X-A" in x for x in a)

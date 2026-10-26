@@ -253,9 +253,8 @@ if [ ! -x "$VENV/bin/python" ]; then
   if [ "${ARTEL_INSTALL_NODEPS:-}" = 1 ]; then "$PY" -m venv --system-site-packages "$VENV"; else "$PY" -m venv "$VENV"; fi
 fi
 if [ "${ARTEL_INSTALL_NODEPS:-}" = 1 ]; then  # tests only: no network, dependencies come from the system site-packages
-  if "$VENV/bin/python" -c 'import setuptools.build_meta' 2>/dev/null; then
-    "$VENV/bin/python" -m pip install --quiet --no-deps --no-build-isolation -e "$DIR"
-  else  # Python 3.12+ venvs have no setuptools and there is no network: link the checkout and write the launcher by hand
+  if "$VENV/bin/python" -m pip install --quiet --no-deps --no-build-isolation -e "$DIR" >/dev/null 2>&1; then :
+  else  # no setuptools (3.12+ venvs) or no wheel (older setuptools) and no network: link the checkout, write the launcher
     "$VENV/bin/python" - "$DIR" "$VENV" <<'PYEOF'
 import os, site, sys
 d, v = sys.argv[1:3]
