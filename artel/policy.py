@@ -25,6 +25,17 @@ from typing import Optional
 
 import yaml
 
+if __name__ == "__main__" and not __package__:  # run by file path (the Claude Code hook): import the installed artel
+    import os as _os
+    import sys as _sys
+
+    _here = _os.path.dirname(_os.path.abspath(__file__))
+    _drop = {"", _os.path.realpath(_os.getcwd()), _here}
+    _sys.path[:] = [_os.path.dirname(_here)] + [p for p in _sys.path if _os.path.realpath(p or ".") not in _drop]
+    from artel.policy import main as _main
+
+    raise SystemExit(_main())
+
 from .project import artel_home
 
 DECISIONS = ("allow", "prompt", "forbidden")

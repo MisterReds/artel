@@ -51,7 +51,9 @@ class EventLog:
     def append(self, kind: str, **payload: Any) -> dict:
         with self._cond:
             self._seq += 1
-            event = {"seq": self._seq, "ts": time.time(), "kind": kind, **payload}
+            from .reports import redact_deep  # the journal is pushed to git by evolution: no secrets in it
+
+            event = {"seq": self._seq, "ts": time.time(), "kind": kind, **redact_deep(payload)}
             with self.path.open("a", encoding="utf-8") as fh:
                 fh.write(json.dumps(event, ensure_ascii=False, default=str) + "\n")
             self._cond.notify_all()

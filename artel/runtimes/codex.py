@@ -91,10 +91,10 @@ def codex_settings(config: dict) -> dict:
     return {**DEFAULTS, **(config.get("codex") or {})}
 
 
-def codex_env(cfg: dict) -> dict:
+def codex_env(cfg: dict, config: Optional[dict] = None) -> dict:
     from ..tools import env_with_tools
 
-    env = env_with_tools(child_env())
+    env = env_with_tools(child_env(config, "codex"))
     if cfg.get("home"):
         env["CODEX_HOME"] = str(Path(cfg["home"]).expanduser())
     return env
@@ -289,7 +289,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                               thread_id=thread_id, last_message=last_msg, grants=grants, mode=mode,
                               mcp_servers=ext_servers)
             proc = subprocess.Popen(args, cwd=run_dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True, env={**codex_env(cc), **ext_env}, bufsize=1,
+                                    stderr=subprocess.PIPE, text=True, env={**codex_env(cc, kernel.config), **ext_env}, bufsize=1,
                                     encoding="utf-8", errors="replace")
             proc.stdin.write(prompt)
             proc.stdin.close()

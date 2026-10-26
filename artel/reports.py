@@ -67,6 +67,19 @@ def redact(text: str) -> str:
     return out
 
 
+def redact_deep(value):
+    """Secret patterns masked in every string value of nested dicts/lists (keys untouched); paths stay as they are."""
+    if isinstance(value, str):
+        for pattern, repl in SECRET_PATTERNS:
+            value = pattern.sub(repl, value)
+        return value
+    if isinstance(value, dict):
+        return {k: redact_deep(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [redact_deep(v) for v in value]
+    return value
+
+
 def fingerprint(kind: str, text: str) -> str:
     """The same failure on another day or machine: numbers, paths, ids and times removed before hashing."""
     norm = re.sub(r"0x[0-9a-f]+|\b[0-9a-f]{7,}\b|\d+", "#", str(text or "").lower())
