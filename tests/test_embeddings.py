@@ -226,3 +226,38 @@ def test_a_system_http_proxy_never_hides_the_local_server(local_server, monkeypa
     monkeypatch.delenv("no_proxy", raising=False)
     monkeypatch.delenv("NO_PROXY", raising=False)
     assert rank("kanban board", DOCS, local_server)[0][2] == "hybrid"
+
+
+def test_warm_restarts_the_loop_when_work_arrives_between_pop_and_exit(monkeypatch):
+    """Lost-wakeup window: the loop saw an empty queue; warm() appends before the loop has finished exiting."""
+    done = threading.Event()
+    in_window = threading.Event()
+    release = threading.Event()
+    real_take = embeddings._warm_take
+    seen = []
+
+    class E:
+        config: dict = {}
+
+        def embed(self, texts, titles=None):
+            seen.extend(texts)
+            if "second" in texts:
+                done.set()
+
+    def slow_take():
+        batch = real_take()
+        if not batch and not in_window.is_set():
+            in_window.set()      # queue was empty and the flag is already cleared, but the thread is still alive
+            release.wait(5)
+        return batch
+
+    monkeypatch.setattr(embeddings, "_warm_take", slow_take)
+    monkeypatch.setattr(embeddings, "_warm_queue", [])
+    monkeypatch.setattr(embeddings, "_warm_running", False)
+    emb = E()
+    embeddings.Embedder.warm(emb, ["first"])
+    assert in_window.wait(5)
+    embeddings.Embedder.warm(emb, ["second"])   # lands in the window
+    release.set()
+    assert done.wait(5), "queued text was never embedded (lost wakeup)"
+    assert seen == ["first", "second"]

@@ -119,7 +119,9 @@ def _outside_write(path: str, workspace: Optional[Path]) -> Optional[tuple[float
     ws = Path(workspace).resolve() if workspace else None
     if ws and (target == ws or ws in target.parents):
         return None
-    if str(target).startswith(SENSITIVE_DIRS):
+    # also test the path as written: on macOS /etc, /var, ... are symlinks into /private, so the resolved
+    # target no longer starts with the sensitive prefix
+    if str(target).startswith(SENSITIVE_DIRS) or (p.is_absolute() and p.as_posix().startswith(SENSITIVE_DIRS)):
         return 0.8, f"write to system path {target}"
     return 0.4, f"write outside the workspace: {target}"
 
