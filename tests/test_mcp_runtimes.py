@@ -4,8 +4,8 @@ from pathlib import Path
 
 from artel.project import DEFAULT_CONFIG, deep_merge
 from artel.runtimes import mcp_client
-from artel.runtimes.claude_code import mcp_servers_json
-from artel.runtimes.codex import build_args
+from artel.adapters.agent.claude_code import mcp_servers_json
+from artel.adapters.agent.codex import build_args
 
 FAKE = str(Path(__file__).parent / "fakes" / "mcp_server")
 BRIDGE = {"artel": {"command": "py", "args": ["-m", "artel.runtimes.mcp_proxy", "u", "t"]}}

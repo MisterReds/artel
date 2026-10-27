@@ -24,7 +24,7 @@ def fake_codex(tmp_path) -> str:
 
 
 FAKE_CODEX_VARS = ["FAKE_CODEX_CMD", "FAKE_CODEX_LAZY", "FAKE_CODEX_LIMIT", "FAKE_CODEX_LOG", "FAKE_CODEX_NO_USAGE",
-                   "FAKE_CODEX_SANDBOX", "FAKE_CODEX_STDERR_KB", "FAKE_CODEX_USAGE_DELAY", "FAKE_CODEX_WRITE"]
+                   "FAKE_CODEX_SANDBOX", "FAKE_CODEX_BADLINES", "FAKE_CODEX_STDERR_KB", "FAKE_CODEX_USAGE_DELAY", "FAKE_CODEX_WRITE"]
 
 
 @pytest.fixture
@@ -78,7 +78,7 @@ def test_codex_without_terminal_tool_is_resumed_and_readonly_roles_get_readonly_
     calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
     assert out.status == "terminal" and len(calls) == 2 and calls[1][-3:] == ["resume", "th-1", "-"]
     assert any(e["kind"] == "agent/continuation" and e.get("runtime") == "codex" for e in project.log.read())
-    from artel.runtimes.codex import build_args, codex_settings
+    from artel.adapters.agent.codex import build_args, codex_settings
 
     scratch = tmp / "scratch"
     a = build_args(codex_settings(cfg), workspace=scratch, shared=tmp, role="reviewer", bridge_url="u",
@@ -146,13 +146,13 @@ def test_codex_policy_stops_disallowed_commands(env, monkeypatch):
 
 
 def _reset_sandbox():
-    from artel.runtimes import codex
+    from artel.adapters.agent import codex
 
     codex._sandbox_mode.clear()
 
 
 def test_sandbox_probe_picks_the_mode_that_runs_commands(env, monkeypatch):
-    from artel.runtimes.codex import codex_settings, sandbox_mode
+    from artel.adapters.agent.codex import codex_settings, sandbox_mode
 
     cfg, _, _ = env
     cc = codex_settings(cfg)
@@ -166,7 +166,7 @@ def test_sandbox_probe_picks_the_mode_that_runs_commands(env, monkeypatch):
 
 
 def test_bots_never_get_the_owners_apps_or_screen_and_have_network(env, tmp_path):
-    from artel.runtimes import codex
+    from artel.adapters.agent import codex
 
     cc = {**codex.DEFAULTS, "binary": fake_codex(tmp_path)}
     args = codex.build_args(cc, workspace=tmp_path, shared=tmp_path, role="worker", bridge_url="u", bridge_token="t",
@@ -200,7 +200,7 @@ def test_a_sandbox_that_fails_mid_run_is_dropped_and_the_bot_continues(env, monk
 def test_a_judge_cannot_change_the_deliverables_even_without_a_sandbox(env, monkeypatch):
     """A reviewer runs from a scratch directory; if the sandbox is unusable and it writes into the deliverables
     anyway, Artel restores them after the run and records the violation."""
-    from artel.runtimes import codex
+    from artel.adapters.agent import codex
 
     cfg, project, tmp = env
     (project.shared / "spec.md").write_text("original\n", encoding="utf-8")
@@ -252,7 +252,7 @@ def test_codex_usage_arriving_after_the_terminal_tool_is_recorded(env, monkeypat
 
 
 def test_codex_killed_without_usage_is_flagged_not_silently_zero(env, monkeypatch):
-    from artel.runtimes import codex
+    from artel.adapters.agent import codex
 
     cfg, project, _ = env
     monkeypatch.setattr(codex, "TERMINAL_GRACE_S", 0.5)
@@ -261,3 +261,26 @@ def test_codex_killed_without_usage_is_flagged_not_silently_zero(env, monkeypatc
     assert out.status == "terminal" and out.usage["input_tokens"] == 0
     end = [e for e in project.log.read() if e["kind"] == "agent/end" and e.get("runtime") == "codex"][-1]
     assert end["usage_missing"] is True and end["usage"]["input_tokens"] == 0
+
+
+def test_malformed_cli_lines_are_dropped_and_the_run_finishes(env, monkeypatch):
+    cfg, project, _ = env
+    monkeypatch.setenv("FAKE_CODEX_BADLINES", "1")
+    out, _ = _run(cfg, project)
+    assert out.status == "terminal" and out.name == "task_submit", out.error
+
+
+def test_codex_agent_satisfies_the_agent_port_and_runs(env):
+    from artel.adapters.agent import CliAgent, codex_agent
+    from artel.contracts import TaskContract
+    from artel.ports import AgentPort
+
+    cfg, project, _ = env
+    agent = codex_agent(new_kernel(cfg), project)
+    assert isinstance(agent, CliAgent) and isinstance(agent, AgentPort)
+    contract = TaskContract.from_dict({"id": "t-9", "intent_ref": "i-1", "title": "hello", "input": "Write hello.py",
+                                       "refs": [], "criteria": ["hello.py exists"], "checks": [],
+                                       "output_schema": "ExecutorResult.v1", "max_tokens": 0,
+                                       "capability": "executor", "reversible": True, "depends_on": []})
+    res = agent.run(contract, str(project.shared), ["task_submit"])
+    assert res.status == "done" and res.usage.in_ > 0

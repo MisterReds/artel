@@ -20,7 +20,7 @@ from typing import Optional
 
 import yaml
 
-from .runtimes.codex import codex_env, codex_settings
+from .adapters.agent.codex import codex_env, codex_settings
 from .tools import installed_by_artel, resolve, terminate_tree
 
 ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
@@ -107,7 +107,7 @@ class ClaudeLogin:
         return resolve((self.config.get("claude_code") or {}).get("binary", "claude"))
 
     def start(self, wait_s: float = 20.0) -> dict:
-        from .runtimes.claude_code import child_env
+        from .adapters.agent.claude_code import child_env
 
         with self.lock:
             if self.proc and self.proc.poll() is None:
@@ -170,7 +170,7 @@ class ClaudeLogin:
 
 
 def logout_claude(config: dict) -> dict:
-    from .runtimes.claude_code import child_env
+    from .adapters.agent.claude_code import child_env
 
     binary = resolve((config.get("claude_code") or {}).get("binary", "claude"))
     if not binary:
@@ -204,7 +204,7 @@ def codex_status(config: dict) -> dict:
 
 
 def _codex_sandbox(cfg: dict) -> str:
-    from .runtimes.codex import sandbox_mode, sandbox_note
+    from .adapters.agent.codex import sandbox_mode, sandbox_note
 
     mode = sandbox_mode(cfg, config=cfg)
     return {"sandbox": "песочница Codex работает",
@@ -222,7 +222,7 @@ def logout_codex(config: dict) -> dict:
 
 def claude_code_status(config: dict) -> dict:
     cc = config.get("claude_code") or {}
-    from .runtimes.claude_code import child_env
+    from .adapters.agent.claude_code import child_env
 
     binary = resolve(cc.get("binary", "claude"))
     if not binary:
@@ -264,7 +264,7 @@ def model_catalog(config: dict, runtime: str) -> list[dict]:
     """Models a runtime can use: Codex asks its CLI (`codex debug models`), Claude Code takes the aliases its CLI
     resolves to the latest model of each family; [] when unknown (the field stays free text)."""
     if runtime == "codex":
-        from .runtimes.codex import model_catalog as codex_models
+        from .adapters.agent.codex import model_catalog as codex_models
 
         return codex_models(codex_settings(config))
     if runtime == "claude_code":
@@ -279,7 +279,7 @@ def claude_models(config: dict, ttl: float = 600.0) -> list[dict]:
     """Claude Code has no model-listing command; its `--help` names the aliases it resolves to the latest model of
     each family (e.g. 'fable', 'opus', 'sonnet'). Those come first, then the other known aliases; any full model
     name is accepted as a custom value."""
-    from .runtimes.claude_code import child_env
+    from .adapters.agent.claude_code import child_env
 
     binary = resolve((config.get("claude_code") or {}).get("binary", "claude"))
     hit = _claude_cache.get(binary)
@@ -332,7 +332,7 @@ def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
         if isinstance(m, str):
             m = m.strip()
             if m and rt == "codex":
-                from .runtimes.codex import normalize_model
+                from .adapters.agent.codex import normalize_model
 
                 m = normalize_model(m, codex_settings(config))
                 known = [x["id"] for x in model_catalog(config, "codex")]

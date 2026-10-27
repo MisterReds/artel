@@ -14,13 +14,13 @@ def _native(kernel, project, **kw):
 
 
 def _claude_code(kernel, project, **kw):
-    from ..runtimes.claude_code import run_claude_code
+    from ..adapters.agent import run_claude_code
 
     return run_claude_code(kernel, project, **kw)
 
 
 def _codex(kernel, project, **kw):
-    from ..runtimes.codex import run_codex
+    from ..adapters.agent import run_codex
 
     return run_codex(kernel, project, **kw)
 

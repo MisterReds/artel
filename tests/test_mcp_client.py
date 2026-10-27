@@ -8,8 +8,8 @@ from artel.agent import execute_tool
 from artel.manager import new_kernel, run_goal
 from artel.project import DEFAULT_CONFIG, deep_merge
 from artel.runtimes import mcp_client
-from artel.runtimes.claude_code import mcp_servers_json
-from artel.runtimes.codex import build_args
+from artel.adapters.agent.claude_code import mcp_servers_json
+from artel.adapters.agent.codex import build_args
 from artel.tooling import ToolContext
 
 FAKE = str(Path(__file__).parent / "fakes" / "mcp_server")
@@ -101,7 +101,7 @@ def test_cli_runtimes_get_the_servers(env, tmp_path):
     assert any(x.startswith("mcp_servers.fake.env_vars=") for x in a) and not any("s3cret" in x for x in a)
     assert "s3cret" in mcp_client.codex_secrets(ext)[1].values()
     # the native bridge does not proxy them a second time
-    from artel.runtimes.claude_code import ToolBridge
+    from artel.adapters.agent.loop import ToolBridge
     k = new_kernel(cfg)
     b = ToolBridge(k, project, ctx_for(k, project, "worker"), "worker", None, "w")
     assert not [s for s in b.specs if s.name.startswith("mcp__")]
