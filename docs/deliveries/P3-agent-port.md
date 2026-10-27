@@ -49,5 +49,12 @@ stream (fixture lines from tests/fakes) into the expected AgentEvent list; `wc -
 7. Native loop: a response cut by `max_tokens` never executes its tool calls (the model is asked to continue);
    tool-call JSON that does not parse is returned to the model as an error, never passed to the tool.
 
+8. Broken checks are not bad work (seen live: a planner check used `rg`, absent on the owner's machine; the
+   worker did the work, the gate failed with exit 127, three replans kept the same check, the task went to the
+   owner): the planner's brief lists the tools available on this machine; before a plan is accepted the first
+   program of every check is resolved (`which`), a missing one sends the plan back with the list; a gate that
+   fails with exit 126/127 or "not found" is classified as an environment failure, the replanner may rewrite the
+   check, and the worker is not blamed.
+
 Acceptance: one test per item that fails before the change; full suite; green CI on six jobs; a live smoke on the
 owner's machine (one task on each subscription) before merge of stage B.
