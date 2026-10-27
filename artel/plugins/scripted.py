@@ -210,6 +210,12 @@ class ScriptedProvider:
         return [_text("Diagnosing."), _use("diagnosis_report", cause=cause, who=who,
                                            steps=["шаг из сценарного провайдера"], evidence="scripted", confidence=0.7)]
 
+    def _chat(self, messages, system):
+        from .. import chat
+
+        reply = chat.scripted_reply(_first_text(messages), self.knobs.get("chat_actions") or [])
+        return [_use("chat_reply", **reply)]
+
     def _replan(self, messages, system):
         return [_use("replan_decision", action="retry", rationale="transient failure",
                      guidance="Re-read the criteria and verify each with a command.")]

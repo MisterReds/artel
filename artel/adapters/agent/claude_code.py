@@ -123,7 +123,7 @@ def launch(run) -> dict:
             "stream-json", "--verbose", "--mcp-config", str(run.state["cfg"]), "--strict-mcp-config",
             *([] if run.session else ["--append-system-prompt", run.system_note]),  # a resumed session keeps it
             "--permission-mode", cc["permission_mode"], *build_dir_args(grants),
-            "--allowedTools", *[t for t in BUILTIN_TOOLS if role != "intake"  # intake: only submit_contract
+            "--allowedTools", *[t for t in BUILTIN_TOOLS if role not in ("intake", "concierge")  # only their own tools
                                 and (not no_write or t not in WRITE_TOOLS)],
             "mcp__artel", *[f"mcp__{n}" for n in external]]
     if no_write:

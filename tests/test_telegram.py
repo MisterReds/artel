@@ -96,7 +96,8 @@ def test_goal_from_the_phone_runs_and_notifies(bot):
     b.store.data["paired"] = [7]
     tg.msg(7, "Напиши отчёт о продажах")
     b.poll_once(timeout=0)
-    assert "Начать новую цель?" in tg.texts(7)[-1]
+    offered = [b["text"] for row in tg.sent[-1]["reply_markup"]["inline_keyboard"] for b in row]
+    assert "▶️ Начать как цель" in offered  # free text goes to the chat, which offers to start it as a goal
     tg.press(7, "go")
     b.poll_once(timeout=0)
     assert "Начал" in tg.texts(7)[-1]

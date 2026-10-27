@@ -20,7 +20,8 @@ DEFAULTS = {
     # Manager = expensive; Architect/Executor/Critic = medium; Curator and routine = cheap
     "roles": {"planner": "expensive", "manager": "expensive", "auditor": "expensive",
               "worker": "medium", "reviewer": "medium", "tester": "medium", "absorber": "medium", "evolver": "medium",
-              "librarian": "cheap", "refiner": "cheap", "doctor": "cheap", "curator": "cheap", "intake": "cheap"},
+              "librarian": "cheap", "refiner": "cheap", "doctor": "cheap", "curator": "cheap", "intake": "cheap",
+              "concierge": "cheap"},
     # model names per runtime; a missing name keeps the runtime's own configured model
     "models": {"claude_code": {"cheap": "haiku", "medium": "sonnet", "expensive": "opus"},
                "native": {},             # set in artel.yaml: tiers.models.native.{cheap,medium,expensive}

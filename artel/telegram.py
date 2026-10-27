@@ -7,6 +7,7 @@ Security: the bot token comes only from the environment (ARTEL_TELEGRAM_TOKEN) a
 any data until their chat is paired: `/pair CODE` with a one-time code (valid 15 minutes) shown in the terminal and
 on the dashboard's "Подключения" page. Paired chat ids are kept in ARTEL_HOME/telegram.json.
 
+Free text that is not a command goes to the concierge chat (artel/chat.py).
 Commands: /status · /projects · /p N · /new <цель> (or just send the goal text) · /answer N <ответ> · /stop N ·
 /resume N · /update · /unpair · /help. Notifications: a project is done, needs a person, failed or ran out of
 budget; an update of Artel is available.
@@ -24,13 +25,14 @@ from typing import Optional
 
 import httpx
 
+from . import chat as chatmod
+from .chat import STATUS_RU
+
 TOKEN_ENV = "ARTEL_TELEGRAM_TOKEN"
 API = "https://api.telegram.org"
 CODE_TTL_S = 15 * 60
 NOTIFY = {"done": "✅ Цель достигнута", "waiting_human": "🙋 Нужен человек", "error": "⚠️ Ошибка",
           "paused_budget": "⏸ Закончился бюджет"}
-STATUS_RU = {"done": "готово", "running": "в работе", "planning": "планирование", "waiting_human": "ждёт человека",
-             "error": "ошибка", "stopped": "остановлен", "paused_budget": "нет бюджета", "needs_review": "на проверке"}
 HELP = ("Artel на связи.\n"
         "/status — сводка\n/projects — проекты\n/p N — проект подробно\n"
         "/new цель — начать (или просто пришлите текст цели)\n/answer N текст — ответить проекту, который ждёт вас\n"
@@ -186,9 +188,7 @@ class TelegramBot:
         if handler:
             handler(chat, arg.strip())
         elif not text.startswith("/"):
-            self.pending_goal[chat] = text
-            self.send(chat, f"Начать новую цель?\n\n{text[:500]}", [[{"text": "▶️ Начать", "callback_data": "go"},
-                                                                    {"text": "Отмена", "callback_data": "cancel"}]])
+            self.c_chat(chat, text)
         else:
             self.send(chat, HELP)
 
@@ -219,6 +219,17 @@ class TelegramBot:
         if arg.isdigit() and 1 <= int(arg) <= len(slugs):
             return slugs[int(arg) - 1]
         return next((s for s in slugs if s == arg or s.startswith(arg)), None) if arg else None
+
+    def c_chat(self, chat: int, text: str) -> None:
+        """Free text goes to the concierge chat (artel/chat.py); the reply can offer to start the text as a goal."""
+        out = chatmod.respond(self.runner, f"telegram-{chat}", text, who=f"telegram:{chat}")
+        lines = [out["reply"], *[a["label"] for a in out["actions"]]]
+        buttons = [[{"text": f"📂 {r['label'][:30]}", "callback_data": f"p:{r['slug']}"}]
+                   for r in out["refs"] if r["type"] == "project"][:3]
+        if not any(a["ok"] for a in out["actions"]):
+            self.pending_goal[chat] = text
+            buttons.append([{"text": "▶️ Начать как цель", "callback_data": "go"}])
+        self.send(chat, "\n\n".join(lines), buttons)
 
     def c_help(self, chat, arg):
         self.send(chat, HELP)
@@ -337,6 +348,8 @@ class TelegramBot:
     def on_button(self, chat: int, data: str) -> None:
         if data == "go" and chat in self.pending_goal:
             self._start_goal(chat, self.pending_goal.pop(chat))
+        elif data.startswith("p:"):
+            self.c_project(chat, data[2:])
         elif data == "cancel":
             self.pending_goal.pop(chat, None)
             self.send(chat, "Хорошо, не начинаю.")

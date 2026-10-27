@@ -354,6 +354,7 @@ DEFAULT_PLUGINS = [
     "artel.plugins.skill_tools",
     "artel.plugins.board_tools",
     "artel.plugins.evolve_tools",
+    "artel.plugins.chat_tools",
 ]
 
 
