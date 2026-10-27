@@ -181,17 +181,34 @@ def cmd_result(args) -> int:
     except ValueError as exc:
         print(str(exc), file=sys.stderr)
         return 1
+    if info.get("busy"):
+        print("Уже запускается.", file=sys.stderr)
+        return 1
     st = runner.status(project)
     print(f"Открыть: {info['url']}" + ("" if st["state"] == "running" else f"  (не отвечает: {st['state']})"))
     print("Ctrl+C - остановить.")
+    import signal
+
+    quit_evt = threading.Event()
+    old = {}
+    for name in ("SIGTERM", "SIGHUP"):  # a closed terminal or `kill` must not leave the child running
+        sig = getattr(signal, name, None)
+        if sig is not None:
+            try:
+                old[sig] = signal.signal(sig, lambda *_: quit_evt.set())
+            except ValueError:  # not the main thread
+                pass
     try:
-        while runner.status(project)["running"]:
-            time.sleep(1)
-        print("Процесс завершился. Журнал:\n" + runner.status(project)["log"])
+        while not quit_evt.wait(1) and runner.status(project)["running"]:
+            pass
+        if not quit_evt.is_set():
+            print("Процесс завершился. Журнал:\n" + runner.status(project)["log"])
     except KeyboardInterrupt:
         pass
     finally:
         runner.stop_all()
+        for sig, h in old.items():
+            signal.signal(sig, h)
     return 0
 
 

@@ -623,10 +623,22 @@ def make_handler(runner: Runner, auth=None):
                 if len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "run":
                     proj = self._project(parts[2])
                     if data.get("action") == "start":
+                        from ..result_run import run_spec, spec_display
+
+                        spec = run_spec(proj)
+                        if spec and spec.get("command"):  # code the workers wrote: the owner confirms the exact command
+                            shown = spec_display(spec)
+                            if proj.meta.get("run_confirmed") != shown:
+                                if data.get("confirmed") is not True or data.get("command", shown) != shown:
+                                    return self._json({"error": "нужно подтвердить команду запуска", "command": shown,
+                                                       "confirm": True}, 428)
+                                proj.set_meta(run_confirmed=shown)
                         try:
-                            runner.results.start(proj)
+                            info = runner.results.start(proj)
                         except ValueError as exc:
                             return self._json({"error": str(exc)}, 400)
+                        if info.get("busy"):
+                            return self._json({"error": "Уже запускается", "busy": True}, 409)
                         return self._json(runner.results.status(proj))
                     if data.get("action") == "stop":
                         runner.results.stop(proj)

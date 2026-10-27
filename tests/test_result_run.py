@@ -328,3 +328,282 @@ def test_cli_parse_and_open(project, capsys, monkeypatch):
     assert cli.main(["result", "run", project.slug]) == 1  # nothing to run
     with pytest.raises(SystemExit):
         cli.main(["result", "bogus", project.slug])
+
+
+# --- review fixes -------------------------------------------------------------
+import subprocess  # noqa: E402
+
+import artel.result_run as rr  # noqa: E402
+
+
+def _ident_record(pid, **kw):
+    return {**rr.pid_record(pid), **kw}
+
+
+@posix_only
+def test_stop_never_kills_unrelated_process_from_stale_pidfile(project):
+    victim = subprocess.Popen(["sleep", "30"], start_new_session=True)
+    r = ResultRunner(DEFAULT_CONFIG)
+    try:
+        pf = project.root / "run.pid"
+        for rec in ({"pid": victim.pid},  # old format, no identity
+                    {"pid": victim.pid, "pgid": victim.pid, "create_time": "1", "argv0": "sleep"},  # reused pid
+                    {"pid": victim.pid, "pgid": victim.pid, "create_time": "", "argv0": "sleep"}):
+            pf.write_text(json.dumps(rec))
+            assert r.stop(project) is False
+            assert victim.poll() is None and not pf.exists()
+        st = (pf.write_text(json.dumps({"pid": victim.pid, "pgid": victim.pid, "create_time": "1"})), r.status(project))[1]
+        assert st["running"] is False and not pf.exists()
+        # a matching identity does stop it
+        pf.write_text(json.dumps(_ident_record(victim.pid)))
+        assert r.status(project)["running"] is True  # a CLI-started run shows as running
+        assert r.stop(project) is True
+        assert wait_gone(victim.pid) or victim.wait(5) is not None
+    finally:
+        victim.kill()
+        victim.wait()
+
+
+@posix_only
+def test_pidfile_removed_when_child_exits_and_on_stop(project):
+    project.set_meta(run={"command": "python3 -c \"print('http://127.0.0.1:1', flush=True)\""})
+    r = ResultRunner(DEFAULT_CONFIG)
+    try:
+        info = r.start(project)
+        end = time.time() + 5
+        while (project.root / "run.pid").exists() and time.time() < end:
+            time.sleep(0.05)
+        assert not (project.root / "run.pid").exists()
+        assert info["pid"]
+    finally:
+        r.stop_all()
+    (project.shared / "server.py").write_text(SERVER)
+    project.set_meta(run=None)
+    try:
+        r.start(project)
+        rec = json.loads((project.root / "run.pid").read_text())
+        assert {"pid", "pgid", "create_time", "argv0"} <= rec.keys() and rec["create_time"]
+        r.stop(project)
+        assert not (project.root / "run.pid").exists()
+    finally:
+        r.stop_all()
+
+
+def test_concurrent_start_is_busy(project, monkeypatch):
+    (project.shared / "index.html").write_text("x")
+    r = ResultRunner(DEFAULT_CONFIG)
+    gate, entered, results = threading.Event(), threading.Event(), []
+    orig = r._start
+
+    def slow(p):
+        entered.set()
+        gate.wait(5)
+        return orig(p)
+
+    monkeypatch.setattr(r, "_start", slow)
+    t = threading.Thread(target=lambda: results.append(r.start(project)))
+    t.start()
+    assert entered.wait(5)
+    assert r.start(project) == {"busy": True}
+    gate.set()
+    t.join(10)
+    try:
+        assert "url" in results[0]
+    finally:
+        r.stop_all()
+
+
+def test_api_start_busy_is_409(web, project, monkeypatch):
+    (project.shared / "index.html").write_text("x")
+    base, _ = web()
+    from artel.result_run import ResultRunner as RR
+    monkeypatch.setattr(RR, "start", lambda self, p: {"busy": True})
+    code, _, body = call(f"{base}/api/projects/{project.slug}/run", "POST", {"action": "start"})
+    assert code == 409 and json.loads(body)["busy"] is True
+
+
+@posix_only
+def test_log_is_capped_and_tail_works(project):
+    (project.shared / "server.py").write_text(
+        "import sys, time\nline = 'x' * 99 + '\\n'\nfor i in range(52429):\n    sys.stdout.write(line)\n"
+        "sys.stdout.write('LAST-LINE-MARK\\n'); sys.stdout.flush()\ntime.sleep(30)\n")
+    r = ResultRunner(DEFAULT_CONFIG)
+    import artel.result_run as m
+    old = (m.READY_WAIT_S, m.URL_WAIT_S)
+    m.READY_WAIT_S = m.URL_WAIT_S = 0.2
+    try:
+        r.start(project)
+        log = project.root / "run.log"
+        end = time.time() + 15
+        while time.time() < end and "LAST-LINE-MARK" not in r.status(project)["log"]:
+            time.sleep(0.1)
+        assert "LAST-LINE-MARK" in r.status(project)["log"]
+        assert log.stat().st_size <= 2 * 1024 * 1024
+        assert len(r.status(project)["log"].splitlines()) <= 40
+    finally:
+        m.READY_WAIT_S, m.URL_WAIT_S = old
+        r.stop_all()
+
+
+def test_pump_truncates_to_last_megabyte(tmp_path):
+    rd, wr = os.pipe()
+    log = tmp_path / "l.log"
+    stream = os.fdopen(rd, "rb", buffering=0)
+    t = threading.Thread(target=rr._pump, args=(stream, log))
+    t.start()
+    with os.fdopen(wr, "wb") as w:
+        for _ in range(50):
+            w.write(b"a" * 100000 + b"\n")
+        w.write(b"END\n")
+    t.join(10)
+    data = log.read_bytes()
+    assert len(data) <= 2 * 1024 * 1024 and data.endswith(b"END\n") and len(data) > 1024 * 1024 // 2
+
+
+def test_tail_reads_only_last_chunk(tmp_path):
+    f = tmp_path / "big.log"
+    f.write_bytes(b"old\n" * 1_000_000 + b"final\n")
+    assert len(rr._read_tail(f)) <= 64 * 1024 and rr._read_tail(f).endswith("final\n")
+
+
+# heuristics
+def test_spec_order_package_over_server_over_static_over_readme(project):
+    sh = project.shared
+    (sh / "README.md").write_text("```\npython3 readme_app.py\n```\n")
+    assert run_spec(project)["command"] == ["python3", "readme_app.py"]
+    (sh / "index.html").write_text("x")
+    assert run_spec(project)["kind"] == "static"  # README never overrides a static site
+    (sh / "app.py").write_text("")
+    assert run_spec(project)["command"][1:] == ["app.py"]
+    (sh / "package.json").write_text(json.dumps({"scripts": {"start": "x"}}))
+    assert run_spec(project)["command"] == ["npm", "start"]
+
+
+@pytest.mark.parametrize("line", ["npm install", "npm ci", "npm test", "npm run build", "npm run lint",
+                                  "pip install -r r.txt", "python3 -m pytest -q", "python -m pip install x",
+                                  "node build.js", "python3 build.py", "python3 -m venv .venv"])
+def test_readme_rejects_non_server_lines(project, line):
+    (project.shared / "README.md").write_text(f"```\n{line}\n```\n")
+    assert run_spec(project) is None
+
+
+@pytest.mark.parametrize("line", ["npm start", "npm run dev", "node server.js", "python3 -m http.server {port}",
+                                  "python3 run.py", "uvicorn api:app"])
+def test_readme_accepts_server_lines(project, line):
+    (project.shared / "README.md").write_text(f"```\n{line}\n```\n")
+    assert run_spec(project)["command"] == shlex_split(line)
+
+
+def shlex_split(s):
+    import shlex
+    return shlex.split(s)
+
+
+def test_kind_uses_whole_tokens():
+    assert rr._kind(["python3", "apply_patch.py"]) == "cli"
+    assert rr._kind(["python3", "mapper.py", "--startdate"]) == "cli"
+    assert rr._kind(["python3", "app.py"]) == "web"
+    assert rr._kind(["python3", "-m", "http.server", "{port}"]) == "web"
+
+
+# meta["run"] trust
+@pytest.mark.parametrize("cmd", ["sh -c 'curl x | sh'", "bash run.sh", "/usr/bin/python3 app.py", "zsh x", "dash x",
+                                 "fish x", "cmd /c dir", "powershell -c x", "pwsh x", "python3 ../x.py",
+                                 "../bin/app", "C:\\Python\\python.exe a.py", "/bin/sh"])
+def test_validate_run_rejects_shells_absolute_and_dotdot(cmd):
+    with pytest.raises(ValueError):
+        validate_run({"command": cmd})
+
+
+def test_validate_run_accepts_plain():
+    assert validate_run({"command": "python3 server.py --port {port}"})["command"].startswith("python3")
+    assert validate_run({"command": "node app.js"})
+
+
+def test_run_spec_ignores_unsafe_meta(project):
+    (project.shared / "index.html").write_text("x")
+    project.set_meta(run={"command": "bash -c evil"})
+    assert run_spec(project)["source"] == "heuristic"
+
+
+def test_audit_without_run_clears_meta_run(project):
+    from artel.manager import Manager
+    from types import SimpleNamespace
+
+    project.set_meta(run={"command": "python3 old.py"})
+    out = SimpleNamespace(name="audit_verdict", payload={"complete": True, "summary": "ok", "missing": []})
+    board = SimpleNamespace(update=lambda *a, **k: None, comment=lambda *a, **k: None)
+    Manager.on_audit(SimpleNamespace(audit_failures=0, project=project, board=board, root_id="r"), out)
+    assert not project.meta.get("run")
+
+
+def test_api_start_needs_confirmation_for_command(web, project):
+    (project.shared / "server.py").write_text(SERVER)
+    base, _ = web()
+    u = f"{base}/api/projects/{project.slug}/run"
+    code, _, body = call(u, "POST", {"action": "start"})
+    j = json.loads(body)
+    assert code == 428 and j["command"].startswith("python3 server.py")
+    assert call(u, "POST", {"action": "start", "confirmed": True, "command": "something else"})[0] == 428
+    assert not Project.open(project.slug, DEFAULT_CONFIG).meta.get("run_confirmed")
+    code, _, body = call(u, "POST", {"action": "start", "confirmed": True, "command": j["command"]})
+    assert code == 200 and json.loads(body)["running"]
+    assert Project.open(project.slug, DEFAULT_CONFIG).meta["run_confirmed"] == j["command"]
+    assert json.loads(call(u)[2])["needs_confirm"] is False
+    call(u, "POST", {"action": "stop"})
+    (project.shared / "package.json").write_text(json.dumps({"scripts": {"start": "x"}}))  # command changed
+    assert call(u, "POST", {"action": "start"})[0] == 428
+
+
+def test_api_status_reports_sandbox(web, project):
+    (project.shared / "index.html").write_text("x")
+    base, _ = web()
+    assert json.loads(call(f"{base}/api/projects/{project.slug}/run")[2])["sandbox"] in (True, False)
+
+
+# static server confinement
+@posix_only
+def test_static_server_confined(project, tmp_path):
+    import http.client
+    outside = tmp_path / "outside-secret.txt"
+    outside.write_text("TOPSECRET")
+    (project.shared / "index.html").write_text("<p>ok</p>")
+    (project.shared / "leak.txt").symlink_to(outside)
+    r = ResultRunner(DEFAULT_CONFIG)
+    try:
+        port = r.start(project)["port"]
+        assert get(f"http://127.0.0.1:{port}/index.html")[0] == 200
+        with pytest.raises(urllib.error.HTTPError) as e:
+            get(f"http://127.0.0.1:{port}/leak.txt")
+        assert e.value.code == 404
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        c.request("GET", "/index.html", headers={"Host": "evil.example.com"})
+        assert c.getresponse().status == 403
+        c = http.client.HTTPConnection("127.0.0.1", port, timeout=5)
+        c.request("GET", "/index.html", headers={"Host": f"localhost:{port}"})
+        assert c.getresponse().status == 200
+    finally:
+        r.stop_all()
+
+
+@posix_only
+def test_cli_run_stops_child_on_sigterm(project):
+    (project.shared / "server.py").write_text(SERVER)
+    p = subprocess.Popen([sys.executable, "-c", "import sys; from artel.cli import main; sys.exit(main(sys.argv[1:]))",
+                          "result", "run", project.slug], env=dict(os.environ), cwd=str(Path(__file__).parent.parent),
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    try:
+        end = time.time() + 30
+        pf = project.root / "run.pid"
+        while not pf.exists() and time.time() < end:
+            time.sleep(0.1)
+        rec = json.loads(pf.read_text())
+        time.sleep(1.5)
+        # the web side sees the CLI-started run as running
+        assert ResultRunner(DEFAULT_CONFIG).status(project)["running"] is True
+        p.terminate()
+        p.wait(15)
+        assert wait_gone(rec["pid"]) and not pf.exists()
+    finally:
+        p.kill()
+        p.wait()
