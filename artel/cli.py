@@ -176,29 +176,29 @@ def cmd_result(args) -> int:
     if args.raction == "stop":
         print("Остановлено." if runner.stop(project) else "Результат не запущен.")
         return 0
-    try:
-        info = runner.start(project)
-    except ValueError as exc:
-        print(str(exc), file=sys.stderr)
-        return 1
-    if info.get("busy"):
-        print("Уже запускается.", file=sys.stderr)
-        return 1
-    st = runner.status(project)
-    print(f"Открыть: {info['url']}" + ("" if st["state"] == "running" else f"  (не отвечает: {st['state']})"))
-    print("Ctrl+C - остановить.")
     import signal
 
     quit_evt = threading.Event()
     old = {}
-    for name in ("SIGTERM", "SIGHUP"):  # a closed terminal or `kill` must not leave the child running
-        sig = getattr(signal, name, None)
+    for name in ("SIGTERM", "SIGHUP"):  # a closed terminal or `kill` must not leave the child running, not even
+        sig = getattr(signal, name, None)  # while it is still starting (a slow server takes tens of seconds)
         if sig is not None:
             try:
                 old[sig] = signal.signal(sig, lambda *_: quit_evt.set())
             except ValueError:  # not the main thread
                 pass
     try:
+        try:
+            info = runner.start(project)
+        except ValueError as exc:
+            print(str(exc), file=sys.stderr)
+            return 1
+        if info.get("busy"):
+            print("Уже запускается.", file=sys.stderr)
+            return 1
+        st = runner.status(project)
+        print(f"Открыть: {info['url']}" + ("" if st["state"] == "running" else f"  (не отвечает: {st['state']})"))
+        print("Ctrl+C - остановить.")
         while not quit_evt.wait(1) and runner.status(project)["running"]:
             pass
         if not quit_evt.is_set():
