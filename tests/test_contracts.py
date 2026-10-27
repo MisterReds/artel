@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from artel.contracts import (AmplifiedTaskContract, CapabilityProfile, ContractError, DecisionLogEntry,
+from artel.contracts import (AgentEvent, AmplifiedTaskContract, CapabilityProfile, ContractError, DecisionLogEntry,
                              EscalationRequest, Event, ExecutorResult, Intent, ManagerInput, ModelCard,
                              NormRequest, NormResponse, REQUIRED_FIELDS, RangeResearchTask, RewriteProposal,
                              RewriteTaskContract, TaskContract, ToolResult, Usage, ErrorClass)
@@ -57,13 +57,14 @@ SAMPLES = {
     ModelCard: {"id": "m", "provider": "p", "context_tokens": 10, "capabilities": ["cache"],
                 "usd_per_mtok_in": 1.0, "usd_per_mtok_out": 2.0},
     ErrorClass: {"kind": "rate_limit", "retryable": True, "retry_after_s": 2.0},
+    AgentEvent: {"kind": "tool_call", "data": {"id": "t1", "name": "Edit", "input": {"file_path": "a.py"}}},
 }
 ENUMS = {
     Intent: {"autonomy": "x"}, ManagerInput: {"decision_needed": "x"}, ExecutorResult: {"status": "x"},
     EscalationRequest: {"kind": "x", "to": "x"}, DecisionLogEntry: {"status": "x"},
     CapabilityProfile: {"reasoning": "x", "independent_of": "x"}, RewriteProposal: {"trigger": "x"},
     RewriteTaskContract: {"paradigm": "x"}, RangeResearchTask: {"critic": "x"}, NormResponse: {"stop": "x"},
-    ErrorClass: {"kind": "x"},
+    ErrorClass: {"kind": "x"}, AgentEvent: {"kind": "x"},
 }
 OPTIONAL = {(ToolResult, "exit_code"), (ErrorClass, "retry_after_s")}
 
@@ -308,3 +309,34 @@ def test_free_form_payloads_hold_only_finite_json_values(bad):
     with pytest.raises(ContractError):
         NormResponse.from_dict({"content": "", "usage": {"in": 0, "out": 0, "cached": 0}, "latency_ms": 1,
                                 "model": "m", "stop": "end", "tool_calls": [{"id": "1", "name": "t", "args": {"a": bad}}]})
+
+
+@pytest.mark.parametrize("kind,data", [
+    ("session", {"id": "s"}), ("text", {"text": "t"}), ("tool_call", {"id": "1", "name": "n", "input": {}}),
+    ("tool_result", {"id": "1", "output": "o", "is_error": False}), ("command", {"command": "ls"}),
+    ("usage", {"input_tokens": 1, "output_tokens": 2, "cached": 3, "cost_usd": 0.1}), ("end", {"is_error": True}),
+    ("error", {"message": "m"})])
+def test_agent_event_every_kind_requires_each_field(kind, data):
+    ev = AgentEvent(kind, data)
+    assert AgentEvent.from_dict(ev.to_dict()) == ev
+    for key in data:
+        if key in ("cached", "cost_usd"):  # optional on usage
+            continue
+        with pytest.raises(ContractError, match=key):
+            AgentEvent(kind, {k: v for k, v in data.items() if k != key})
+
+
+def test_agent_event_checks_types_and_is_frozen():
+    with pytest.raises(ContractError, match="data.id"):
+        AgentEvent("tool_call", {"id": 1, "name": "n", "input": {}})
+    with pytest.raises(ContractError, match="data.is_error"):
+        AgentEvent("end", {"is_error": 1})
+    with pytest.raises(ContractError, match="cached"):
+        AgentEvent("usage", {"input_tokens": 1, "output_tokens": 1, "cached": -1})
+    with pytest.raises(ContractError, match="data"):
+        AgentEvent("text", "x")
+    ev = AgentEvent("tool_call", {"id": "1", "name": "n", "input": {"a": [1]}})
+    with pytest.raises(TypeError):
+        ev.data["input"]["a"] = 2
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        ev.kind = "text"

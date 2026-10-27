@@ -78,7 +78,7 @@ def test_codex_without_terminal_tool_is_resumed_and_readonly_roles_get_readonly_
     calls = [json.loads(x) for x in (tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()]
     assert out.status == "terminal" and len(calls) == 2 and calls[1][-3:] == ["resume", "th-1", "-"]
     assert any(e["kind"] == "agent/continuation" and e.get("runtime") == "codex" for e in project.log.read())
-    from artel.runtimes.codex import build_args, codex_settings
+    from artel.adapters.agent.codex import build_args, codex_settings
 
     scratch = tmp / "scratch"
     a = build_args(codex_settings(cfg), workspace=scratch, shared=tmp, role="reviewer", bridge_url="u",
@@ -146,13 +146,13 @@ def test_codex_policy_stops_disallowed_commands(env, monkeypatch):
 
 
 def _reset_sandbox():
-    from artel.runtimes import codex
+    from artel.adapters.agent import codex
 
     codex._sandbox_mode.clear()
 
 
 def test_sandbox_probe_picks_the_mode_that_runs_commands(env, monkeypatch):
-    from artel.runtimes.codex import codex_settings, sandbox_mode
+    from artel.adapters.agent.codex import codex_settings, sandbox_mode
 
     cfg, _, _ = env
     cc = codex_settings(cfg)
@@ -166,7 +166,7 @@ def test_sandbox_probe_picks_the_mode_that_runs_commands(env, monkeypatch):
 
 
 def test_bots_never_get_the_owners_apps_or_screen_and_have_network(env, tmp_path):
-    from artel.runtimes import codex
+    from artel.adapters.agent import codex
 
     cc = {**codex.DEFAULTS, "binary": fake_codex(tmp_path)}
     args = codex.build_args(cc, workspace=tmp_path, shared=tmp_path, role="worker", bridge_url="u", bridge_token="t",
@@ -200,7 +200,7 @@ def test_a_sandbox_that_fails_mid_run_is_dropped_and_the_bot_continues(env, monk
 def test_a_judge_cannot_change_the_deliverables_even_without_a_sandbox(env, monkeypatch):
     """A reviewer runs from a scratch directory; if the sandbox is unusable and it writes into the deliverables
     anyway, Artel restores them after the run and records the violation."""
-    from artel.runtimes import codex
+    from artel.adapters.agent import codex
 
     cfg, project, tmp = env
     (project.shared / "spec.md").write_text("original\n", encoding="utf-8")
@@ -252,7 +252,7 @@ def test_codex_usage_arriving_after_the_terminal_tool_is_recorded(env, monkeypat
 
 
 def test_codex_killed_without_usage_is_flagged_not_silently_zero(env, monkeypatch):
-    from artel.runtimes import codex
+    from artel.adapters.agent import codex
 
     cfg, project, _ = env
     monkeypatch.setattr(codex, "TERMINAL_GRACE_S", 0.5)
