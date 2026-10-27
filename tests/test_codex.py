@@ -24,7 +24,7 @@ def fake_codex(tmp_path) -> str:
 
 
 FAKE_CODEX_VARS = ["FAKE_CODEX_CMD", "FAKE_CODEX_LAZY", "FAKE_CODEX_LIMIT", "FAKE_CODEX_LOG", "FAKE_CODEX_NO_USAGE",
-                   "FAKE_CODEX_SANDBOX", "FAKE_CODEX_STDERR_KB", "FAKE_CODEX_USAGE_DELAY", "FAKE_CODEX_WRITE"]
+                   "FAKE_CODEX_SANDBOX", "FAKE_CODEX_BADLINES", "FAKE_CODEX_STDERR_KB", "FAKE_CODEX_USAGE_DELAY", "FAKE_CODEX_WRITE"]
 
 
 @pytest.fixture
@@ -261,3 +261,26 @@ def test_codex_killed_without_usage_is_flagged_not_silently_zero(env, monkeypatc
     assert out.status == "terminal" and out.usage["input_tokens"] == 0
     end = [e for e in project.log.read() if e["kind"] == "agent/end" and e.get("runtime") == "codex"][-1]
     assert end["usage_missing"] is True and end["usage"]["input_tokens"] == 0
+
+
+def test_malformed_cli_lines_are_dropped_and_the_run_finishes(env, monkeypatch):
+    cfg, project, _ = env
+    monkeypatch.setenv("FAKE_CODEX_BADLINES", "1")
+    out, _ = _run(cfg, project)
+    assert out.status == "terminal" and out.name == "task_submit", out.error
+
+
+def test_codex_agent_satisfies_the_agent_port_and_runs(env):
+    from artel.adapters.agent import CliAgent, codex_agent
+    from artel.contracts import TaskContract
+    from artel.ports import AgentPort
+
+    cfg, project, _ = env
+    agent = codex_agent(new_kernel(cfg), project)
+    assert isinstance(agent, CliAgent) and isinstance(agent, AgentPort)
+    contract = TaskContract.from_dict({"id": "t-9", "intent_ref": "i-1", "title": "hello", "input": "Write hello.py",
+                                       "refs": [], "criteria": ["hello.py exists"], "checks": [],
+                                       "output_schema": "ExecutorResult.v1", "max_tokens": 0,
+                                       "capability": "executor", "reversible": True, "depends_on": []})
+    res = agent.run(contract, str(project.shared), ["task_submit"])
+    assert res.status == "done" and res.usage.in_ > 0

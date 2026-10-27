@@ -115,3 +115,21 @@ def test_events_are_immutable_and_validated():
     assert isinstance(ev, AgentEvent) and AgentEvent.from_dict(ev.to_dict()) == ev
     with pytest.raises(TypeError):
         ev.data["id"] = "other"
+
+
+@pytest.mark.parametrize("line", [
+    L(type="item.completed", item={"id": "i", "type": "agent_message", "text": None}),
+    L(type="item.completed", item={"id": "i", "type": "mcp_tool_call", "tool": None}),
+    L(type="thread.started", thread_id=5),
+])
+def test_codex_off_type_fields_never_escape_parse_unhandled(line):
+    """Either parse copes, or it raises and the loop drops the line (tests/test_codex.py covers the loop path)."""
+    try:
+        codex.parse(line)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def test_codex_null_error_message_is_not_a_failure():
+    assert codex.parse(L(type="error", message=None)) == []
+    assert codex.parse(L(type="turn.failed", error={"message": "boom"}))[0].data["message"] == "boom"

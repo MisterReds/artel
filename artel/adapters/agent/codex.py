@@ -138,7 +138,7 @@ def _item(item: dict) -> list:
     if kind == "web_search":
         return [AgentEvent("tool_call", {"id": iid, "name": "web_search", "input": {"query": item.get("query", "")}})]
     if kind == "error":
-        return [AgentEvent("error", {"message": item.get("message", "")})]
+        return [AgentEvent("error", {"message": str(item.get("message") or "")})]
     return [AgentEvent("text", {"text": ""})]  # progress only (reasoning, todo lists…)
 
 
@@ -159,8 +159,8 @@ def parse(line: str) -> list:
                                      "cached": int(u.get("cached_input_tokens") or 0)})]
     if typ in ("turn.failed", "error"):
         err = ev.get("error") or {}
-        return [AgentEvent("error", {"fatal": True, "message": str((
-            err.get("message") if isinstance(err, dict) else str(err)) or ev.get("message", ""))})]
+        msg = (err.get("message") if isinstance(err, dict) else err) or ev.get("message")
+        return [AgentEvent("error", {"fatal": True, "message": str(msg)})] if msg else []
     if typ == "item.started":
         if item.get("type") == "command_execution":
             return [AgentEvent("command", {"command": item.get("command", ""), "phase": "start"})]

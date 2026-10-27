@@ -21,6 +21,7 @@ import json
 import os
 import secrets
 import subprocess
+import sys
 import tempfile
 import threading
 import uuid
@@ -301,7 +302,11 @@ def _read(run: Run, proc, grace_s: Optional[float]) -> Optional[threading.Timer]
     for line in proc.stdout:
         if run.stop_event is not None and run.stop_event.is_set():
             run.kill()
-        events = codec.parse(line)
+        try:
+            events = codec.parse(line)
+        except Exception as exc:  # noqa: BLE001 - a malformed CLI line must not end the read loop with the CLI alive
+            run.project.log.append("llm/error", actor=run.actor, error=f"unparsable {codec.NAME} line: {exc}"[:300])
+            events = []
         run.consume(events)
         if grace_s is not None and ctx.terminal and not run.stopped:
             # the run is finished as soon as Artel accepted a terminal tool; do not let the CLI continue. Its closing
@@ -385,6 +390,8 @@ def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str
                 if grace is not None:
                     grace.cancel()
                     run.stopped = True
+                if proc.poll() is None and sys.exc_info()[0] is not None:
+                    terminate_tree(proc, True)  # leaving on an exception: never wait for a CLI that keeps running
                 proc.wait()
             usage_missing = not run.got_usage  # the last attempt decides
             stderr = err_tail.text()
