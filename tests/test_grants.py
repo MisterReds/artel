@@ -4,8 +4,8 @@ import pytest
 from artel.kernel import Kernel
 from artel.project import Project
 from artel.tooling import READONLY_ROLES, ToolContext, ToolError, effective_grants
-from artel.runtimes.claude_code import build_dir_args
-from artel.runtimes.codex import build_args
+from artel.adapters.agent.claude_code import build_dir_args
+from artel.adapters.agent.codex import build_args
 
 
 @pytest.fixture

@@ -611,7 +611,7 @@ def cmd_providers(args) -> int:
 
     from .brand import banner
     from .providers import logout_codex, overview
-    from .runtimes.codex import codex_env, codex_settings
+    from .adapters.agent.codex import codex_env, codex_settings
 
     cfg = _cfg(args)
     rt = "claude_code" if args.name == "claude" else args.name
@@ -674,7 +674,7 @@ def cmd_providers(args) -> int:
         return 0 if res.get("ok") else 1
     if args.action in ("login", "logout") and rt == "claude_code":
         from .providers import logout_claude
-        from .runtimes.claude_code import child_env
+        from .adapters.agent.claude_code import child_env
         from .tools import resolve
 
         if args.action == "logout":

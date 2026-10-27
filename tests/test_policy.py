@@ -102,9 +102,9 @@ def test_claude_code_settings_and_gate(tmp_path, monkeypatch):
     import json
     import types
 
-    from artel.runtimes import claude_code as cc
+    from artel.adapters.agent import claude_code, loop as cc
 
-    hook = json.loads(cc.policy_hook_settings(tmp_path))["hooks"]["PreToolUse"][0]
+    hook = json.loads(claude_code.policy_hook_settings(tmp_path))["hooks"]["PreToolUse"][0]
     assert hook["matcher"] == "Bash" and "policy.py" in hook["hooks"][0]["command"]
     logged, killed = [], []
     project = types.SimpleNamespace(root=tmp_path, log=types.SimpleNamespace(append=lambda *a, **k: logged.append(a)))

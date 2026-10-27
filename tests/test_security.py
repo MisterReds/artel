@@ -101,7 +101,7 @@ def test_pypi_plugins_install_as_wheels_only(tmp_path):
 
 def test_artel_home_is_private_and_the_bridge_token_stays_off_command_lines(home, tmp_path):
     from artel.manager import new_kernel
-    from artel.runtimes.claude_code import ToolBridge
+    from artel.adapters.agent.loop import ToolBridge
     from artel.runtimes.mcp_proxy import read_token
     from artel.tooling import ToolContext
 
@@ -183,7 +183,8 @@ def test_the_mcp_proxy_works_from_a_workspace_that_is_another_artel_checkout(hom
     import subprocess
 
     from artel.manager import new_kernel
-    from artel.runtimes.claude_code import PROXY_SCRIPT, ToolBridge
+    from artel.adapters.agent.claude_code import PROXY_SCRIPT
+    from artel.adapters.agent.loop import ToolBridge
     from artel.tooling import ToolContext
 
     shadow = tmp_path / "ws" / "artel" / "runtimes"
@@ -214,7 +215,7 @@ def test_the_mcp_proxy_works_from_a_workspace_that_is_another_artel_checkout(hom
 def test_policy_hook_ignores_a_planted_workspace_policy(home, tmp_path):
     import shlex
     import subprocess
-    from artel.runtimes.claude_code import policy_hook_settings
+    from artel.adapters.agent.claude_code import policy_hook_settings
 
     ws = tmp_path / "ws"
     (ws / "artel").mkdir(parents=True)
@@ -231,8 +232,8 @@ def test_policy_hook_ignores_a_planted_workspace_policy(home, tmp_path):
 
 
 def test_secrets_do_not_reach_agent_environments(home, monkeypatch):
-    from artel.runtimes.claude_code import child_env
-    from artel.runtimes.codex import codex_env
+    from artel.adapters.agent.claude_code import child_env
+    from artel.adapters.agent.codex import codex_env
 
     for k, v in {"ARTEL_TELEGRAM_TOKEN": "t", "GITHUB_TOKEN": "g", "ANTHROPIC_API_KEY": "a", "OPENAI_API_KEY": "o",
                  "EXTRA_OK": "x"}.items():

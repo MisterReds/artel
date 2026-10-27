@@ -52,6 +52,9 @@ emit = lambda o: print(json.dumps(o), flush=True)
 resumed = "resume" in args
 emit({"type": "thread.started", "thread_id": "th-1"})
 emit({"type": "turn.started"})
+if os.environ.get("FAKE_CODEX_BADLINES"):  # off-type fields a real CLI may send one day
+    emit({"type": "item.completed", "item": {"id": "b1", "type": "agent_message", "text": None}})
+    emit({"type": "item.completed", "item": {"id": "b2", "type": "mcp_tool_call", "tool": None, "status": None}})
 if os.environ.get("FAKE_CODEX_LIMIT"):
     emit({"type": "turn.failed", "error": {"message": "You've hit your usage limit. Try again at 4:20 PM."}}); sys.exit(1)
 if os.environ.get("FAKE_CODEX_CMD"):  # a command about to run: Artel's policy must stop the process

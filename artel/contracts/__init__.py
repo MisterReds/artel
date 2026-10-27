@@ -1,5 +1,6 @@
 """Frozen data contracts shared by the kernel, ports and adapters. Standard library only."""
 from ._base import ContractError
+from .agent_event import AgentEvent
 from .core import ErrorClass, ModelCard, NormRequest, NormResponse, ToolResult, Usage
 from .events import REQUIRED_FIELDS, Event
 from .schemas import (AmplifiedTaskContract, Altitude, ArtifactRef, CapabilityProfile, DecisionLogEntry, Depth,
