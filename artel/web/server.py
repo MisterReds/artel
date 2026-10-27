@@ -593,13 +593,20 @@ def make_handler(runner: Runner, auth=None):
             out = filesview.preview(Path(project.shared), rel)
             self._json(out if out else {"error": "not found"}, 200 if out else 404)
 
-        def _fv_send(self, project: Project, rel: str, headers: dict, ctype: str | None = None,
+        def _fv_send(self, project: Project, rel: str, headers, ctype: str | None = None,
                      download: bool = False) -> None:
             """One file's bytes (a single Range honoured, for video). Every response is sandboxed and nosniff."""
-            real = filesview.resolve(Path(project.shared), rel)
-            if real is None or not real.is_file():
+            opened = filesview.open_inside(Path(project.shared), rel)
+            if opened is None:
                 return self._json({"error": "not found"}, 404)
-            size = real.stat().st_size
+            fd, real = opened
+            if callable(headers):
+                ctype, headers = headers(real)
+            with os.fdopen(fd, "rb") as f:
+                self._fv_stream(f, real, headers, ctype, download)
+
+        def _fv_stream(self, f, real: Path, headers: dict, ctype: str | None, download: bool) -> None:
+            size = os.fstat(f.fileno()).st_size
             start, end, code = 0, size - 1, 200
             m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range") or "")
             if m and (m.group(1) or m.group(2)) and size:
@@ -625,26 +632,26 @@ def make_handler(runner: Runner, auth=None):
             if download:
                 self.send_header("Content-Disposition", filesview.attachment(real.name))
             self.end_headers()
-            with open(real, "rb") as f:
-                f.seek(start)
-                left = end - start + 1 if size else 0
-                while left > 0:
-                    chunk = f.read(min(64 * 1024, left))
-                    if not chunk:
-                        break
-                    self.wfile.write(chunk)
-                    left -= len(chunk)
+            f.seek(start)
+            left = end - start + 1 if size else 0
+            while left > 0:
+                chunk = f.read(min(64 * 1024, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                left -= len(chunk)
 
         def _fv_raw(self, project: Project, rel: str, download: bool) -> None:
             """Bytes for <img>/<video>/<embed> and downloads. Page-like types are shown as plain text here: the
             only place HTML runs is /preview, in a sandbox."""
-            real = filesview.resolve(Path(project.shared), rel)
-            ctype, headers = None, {"Content-Security-Policy": "sandbox"}
-            if real is not None and real.suffix.lower() in (".html", ".htm", ".xml", ".xhtml"):
-                ctype = "text/plain; charset=utf-8"
-            if real is not None and real.suffix.lower() == ".pdf" and not download:
-                headers = {}  # the browser's PDF viewer does not run inside a sandboxed document; a PDF has no script
-            self._fv_send(project, rel, headers, ctype, download)
+            def policy(real: Path) -> tuple[str | None, dict]:  # decided on the file actually opened
+                ext = real.suffix.lower()
+                if ext == ".pdf" and not download:
+                    return None, {}  # the PDF viewer does not run in a sandboxed document; a PDF has no script
+                return ("text/plain; charset=utf-8" if ext in (".html", ".htm", ".xml", ".xhtml") else None,
+                        {"Content-Security-Policy": "sandbox"})
+
+            self._fv_send(project, rel, policy, None, download)
 
         def _fv_preview(self, project: Project, rel: str) -> None:
             """The file as a web page would get it (HTML, its CSS and scripts), in an opaque origin: the

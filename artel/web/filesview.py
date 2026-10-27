@@ -11,6 +11,7 @@ import io
 import mimetypes
 import os
 import re
+import stat
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
@@ -52,6 +53,54 @@ def resolve(base: Path, rel: str) -> Optional[Path]:
     except (OSError, RuntimeError):
         return None
     return target if target == base or target.is_relative_to(base) else None
+
+
+def _fd_path(fd: int) -> Optional[str]:
+    """Where an open file really is: /proc on Linux, F_GETPATH on macOS; None when the platform cannot say."""
+    try:
+        return os.readlink(f"/proc/self/fd/{fd}")
+    except OSError:
+        pass
+    try:
+        import fcntl
+
+        if hasattr(fcntl, "F_GETPATH"):
+            return os.fsdecode(fcntl.fcntl(fd, fcntl.F_GETPATH, b"\0" * 1024).split(b"\0", 1)[0])
+    except (ImportError, OSError):
+        pass
+    return None
+
+
+def open_inside(base: Path, rel: str) -> Optional[tuple[int, Path]]:
+    """Open `rel` (a regular file inside `base`) once and return (fd, real path), or None. The check is made on the
+    descriptor that is then read, so a path swapped for a symlink after resolve() cannot lead outside: the last
+    component is opened with O_NOFOLLOW and the descriptor's own location is verified."""
+    real = resolve(base, rel)
+    if real is None:
+        return None
+    try:
+        fd = os.open(real, os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+                     | getattr(os, "O_NONBLOCK", 0))
+    except OSError:
+        return None
+    ok = False
+    try:
+        st = os.fstat(fd)
+        if stat.S_ISREG(st.st_mode):
+            where = _fd_path(fd)
+            if where is not None:
+                ok = Path(where).is_relative_to(base.resolve())
+            else:  # no way to ask the OS: the file at the freshly resolved path must be the one we hold
+                again = resolve(base, rel)
+                if again is not None:
+                    now = os.stat(again)
+                    ok = (now.st_dev, now.st_ino) == (st.st_dev, st.st_ino)
+    except OSError:
+        ok = False
+    if not ok:
+        os.close(fd)
+        return None
+    return fd, real
 
 
 def lang_of(path: Path) -> Optional[str]:
@@ -167,18 +216,21 @@ def csv_rows(text: str, ext: str = ".csv") -> dict:
 
 def preview(base: Path, rel: str) -> Optional[dict]:
     """Preview payload for one file, or None when the path is refused / not a file."""
-    real = resolve(base, rel)
-    if real is None or not real.is_file():
+    opened = open_inside(base, rel)
+    if opened is None:
         return None
-    size = real.stat().st_size
-    head = _head(real)
-    kind = kind_of(real, head)
-    out = {"path": rel, "name": real.name, "size": size, "kind": kind, "lang": lang_of(real)}
-    if kind in ("image", "pdf", "video", "binary"):
-        return out
-    if size > PREVIEW_MAX:
+    fd, real = opened
+    with os.fdopen(fd, "rb") as f:
+        size = os.fstat(f.fileno()).st_size
+        head = f.read(4096)
+        kind = kind_of(real, head)
+        out = {"path": rel, "name": real.name, "size": size, "kind": kind, "lang": lang_of(real)}
+        if kind in ("image", "pdf", "video", "binary"):
+            return out
+        data = head + f.read(PREVIEW_MAX + 1 - len(head))  # never more than the limit (+1 to see it is exceeded)
+    if len(data) > PREVIEW_MAX:
         return {**out, "kind": "toolarge"}
-    text = real.read_bytes().decode("utf-8", errors="replace")
+    text = data.decode("utf-8", errors="replace")
     if kind == "csv":
         try:
             return {**out, **csv_rows(text, real.suffix.lower())}

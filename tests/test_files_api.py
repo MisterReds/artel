@@ -308,3 +308,63 @@ def test_answer_does_not_resume_a_project_the_owner_stopped(project, served):
     wid2 = blocked_project(project)
     answer(base, wid2)
     assert driven == [project.slug]
+
+
+# --- a path swapped for a symlink between the check and the open is not followed ------------------------------
+def _swap_after_resolve(monkeypatch, swap):
+    """filesview.resolve answers correctly once, then `swap()` runs: the race the route must survive."""
+    from artel.web import filesview
+
+    orig, calls = filesview.resolve, []
+
+    def resolve(b, rel):
+        real = orig(b, rel)
+        if not calls:
+            calls.append(1)
+            swap()
+        return real
+
+    monkeypatch.setattr(filesview, "resolve", resolve)
+
+
+@posix_only
+@pytest.mark.parametrize("route", ["/file?path=a.txt", "/raw?path=a.txt", "/raw?path=a.txt&download=1"])
+def test_file_swapped_for_a_symlink_after_the_check_is_refused(project, base, tmp_path, monkeypatch, route):
+    secret = tmp_path / "secret.txt"
+    secret.write_text("TOP SECRET")
+    (project.shared / "a.txt").write_text("fine")
+
+    def swap():
+        (project.shared / "a.txt").unlink()
+        os.symlink(secret, project.shared / "a.txt")
+
+    _swap_after_resolve(monkeypatch, swap)
+    code, _, body = get(base + route)
+    assert code == 404 and b"TOP SECRET" not in body
+
+
+@posix_only
+@pytest.mark.parametrize("no_proc", [False, True])
+def test_directory_swapped_for_a_symlink_after_the_check_is_refused(project, base, tmp_path, monkeypatch, no_proc):
+    from artel.web import filesview
+
+    (tmp_path / "out").mkdir()
+    (tmp_path / "out" / "a.txt").write_text("TOP SECRET")
+    (project.shared / "d").mkdir()
+    (project.shared / "d" / "a.txt").write_text("fine")
+    if no_proc:  # platforms without /proc/self/fd or F_GETPATH: compare the opened file with a fresh resolve
+        monkeypatch.setattr(filesview, "_fd_path", lambda fd: None)
+
+    def swap():
+        (project.shared / "d" / "a.txt").rename(project.shared / "d" / "b.txt")
+        (project.shared / "d").rename(project.shared / "d.old")
+        os.symlink(tmp_path / "out", project.shared / "d")
+
+    _swap_after_resolve(monkeypatch, swap)
+    code, _, body = get(base + "/file?path=d/a.txt")
+    assert code == 404 and b"TOP SECRET" not in body
+
+
+def test_preview_reads_at_most_the_limit_from_the_open_file(project, base):
+    (project.shared / "grow.txt").write_text("x" * (2 * 1024 * 1024 + 10))
+    assert jget(base + "/file?path=grow.txt")[1]["kind"] == "toolarge"
