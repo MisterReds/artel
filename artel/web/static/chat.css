@@ -1,0 +1,29 @@
+/* Artel chat: floating button and side panel (full screen on phones). Uses the dashboard's CSS variables. */
+#artel-chat .ac-fab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:40;min-height:48px;
+  padding:0 18px;border-radius:99px;background:var(--accent);color:var(--accent-ink);border:0;font-weight:600;
+  box-shadow:0 4px 16px rgba(0,0,0,.25);display:flex;align-items:center;gap:8px}
+#artel-chat .ac-fab:hover{filter:brightness(1.07)}
+#artel-chat .ac-panel{position:fixed;top:0;right:0;bottom:0;width:min(420px,100vw);z-index:50;background:var(--panel);
+  color:var(--ink);border-left:1px solid var(--line);box-shadow:-8px 0 28px rgba(0,0,0,.2);display:flex;flex-direction:column}
+#artel-chat .ac-panel[hidden]{display:none}
+#artel-chat .ac-head{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line)}
+#artel-chat .ac-head h2{margin:0;flex:1;font:600 15px/1.3 var(--display);text-transform:none;letter-spacing:0;color:var(--ink)}
+#artel-chat button{min-height:44px;min-width:44px}
+#artel-chat .ac-list{flex:1;overflow-y:auto;padding:12px 14px;display:flex;flex-direction:column;gap:10px;overscroll-behavior:contain}
+#artel-chat .ac-msg{max-width:92%;padding:8px 12px;border-radius:14px;white-space:pre-wrap;overflow-wrap:anywhere;
+  background:var(--chip);border:1px solid var(--line)}
+#artel-chat .ac-msg.user{align-self:flex-end;background:var(--brand-soft);color:var(--brand-fg);border-color:transparent}
+#artel-chat .ac-msg.err{border-color:var(--bad);color:var(--bad)}
+#artel-chat .ac-extra{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;white-space:normal}
+#artel-chat .ac-ref,#artel-chat .ac-chip,#artel-chat .ac-act{display:inline-flex;align-items:center;min-height:44px;
+  padding:0 12px;border-radius:99px;border:1px solid var(--line);background:var(--panel);color:var(--accent);font-size:13px}
+#artel-chat .ac-act{color:var(--ok);border-color:var(--ok)}
+#artel-chat .ac-act.no{color:var(--warn);border-color:var(--warn)}
+#artel-chat .ac-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 8px}
+#artel-chat .ac-chip{cursor:pointer;color:var(--ink)}
+#artel-chat form{display:flex;gap:8px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}
+#artel-chat textarea{flex:1;resize:none;min-height:44px;max-height:120px}
+#artel-chat .ac-wait{color:var(--muted);font-size:13px}
+@media (max-width:640px){#artel-chat .ac-panel{width:100vw;border-left:0}
+  #artel-chat .ac-fab{bottom:calc(72px + env(safe-area-inset-bottom))}}
+#artel-chat [hidden]{display:none!important}

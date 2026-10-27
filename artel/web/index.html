@@ -13,6 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="Artel">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="/static/fonts/fonts.css">
+<link rel="stylesheet" href="/static/chat.css">
 <style>
 :root{
   /* Artel brand: copper on warm paper. Status colours are distinct from the brand so a running task never
@@ -762,5 +763,7 @@ function waitRestart(){const t0=Date.now();const iv=setInterval(async()=>{try{co
 $('#updbtn').onclick=async()=>updDialog(await checkUpdate(false));
 checkUpdate(false);setInterval(()=>checkUpdate(false),60000);
 </script>
+<div id="artel-chat"></div>
+<script src="/static/chat.js" defer></script>
 </body>
 </html>
