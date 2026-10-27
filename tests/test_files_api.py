@@ -265,3 +265,46 @@ def test_a_failure_in_a_file_route_is_an_http_error_not_a_dropped_connection(pro
     for route in ("/file?path=a.txt", "/tree"):
         code, r = jget(base + route)
         assert code == 500 and "error" in r and "disk on fire" not in json.dumps(r)
+
+
+# --- answering resumes a project only when the owner did not stop it on purpose --------------------------------
+@pytest.fixture
+def served(project, monkeypatch):
+    runner = Runner(deep_merge(DEFAULT_CONFIG, {"provider": "scripted"}))
+    driven = []
+    monkeypatch.setattr(runner, "_drive", lambda proj, stop: driven.append(proj.slug))
+    httpd = LocalHTTPServer(("127.0.0.1", 0), make_handler(runner))
+    httpd.daemon_threads = True
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    yield f"http://127.0.0.1:{httpd.server_address[1]}/api/projects/{project.slug}", driven
+    httpd.shutdown()
+    httpd.server_close()
+
+
+def answer(base, wid):
+    req = urllib.request.Request(f"{base}/tasks/{wid}/comment", data=json.dumps({"body": "вот пароль"}).encode(),
+                                 headers={"Content-Type": "application/json"}, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        assert r.status == 200
+    time.sleep(0.3)
+
+
+def test_answer_resumes_a_blocked_project(project, served):
+    base, driven = served
+    wid = blocked_project(project)
+    answer(base, wid)
+    assert driven == [project.slug]
+    resumes = [e for e in project.log.read() if e["kind"] == "owner/resume"]
+    assert resumes and resumes[-1].get("after_answer") is True
+
+
+def test_answer_does_not_resume_a_project_the_owner_stopped(project, served):
+    base, driven = served
+    wid = blocked_project(project)
+    project.log.append("owner/stop", via="web")
+    answer(base, wid)
+    assert driven == [] and not [e for e in project.log.read() if e["kind"] == "owner/resume"]
+    project.log.append("owner/resume", via="web")  # the owner resumed on purpose, later: answering is fine again
+    wid2 = blocked_project(project)
+    answer(base, wid2)
+    assert driven == [project.slug]

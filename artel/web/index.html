@@ -460,14 +460,12 @@ function askCard(a,o){const id=a.task_id,q=a.question||'Исполнитель �
 function wireAsks(root,after){root.querySelectorAll('textarea[data-reply]').forEach(t=>{t.oninput=()=>{state.drafts[t.dataset.reply]=t.value;t.removeAttribute('aria-invalid')};t.onblur=()=>setTimeout(()=>{if(!typing())after()},500)});
   root.querySelectorAll('[data-send]').forEach(b=>b.onclick=()=>sendReply({id:b.dataset.send,slug:b.dataset.slug,btn:b,ta:document.getElementById('reply-'+b.dataset.send),after}));
   root.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>showTask(b.dataset.open))}
-// the existing message-to-executor action (it unblocks the task); then the project is resumed if it had ended while waiting
+// the existing message-to-executor action (it unblocks the task); the server resumes the project if it was only waiting for this answer
 async function sendReply({id,slug,btn,ta,after}){const body=(ta?ta.value:'').trim();
   if(!body){if(ta){ta.setAttribute('aria-invalid','true');ta.focus()}toast('Напишите ответ в поле.',{bad:true,id:'reply'});return}
   const label=btn.textContent;btn.disabled=true;btn.textContent='Отправляю…';
   try{const e=encodeURIComponent(slug),r=await post(`/api/projects/${e}/tasks/${encodeURIComponent(id)}/comment`,{body});if(r.error)throw new Error(r.error);
     delete state.drafts[id];
-    const pv=await api(`/api/projects/${e}`);
-    if(!pv.live&&pv.meta.status!=='done'&&!pv.board.tasks.some(t=>t.status==='blocked'&&t.needs_human))await post(`/api/projects/${e}/resume`);
     toast('Ответ отправлен. Исполнитель продолжит работу.',{id:'reply'});if(ta)ta.value='';
   }catch(err){btn.disabled=false;btn.textContent=label;toast('Не удалось отправить ответ: '+(err.message||'ошибка'),{bad:true,id:'reply',action:{label:'Повторить',fn:()=>sendReply({id,slug,btn,ta,after})}});return}
   dlgEl.open&&dlgEl.close();after()}

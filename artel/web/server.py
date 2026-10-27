@@ -134,6 +134,19 @@ class Runner:
         project.log.append("owner/resume", via=via, **({"after_answer": True} if after_answer else {}))
         self._spawn(slug, stop, lambda: self._drive(project, stop))
 
+    def resume_after_answer(self, project: Project) -> bool:
+        """The owner answered a question. Continue the project only if it went idle waiting for that answer: not
+        running, not finished, no other question open, and the owner did not stop it on purpose."""
+        if project.slug in self.active or project.meta.get("status") == "done":
+            return False
+        if any(t["needs_human"] for t in project.board.list(status=["blocked"])):
+            return False
+        owner = [e for e in project.log.read() if str(e.get("kind", "")).startswith("owner/")]
+        if owner and owner[-1]["kind"] == "owner/stop":
+            return False
+        self.resume(project.slug, after_answer=True)
+        return True
+
     def _spawn(self, slug: str, stop: threading.Event, fn) -> None:
         def wrapped():
             try:
@@ -852,7 +865,9 @@ def make_handler(runner: Runner, auth=None):
                     runner.resume(parts[2])
                     return self._json({"resumed": parts[2]})
                 if len(parts) == 6 and parts[3] == "tasks" and parts[5] == "comment":
-                    t = human_comment(self._project(parts[2]), parts[4], data.get("body", ""))
+                    project = self._project(parts[2])
+                    t = human_comment(project, parts[4], data.get("body", ""))
+                    runner.resume_after_answer(project)
                     return self._json(t)
                 return self._json({"error": "not found"}, 404)
             except (KeyError, FileNotFoundError) as exc:
