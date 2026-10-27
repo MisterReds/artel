@@ -288,6 +288,53 @@ def test_earlier_replies_are_not_sent_back_to_the_model_as_instructions(world):
     assert "что с beta?" in outside                          # the owner's own turns still give context
 
 
+# --- small things -----------------------------------------------------------------------------------------------
+def test_a_project_is_found_by_slug_whatever_the_number_of_projects(world, monkeypatch):
+    runner, *_ = world
+    make_project(runner.config, "oldest", "Самый старый", "done")
+    for i in range(chat.MAX_PROJECTS + 2):
+        make_project(runner.config, f"extra{i}", f"Проект {i}", "done")
+    assert "oldest" not in [p["slug"] for p in chat.portfolio_summary(runner)]
+    resumed = []
+    monkeypatch.setattr(runner, "resume", lambda slug, **kw: resumed.append(slug))
+    runner.config["scripted"] = {"chat_actions": [{"type": "resume_project", "project": "oldest"}]}
+    out = ask(runner, "что с beta?")
+    assert [p["args"]["project"] for p in out["proposed"]] == ["oldest"]
+    assert confirm(runner, out)["ok"] and resumed == ["oldest"]
+
+
+def test_the_portfolio_is_summarised_once_per_message(world, monkeypatch):
+    runner, *_ = world
+    real, calls = chat.portfolio_summary, []
+    monkeypatch.setattr(chat, "portfolio_summary", lambda r: calls.append(1) or real(r))
+    runner.config["scripted"] = {"chat_actions": [{"type": "resume_project", "project": "beta"},
+                                                  {"type": "stop_project", "project": "alpha"}]}
+    assert len(ask(runner, "что с beta?")["proposed"]) == 2
+    assert len(calls) == 1
+
+
+def test_rate_limit_forgets_keys_that_went_quiet():
+    now = [0.0]
+    rl = chat.RateLimit(2, 60, clock=lambda: now[0])
+    for k in "abcde":
+        assert rl.allow(k)
+    now[0] = 61
+    assert rl.allow("f")
+    assert list(rl.hits) == ["f"]
+
+
+def test_trimming_the_history_goes_through_a_temp_file_and_replace(world, monkeypatch):
+    replaced = []
+    real = chat.os.replace
+    monkeypatch.setattr(chat.os, "replace", lambda a, b: replaced.append((str(a), str(b))) or real(a, b))
+    for i in range(80):
+        chat.remember("dashboard", "user", f"{i} " + "я" * 3900)
+    path = chat.history_path("dashboard")
+    assert replaced and replaced[0][1] == str(path) and replaced[0][0] != str(path)
+    assert len(path.read_text(encoding="utf-8").splitlines()) <= chat.KEEP_LINES
+    assert [p.name for p in path.parent.iterdir()] == [path.name]
+
+
 # --- the concierge's own spend ---------------------------------------------------------------------------------
 def test_concierge_usage_is_part_of_the_spend_and_the_dashboard_total(world):
     runner, *_ = world

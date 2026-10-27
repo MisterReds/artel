@@ -81,7 +81,9 @@ def remember(channel: str, role: str, text: str) -> None:
             fh.write(line + "\n")
         if path.stat().st_size > 512_000:
             lines = path.read_text(encoding="utf-8").splitlines()[-KEEP_LINES:]
-            path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            tmp = path.with_suffix(".tmp")
+            tmp.write_text("\n".join(lines) + "\n", encoding="utf-8")
+            os.replace(tmp, path)
 
 
 def load(channel: str, limit: int = 50) -> list[dict]:
@@ -125,6 +127,8 @@ class RateLimit:
     def allow(self, key: str) -> bool:
         now = self.clock()
         with self.lock:
+            for k in [k for k, q in self.hits.items() if now - q[-1] >= self.window]:
+                del self.hits[k]   # a quiet key costs nothing
             q = self.hits[key]
             while q and now - q[0] >= self.window:
                 q.popleft()
@@ -271,6 +275,16 @@ def resolve_project(summaries: list[dict], ref: str) -> Optional[str]:
     return hit[0] if len(hit) == 1 else None
 
 
+def resolve_slug(runner, ref: str, ps: Optional[list[dict]] = None) -> Optional[str]:
+    """A project's slug from a reference: the slug itself (any number of projects), else name or unique prefix."""
+    from .project import artel_home
+
+    ref = (ref or "").strip()
+    if re.fullmatch(r"[A-Za-z0-9][\w-]*", ref) and (artel_home() / "projects" / ref / "project.json").exists():
+        return ref
+    return resolve_project(portfolio_summary(runner) if ps is None else ps, ref)
+
+
 # --- prompt (the trust boundary) --------------------------------------------------------------------------------
 def _safe_json(value) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).replace("<", "\\u003c")
@@ -385,7 +399,7 @@ def _log(runner, slug: str, who: str, what: str, why: str, **detail) -> None:
 
 
 def _need_project(runner, action: dict) -> str:
-    slug = resolve_project(portfolio_summary(runner), str(action.get("project") or ""))
+    slug = resolve_slug(runner, str(action.get("project") or ""))
     if not slug:
         raise ValueError("не понял, о каком проекте речь")
     return slug
@@ -525,7 +539,7 @@ def propose(runner, channel: str, raw, ps: list[dict]) -> Optional[dict]:
         return None
     args = {k: _cut(raw.get(k), MAX_MESSAGE if k in ("text", "goal") else 200) for k in ARG_KEYS if raw.get(k)}
     if kind != "start_goal":
-        args["project"] = resolve_project(ps, str(args.get("project") or "")) or ""
+        args["project"] = resolve_slug(runner, str(args.get("project") or ""), ps) or ""
         if not args["project"]:
             return None
     label = LABELS[kind].format(**{"project": "", "text": "", "goal": "", **{k: _cut(v, 200) for k, v in args.items()}})
