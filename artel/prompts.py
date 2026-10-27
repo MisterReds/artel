@@ -115,6 +115,8 @@ Decide whether the GOAL is achieved — not whether the tasks were.
   two such checks) — you are the manager, not the tester.
 - If anything is missing, broken, or weaker than the goal demands, set complete=false and list the missing work as
   new tasks (with criteria, checks and an assignee from the roster).
+- When the result is runnable (a service or an app), pass `run` {{command, url_path}} to audit_verdict: the exact
+  command that starts it from the shared dir ({{port}} stands for the port); omit it for static or non-runnable results.
 - Do not declare completion because work exists or budget is spent; only because the goal is met.
 Finish with audit_verdict. {UNTRUSTED}"""
 

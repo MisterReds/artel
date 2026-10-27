@@ -20,6 +20,7 @@ import argparse
 import json
 import sys
 import threading
+from pathlib import Path
 from typing import Optional
 import time
 
@@ -157,6 +158,40 @@ def cmd_status(args) -> int:
         return 0
     for p in list_projects():
         print(f"{p['slug']:<42} {p['status']:<14} {p['name'][:60]}")
+    return 0
+
+
+def cmd_result(args) -> int:
+    from .result_run import ResultRunner
+    from .web.server import open_folder
+
+    cfg = load_config()
+    project = Project.open(args.project, cfg)
+    if args.raction == "open":
+        path = str(Path(project.shared).resolve())
+        if not open_folder(path):
+            print(f"Папка результата: {path}")
+        return 0
+    runner = ResultRunner(cfg)
+    if args.raction == "stop":
+        print("Остановлено." if runner.stop(project) else "Результат не запущен.")
+        return 0
+    try:
+        info = runner.start(project)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    st = runner.status(project)
+    print(f"Открыть: {info['url']}" + ("" if st["state"] == "running" else f"  (не отвечает: {st['state']})"))
+    print("Ctrl+C - остановить.")
+    try:
+        while runner.status(project)["running"]:
+            time.sleep(1)
+        print("Процесс завершился. Журнал:\n" + runner.status(project)["log"])
+    except KeyboardInterrupt:
+        pass
+    finally:
+        runner.stop_all()
     return 0
 
 
@@ -979,6 +1014,14 @@ def main(argv=None) -> int:
     st = sub.add_parser("status")
     st.add_argument("project", nargs="?")
     st.set_defaults(fn=cmd_status)
+
+    rr = sub.add_parser("result", help="посмотреть готовый результат: запустить со ссылкой, остановить, открыть папку")
+    rra = rr.add_subparsers(dest="raction", required=True)
+    for name, hlp in (("run", "запустить результат и напечатать ссылку (Ctrl+C останавливает)"),
+                      ("stop", "остановить запущенный результат"), ("open", "открыть папку с результатом")):
+        rrp = rra.add_parser(name, help=hlp)
+        rrp.add_argument("project")
+        rrp.set_defaults(fn=cmd_result)
 
     lg = sub.add_parser("log")
     lg.add_argument("project")

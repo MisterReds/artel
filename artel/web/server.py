@@ -9,6 +9,11 @@ from __future__ import annotations
 
 import ipaddress
 import json
+import os
+import re
+import shutil
+import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler
@@ -53,6 +58,9 @@ class Runner:
         from ..tools import Installer
 
         self.installer = Installer()
+        from ..result_run import ResultRunner
+
+        self.results = ResultRunner(config)  # results the owner started with «Запустить»; stopped on shutdown
         self.update_state: dict = {"phase": "idle"}  # idle | checking | verifying | restart_pending | error
         self.restart_pending = False
 
@@ -247,6 +255,22 @@ def plugin_action(runner: Runner, parts: list, data: dict) -> tuple[dict, int]:
             return {"error": "not found"}, 404
     except P.PackageError as exc:
         return {"error": str(exc)}, 400
+
+
+def open_folder(path: str) -> bool:
+    """Show a folder in the system file manager, detached and without a shell; False when no opener exists."""
+    try:
+        if sys.platform == "win32":
+            os.startfile(path)  # noqa: S606
+            return True
+        opener = shutil.which("open" if sys.platform == "darwin" else "xdg-open")
+        if not opener:
+            return False
+        subprocess.Popen([opener, path], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                         start_new_session=True)
+        return True
+    except OSError:
+        return False
 
 
 def make_handler(runner: Runner, auth=None):
@@ -472,7 +496,11 @@ def make_handler(runner: Runner, auth=None):
                     self._json({"name": parts[2], "text": runner.kernel.get("skills").view(parts[2]),
                                 "ledger": runner.kernel.get("skills").ledger(parts[2])})
                 elif len(parts) == 3 and parts[:2] == ["api", "projects"]:
-                    self._json(project_view(self._project(parts[2]), runner))
+                    self._json({**project_view(self._project(parts[2]), runner), "remote": auth is not None})
+                elif len(parts) == 4 and parts[3] == "run":
+                    self._json(runner.results.status(self._project(parts[2])))
+                elif len(parts) == 4 and parts[3] == "archive":
+                    self._archive(self._project(parts[2]))
                 elif len(parts) == 4 and parts[3] == "events":
                     self._sse(self._project(parts[2]), int(q.get("after", ["0"])[0]))
                 elif len(parts) == 4 and parts[3] == "files":
@@ -515,6 +543,37 @@ def make_handler(runner: Runner, auth=None):
                 text = target.read_bytes()[:400_000].decode("utf-8", errors="replace")
                 return self._json({"file": target.relative_to(base).as_posix(), "text": text})
             return self._json({"error": "not found"}, 404)
+
+        def _archive(self, project: Project) -> None:
+            """shared/ as a zip, streamed to the client; symlinks that point outside shared/ are skipped."""
+            import tempfile
+            import zipfile
+
+            base = Path(project.shared).resolve()
+            with tempfile.TemporaryFile() as tmp:  # a zip needs seeking; the response is then streamed from disk
+                with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as z:
+                    for dirpath, dirnames, files in os.walk(base):
+                        dirnames[:] = [d for d in dirnames if (Path(dirpath) / d).resolve().is_relative_to(base)]
+                        for name in files:
+                            f = Path(dirpath) / name
+                            real = f.resolve()
+                            if real.is_file() and real.is_relative_to(base):
+                                z.write(real, f.relative_to(base).as_posix())
+                size = tmp.tell()
+                tmp.seek(0)
+                fname = re.sub(r"[^\w.-]", "_", project.slug) + ".zip"
+                self.send_response(200)
+                self.send_header("Content-Type", "application/zip")
+                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self.send_header("Content-Length", str(size))
+                self.end_headers()
+                shutil.copyfileobj(tmp, self.wfile, 64 * 1024)
+
+        def _open_folder(self, project: Project) -> None:
+            if auth is not None:
+                return self._json({"error": "в удалённом режиме папку на сервере не открыть: скачайте архив"}, 403)
+            path = str(Path(project.shared).resolve())
+            return self._json({"opened": open_folder(path), "path": path})
 
         def _sse(self, project: Project, after: int) -> None:
             self.send_response(200)
@@ -561,6 +620,20 @@ def make_handler(runner: Runner, auth=None):
                     if not goal:
                         return self._json({"error": "goal required"}, 400)
                     return self._json({"slug": runner.start(goal, data.get("name") or None)})
+                if len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "run":
+                    proj = self._project(parts[2])
+                    if data.get("action") == "start":
+                        try:
+                            runner.results.start(proj)
+                        except ValueError as exc:
+                            return self._json({"error": str(exc)}, 400)
+                        return self._json(runner.results.status(proj))
+                    if data.get("action") == "stop":
+                        runner.results.stop(proj)
+                        return self._json(runner.results.status(proj))
+                    return self._json({"error": "action: start | stop"}, 400)
+                if len(parts) == 4 and parts[:2] == ["api", "projects"] and parts[3] == "open-folder":
+                    return self._open_folder(self._project(parts[2]))
                 if len(parts) == 4 and parts[:3] == ["api", "providers", "install"]:
                     return self._json(runner.installer.start(parts[3]))
                 if len(parts) == 4 and parts[:3] == ["api", "providers", "uninstall"]:
@@ -755,6 +828,7 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
                                        "после следующего `artel web`." if live else ""), flush=True)
     finally:
         httpd.server_close()
+        runner.results.stop_all()
         runner.kernel.shutdown(reason="server_stop")
 
 

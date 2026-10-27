@@ -77,14 +77,21 @@ def review_verdict(ctx: ToolContext, passed: bool, feedback: str, failed_criteri
                                              "failed_criteria": failed_criteria or []})
 
 
-def audit_verdict(ctx: ToolContext, complete: bool, summary: str, missing: list = None) -> str:
+def audit_verdict(ctx: ToolContext, complete: bool, summary: str, missing: list = None, run: dict = None) -> str:
     missing = missing or []
+    from ..result_run import validate_run
+
+    try:
+        run = validate_run(run)
+    except ValueError as exc:
+        raise ToolError(str(exc))
     if not complete and not missing:
         raise ToolError("an incomplete verdict must list the missing work as new tasks")
     for m in missing:
         if not m.get("title") or not m.get("criteria"):
             raise ToolError("each missing item needs a title and acceptance criteria")
-    return _terminal(ctx, "audit_verdict", {"complete": bool(complete), "summary": summary, "missing": missing})
+    return _terminal(ctx, "audit_verdict", {"complete": bool(complete), "summary": summary, "missing": missing,
+                                          **({"run": run} if run else {})})
 
 
 def diagnosis_report(ctx: ToolContext, cause: str, who: str, steps: list, evidence: str = "",
@@ -242,7 +249,10 @@ def setup(kernel) -> None:
         "audit_verdict", "Deliver the goal audit. If anything required by the goal is missing or weak, set "
         "complete=false and list the missing work as new tasks.",
         {**S, "properties": {"complete": {"type": "boolean"}, "summary": {"type": "string"},
-                             "missing": {"type": "array", "items": TASK_ITEM}},
+                             "missing": {"type": "array", "items": TASK_ITEM},
+                             "run": {"type": "object", "description": "how the owner starts the result locally, if it "
+                                     "is a service or app: command (use {port} for the port) and url_path",
+                                     "properties": {"command": {"type": "string"}, "url_path": {"type": "string"}}}},
          "required": ["complete", "summary"]}, audit_verdict, roles=("auditor",), terminal=True))
     kernel.register_tool(ToolSpec(
         "diagnosis_report", "Deliver the diagnosis: the actual cause (Russian), who fixes it (artel / owner / "

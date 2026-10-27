@@ -226,7 +226,7 @@ $('#newbtn').onclick=()=>{dlg(`<h3>Новый проект</h3><p class="stat">�
   <input id="pname" placeholder="Название (необязательно)" style="margin-top:8px"><div style="margin-top:8px"><button class="primary" id="go">Запустить</button></div>`);
   $('#go').onclick=async()=>{const g=$('#goal').value.trim();if(!g)return;const r=await post('/api/projects',{goal:g,name:$('#pname').value.trim()});dlgEl.close();location.hash='#/p/'+encodeURIComponent(r.slug)}};
 
-function route(){clearInterval(timer);if(es){es.close();es=null}
+function route(){clearInterval(timer);clearInterval(resPoll);if(es){es.close();es=null}
   const h=location.hash.slice(2)||'portfolio';const [v,arg]=h.split('/');
   document.querySelectorAll('#nav a').forEach(a=>a.classList.toggle('on',a.dataset.v===v));
   ({portfolio,agents,registry,skills,evolution,providers,plugins,failures,settings,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
@@ -340,6 +340,7 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
   ${v.notes?`<div class="dev"><h2>Заметки харнесса (refine)</h2><pre>${esc(v.notes)}</pre></div>`:''}
   ${m.instructions_file?`<h2>Инструкции проекта</h2><div class="stat">${esc(m.instructions_file)}${m.instructions_truncated?' (усечён по лимиту 16 КиБ)':''}</div>`:''}
   <div class="dev"><h2>Доступ к путям</h2><div class="stat">запись: ${v.grants.write.map(esc).join(', ')||'—'}<br>чтение: ${v.grants.read.map(esc).join(', ')}${v.grants.refs.length?`<br>refs (только чтение): ${v.grants.refs.map(esc).join(', ')}`:''}</div></div>
+  <h2>Результат</h2><div id="resbox" class="goal"><span class="stat">Загрузка…</span></div>
   <h2>Результаты</h2><div id="filesbox" class="files"></div>`;
   document.querySelectorAll('.card,.alert[data-t]').forEach(c=>c.onclick=()=>showTask(c.dataset.t));
   document.querySelectorAll('.worker').forEach(c=>c.onclick=()=>showWorker(c.dataset.w));
@@ -347,7 +348,24 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
   const sp=$('#stop');if(sp)sp.onclick=()=>post(`/api/projects/${state.slug}/stop`).then(()=>setTimeout(refresh,800));
   const rs=$('#resume');if(rs)rs.onclick=()=>post(`/api/projects/${state.slug}/resume`).then(()=>setTimeout(refresh,800));
   const of=$('#openfeed');if(of)of.onclick=()=>$('#feed').classList.add('show');
-  listFiles('shared')}
+  listFiles('shared');resultBox()}
+// «Результат»: run the finished result, get a link; open the folder (local) or download an archive (remote)
+let resPoll=null;
+function resultDraw(r,remote){const box=$('#resbox');if(!box)return;const slug=encodeURIComponent(state.slug);
+  const run=r.running,tip='Запускает код, написанный агентами, на вашем компьютере (в песочнице, если она включена в настройках). Вы запускаете его сами, нажатием.';
+  box.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+    ${r.runnable?(run?'<button id="res-stop">Остановить</button>':`<button id="res-run" title="${esc(tip)}">Запустить</button>`):'<span class="stat">Запускать пока нечего: нет index.html или команды запуска.</span>'}
+    ${r.url&&run?`<a href="${esc(r.url)}" target="_blank" rel="noopener">Открыть ${esc(r.url)}</a>`:''}
+    ${remote?`<a href="/api/projects/${slug}/archive" download><button>Скачать архив</button></a>`:'<button id="res-open">Открыть папку</button>'}
+    <span class="stat" id="res-msg">${r.state==='not_answering'?'запущено, но не отвечает — смотрите журнал':r.state==='exited'?'процесс завершился — смотрите журнал':esc(r.error||'')}</span></div>
+  ${r.log?`<details id="res-log" ${state.reslog?'open':''} style="margin-top:6px"><summary class="stat">Журнал запуска</summary><pre>${esc(r.log)}</pre></details>`:''}`;
+  const rl=$('#res-log');if(rl)rl.ontoggle=()=>{state.reslog=rl.open};
+  const act=async a=>{$('#res-msg').textContent=a==='start'?'Запускаю…':'Останавливаю…';const j=await post(`/api/projects/${slug}/run`,{action:a});if(j.error){$('#res-msg').textContent=j.error;return}resultBox()};
+  const b1=$('#res-run');if(b1)b1.onclick=()=>act('start');const b2=$('#res-stop');if(b2)b2.onclick=()=>act('stop');
+  const b3=$('#res-open');if(b3)b3.onclick=async()=>{const j=await post(`/api/projects/${slug}/open-folder`);$('#res-msg').textContent=j.error?j.error:j.opened?'Папка открыта':'Папка: '+(j.path||'')};
+  clearInterval(resPoll);resPoll=null;
+  if(run||r.state==='not_answering')resPoll=setInterval(()=>{if(!$('#resbox')||document.hidden){if(!$('#resbox')){clearInterval(resPoll);resPoll=null}return}resultBox(true)},2000)}
+async function resultBox(quiet){try{const r=await api(`/api/projects/${encodeURIComponent(state.slug)}/run`);resultDraw(r,!!(state.v&&state.v.remote))}catch(e){if(!quiet){const b=$('#resbox');if(b)b.textContent='Не удалось получить состояние запуска'}}}
 const PURPOSE={intake:'уточняет задачу',plan:'составляет план',work:'выполняет задачу',review:'проверяет работу',audit:'аудит цели',test:'тестирует',refine:'улучшает харнесс',librarian:'собирает навыки'};
 // how Artel understood the request (intake contract, cheap model): the person sees it before the work is judged by it
 function contractBox(c){if(!c)return '';const L=(t,xs)=>(xs||[]).length?`<div style="margin-top:6px"><b>${t}</b><ul style="margin:2px 0 0;padding-left:18px">${xs.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:'';
