@@ -20,11 +20,32 @@
     return '#/p/' + encodeURIComponent(r.slug);
   }
 
+  function proposalCard(p) {
+    var card = el('div', 'ac-prop');
+    var label = el('span', 'ac-act', p.label);
+    var ok = el('button', 'primary', 'Выполнить'); ok.type = 'button';
+    var no = el('button', null, 'Отмена'); no.type = 'button';
+    function done(text, bad) {
+      card.textContent = '';
+      card.appendChild(el('span', 'ac-act' + (bad ? ' no' : ''), text));
+    }
+    ok.addEventListener('click', function () {
+      ok.disabled = no.disabled = true;
+      fetch('/api/chat/confirm', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({id: p.id})})
+        .then(function (r) { return r.json().catch(function () { return {}; }); })
+        .then(function (d) { done(d.label || d.error || 'Не выполнено', !d.ok); })
+        .catch(function () { done('Не получилось. Попробуйте ещё раз.', true); });
+    });
+    no.addEventListener('click', function () { done('Отменено: ' + p.label, true); });
+    card.appendChild(label); card.appendChild(ok); card.appendChild(no);
+    return card;
+  }
+
   function addMsg(role, text, extra) {
     var m = el('div', 'ac-msg ' + role, text);
     if (extra) {
       var box = el('div', 'ac-extra');
-      (extra.actions || []).forEach(function (a) { box.appendChild(el('span', 'ac-act' + (a.ok ? '' : ' no'), a.label)); });
+      (extra.proposed || []).forEach(function (p) { box.appendChild(proposalCard(p)); });
       var seen = {};
       (extra.refs || []).forEach(function (r) {
         var k = r.type + '|' + r.slug + '|' + r.id; if (seen[k]) return; seen[k] = 1;

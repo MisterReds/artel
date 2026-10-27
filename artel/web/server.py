@@ -625,6 +625,12 @@ def make_handler(runner: Runner, auth=None):
                         return self._json({"error": "слишком много сообщений, подождите минуту"}, 429,
                                           {"Retry-After": "60"})
                     return self._json(chat.respond(runner, "dashboard", message))
+                if parts == ["api", "chat", "confirm"]:
+                    if not chat.limiter(runner).allow(self._sid() or self._client_ip()):
+                        return self._json({"error": "слишком много сообщений, подождите минуту"}, 429,
+                                          {"Retry-After": "60"})
+                    out = chat.confirm(runner, "dashboard", str(data.get("id") or ""), "dashboard")
+                    return self._json(out, 404 if out.get("gone") else 200)
                 if parts == ["api", "projects"]:
                     goal = (data.get("goal") or "").strip()
                     if not goal:

@@ -19,6 +19,7 @@
   padding:0 12px;border-radius:99px;border:1px solid var(--line);background:var(--panel);color:var(--accent);font-size:13px}
 #artel-chat .ac-act{color:var(--ok);border-color:var(--ok)}
 #artel-chat .ac-act.no{color:var(--warn);border-color:var(--warn)}
+#artel-chat .ac-prop{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 #artel-chat .ac-chips{display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 8px}
 #artel-chat .ac-chip{cursor:pointer;color:var(--ink)}
 #artel-chat form{display:flex;gap:8px;padding:10px 14px calc(10px + env(safe-area-inset-bottom));border-top:1px solid var(--line)}

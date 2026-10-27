@@ -223,10 +223,13 @@ class TelegramBot:
     def c_chat(self, chat: int, text: str) -> None:
         """Free text goes to the concierge chat (artel/chat.py); the reply can offer to start the text as a goal."""
         out = chatmod.respond(self.runner, f"telegram-{chat}", text, who=f"telegram:{chat}")
-        lines = [out["reply"], *[a["label"] for a in out["actions"]]]
+        lines = [out["reply"], *[f"Предложено: {p['label']}" for p in out["proposed"]]]
         buttons = [[{"text": f"📂 {r['label'][:30]}", "callback_data": f"p:{r['slug']}"}]
                    for r in out["refs"] if r["type"] == "project"][:3]
-        if not any(a["ok"] for a in out["actions"]):
+        for p in out["proposed"]:
+            buttons.append([{"text": f"✅ {p['label'][:40]}", "callback_data": f"chat:confirm:{p['id']}"},
+                            {"text": "✖️ Отмена", "callback_data": f"chat:cancel:{p['id']}"}])
+        if not out["proposed"]:
             self.pending_goal[chat] = text
             buttons.append([{"text": "▶️ Начать как цель", "callback_data": "go"}])
         self.send(chat, "\n\n".join(lines), buttons)
@@ -348,6 +351,12 @@ class TelegramBot:
     def on_button(self, chat: int, data: str) -> None:
         if data == "go" and chat in self.pending_goal:
             self._start_goal(chat, self.pending_goal.pop(chat))
+        elif data.startswith("chat:confirm:"):
+            out = chatmod.confirm(self.runner, f"telegram-{chat}", data[13:], f"telegram:{chat}")
+            self.send(chat, out["label"])
+        elif data.startswith("chat:cancel:"):
+            chatmod.proposals(self.runner).take(f"telegram-{chat}", data[12:])
+            self.send(chat, "Хорошо, не выполняю.")
         elif data.startswith("p:"):
             self.c_project(chat, data[2:])
         elif data == "cancel":
