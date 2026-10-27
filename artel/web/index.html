@@ -198,7 +198,7 @@ function roleKey(r){r=(r||'').toLowerCase();for(const [k,re] of [['reviewer',/re
   ['manager',/manag|менедж/],['planner',/plan|план/],['librarian',/librar|библиот/],['refiner',/refin/],['evolver',/evol/],
   ['absorber',/absorb/],['human',/human|user|человек/]])if(re.test(r))return k;return 'worker'}
 function ri(role){return `<span class="ri" title="${esc(role||'')}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${RI[roleKey(role)]}</svg></span>`}
-const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const $=s=>document.querySelector(s), esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 // remote mode: a lost session (expired, token rotated) sends the app back to the login page
 // Russian plural: 1 проект / 2 проекта / 5 проектов
 const plural=(n,one,few,many)=>{n=Math.abs(n)|0;const a=n%10,b=n%100;return b>=11&&b<=14?many:a===1?one:a>=2&&a<=4?few:many};
@@ -253,9 +253,9 @@ $('#theme').onclick=()=>{const cur=document.documentElement.dataset.theme||'';ap
 applyTheme(document.documentElement.dataset.theme||'',false);
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>applyTheme(document.documentElement.dataset.theme||'',false))}catch(e){}
 // tab title shows how many projects wait for an answer
-let ATTN=0;function setAttn(n){ATTN=n;document.title=n>0?`Artel — ${n} ${plural(n,'ждёт','ждут','ждут')} ответа`:'Artel'}
+let ATTN=0;function setAttn(n){ATTN=n;document.title=n>0?`Artel — ${cnt(n,'вопрос','вопроса','вопросов')} к вам`:'Artel'}
 async function pollAttn(){if(document.hidden)return;try{const ps=await api('/api/portfolio');if(Array.isArray(ps))setAttn(ps.reduce((s,p)=>s+(p.attention||[]).length,0))}catch(e){}}
-pollAttn();setInterval(pollAttn,20000);
+pollAttn();setInterval(pollAttn,20000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollAttn()});
 const dlgEl=$('#dlg');dlgEl.addEventListener('click',e=>{if(e.target===dlgEl)dlgEl.close()});
 /* Диагност: «Почему?» — объяснение сбоя на доступной модели */
 async function why(problem,slug,task){dlg('<h3>Диагност</h3><p class="stat">Собираю факты и разбираю причину на доступной модели… обычно до минуты.</p>');
@@ -282,7 +282,7 @@ $('#newbtn').onclick=()=>{$('#dlgbody').innerHTML=`<h3>Что нужно сде�
     try{const r=await post('/api/projects',{goal:g,name:$('#pname').value.trim()});dlgEl.close();location.hash='#/p/'+encodeURIComponent(r.slug)}
     catch(e){go.disabled=false;go.textContent='Запустить'}}};
 
-function route(){clearInterval(timer);clearInterval(resPoll);if(es){es.close();es=null}
+function route(){state.lastLive=undefined;clearInterval(timer);clearInterval(resPoll);if(es){es.close();es=null}
   const h=location.hash.slice(2)||'portfolio';const [v,arg]=h.split('/');
   document.querySelectorAll('#nav a').forEach(a=>{const on=a.dataset.v===v;a.classList.toggle('on',on);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});
   const cur=document.querySelector('#nav a[data-v="'+v+'"]');$('#h1').textContent=cur?cur.textContent:v==='p'?'Проект':'Artel';
@@ -348,7 +348,7 @@ function renderPortfolio(){const ps=state.ps;const att=ps.flatMap(p=>(p.attentio
     <div class="kpi"><b style="color:${att.length?'var(--bad)':'inherit'}">${att.length}</b><span>Нужно вам</span></div><div class="kpi"><b>${live}</b><span>В работе</span></div>
     <div class="kpi dev"><b>${agents}</b><span>воркеров в работе</span></div><div class="kpi dev"><b>${money(cost)}</b><span>оценка стоимости API</span></div></div>
   ${att.length?`<div role="alert"><h2>Нужен ваш ответ <span class="stat">${cnt(att.length,'вопрос','вопроса','вопросов')}</span></h2>${att.map(a=>`<a class="alert" href="#/p/${encodeURIComponent(a.p.slug)}"><b>${esc(a.p.name)}</b> · ${esc(a.title)} <span class="stat">· ${esc(a.assignee)} · ${esc(a.reason)}</span></a>`).join('')}</div>`:''}
-  <h2>${cnt(ps.length,'проект','проекта','проектов')}</h2><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><div class="chips" role="group" aria-label="Фильтр по этапу">${stages.map(s=>`<button data-f="${s}" aria-pressed="${state.pfilter===s}" class="${state.pfilter===s?'on':''}">${s==='all'?'все':esc(chipText(s))} ${s==='all'?ps.length:ps.filter(p=>p.stage===s).length}</button>`).join('')}</div>
+  <h2>${cnt(ps.length,'проект','проекта','проектов')}</h2><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><div class="chips" role="group" aria-label="Фильтр по этапу">${stages.map(s=>`<button data-f="${esc(s)}" aria-pressed="${state.pfilter===s}" class="${state.pfilter===s?'on':''}">${s==='all'?'все':esc(chipText(s))} ${s==='all'?ps.length:ps.filter(p=>p.stage===s).length}</button>`).join('')}</div>
     <input id="pq" aria-label="Поиск по проектам" placeholder="Поиск по проектам" value="${esc(state.pq)}" style="max-width:280px"></div>
   ${shown.length?`<div class="grid">${shown.map(pcard).join('')}</div>`:`<div class="empty"><svg class="mark" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"><line x1="32" y1="9" x2="11" y2="55"/><line x1="32" y1="9" x2="53" y2="55"/><line x1="20.5" y1="36" x2="43.5" y2="36"/></g></svg><div style="max-width:420px;margin:0 auto;text-align:left"><b>Как начать</b><ol style="margin:8px 0 0;padding-left:20px">
     <li>«Подключения» — войдите в Claude Code или Codex (подписка) либо задайте ключ API.</li>
@@ -390,7 +390,7 @@ async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(s
   <div class="stat">задач выполнено ${st.tasks_done} из ${st.tasks_total}<span class="dev"> · токены ${num(u.input_tokens)} → ${num(u.output_tokens)} · запросов ${u.requests} · ${money(st.cost_usd)} · раундов аудита ${m.audit_rounds||0}</span></div>
   ${segbar(st.counts,st.tasks_total)}
   <div class="goal"><b>Цель.</b> ${esc(m.goal)}${contractBox(m.contract)}${root&&root.result?`<div style="margin-top:6px;color:var(--ok)">${esc(root.result)}</div>`:''}</div>
-  ${st.attention.length?`<div role="alert" id="attn"><h2>Требует внимания</h2>${st.attention.map(a=>`<div class="alert" data-t="${a.task_id}"><b>${esc(a.title)}</b> <span class="stat">· ${esc(a.assignee)} · ${esc(a.reason)} — откройте и напишите исполнителю</span></div>`).join('')}</div>`:''}
+  ${st.attention.length?`<div role="alert" id="attn"><h2>Требует внимания</h2>${st.attention.map(a=>`<div class="alert" data-t="${esc(a.task_id)}"><b>${esc(a.title)}</b> <span class="stat">· ${esc(a.assignee)} · ${esc(a.reason)} — откройте и напишите исполнителю</span></div>`).join('')}</div>`:''}
   ${activeBox(v,tasks)}
   <h2>Команда</h2><div class="team">${v.workers.map(w=>{const s=st.workers.find(x=>x.name===w.name)||{};return `<div class="worker" data-w="${esc(w.name)}"><b>${esc(w.name)}</b><span class="role">${ri(w.role)}${esc(w.role)}</span>
     <div class="now">${w.current?'▶ '+esc((tasks.find(t=>t.id===w.current)||{}).title||w.current):'<span class="stat">свободен</span>'}</div>
@@ -534,8 +534,8 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
      :CL.phase==='starting'||CL.phase==='checking'?'<p class="stat">Жду ответа Claude…</p>'
      :CL.phase==='error'?`<pre>${esc(CL.error||'')}</pre>`:CL.phase==='done'?'<p style="color:var(--ok)">Вход выполнен.</p>':'';
    const use=(rt)=>`<label class="stat chk" style="margin:6px 0"><input type="checkbox" data-use="${rt}" ${off.has(rt)?'':'checked'}> использовать в работе${off.has(rt)?' — <b>отключён</b>: Artel не будет его выбирать':''}</label>${lim[rt]?`<p class="stat" style="color:var(--warn,#b5522b)">Упёрся в лимит до ${fmtT(lim[rt])} — задачи идут на другой подключённый рантайм. <button data-unlim="${rt}">Снять отметку</button></p>`:''}`;
-   const msel=(id,rt,val,ph)=>{const c=(r.catalogs||{})[rt]||[];if(!c.length)return `<input id="${id}" aria-label="Модель ${rt}" value="${esc(val||'')}" placeholder="${ph}">`;
-     const known=c.some(m=>m.id===val);return `<select id="${id}" aria-label="Модель ${rt}"><option value="">${ph}</option>${c.map(m=>`<option value="${esc(m.id)}" ${m.id===val?'selected':''}>${esc(m.name)}${m.name.toLowerCase()===String(m.id).toLowerCase()?'':' · '+esc(m.id)}</option>`).join('')}${val&&!known?`<option value="${esc(val)}" selected>${esc(val)} (своя)</option>`:''}<option value="__other">другая модель…</option></select>`};
+   const msel=(id,rt,val,ph)=>{const c=(r.catalogs||{})[rt]||[];if(!c.length)return `<input id="${id}" aria-label="Модель ${esc(rt)}" value="${esc(val||'')}" placeholder="${ph}">`;
+     const known=c.some(m=>m.id===val);return `<select id="${id}" aria-label="Модель ${esc(rt)}"><option value="">${ph}</option>${c.map(m=>`<option value="${esc(m.id)}" ${m.id===val?'selected':''}>${esc(m.name)}${m.name.toLowerCase()===String(m.id).toLowerCase()?'':' · '+esc(m.id)}</option>`).join('')}${val&&!known?`<option value="${esc(val)}" selected>${esc(val)} (своя)</option>`:''}<option value="__other">другая модель…</option></select>`};
    const login=L.phase==='waiting'?`<p>Откройте ссылку, войдите в аккаунт ChatGPT и введите код:</p>
       <a href="${esc(L.url)}" target="_blank" rel="noopener">${esc(L.url)}</a><div class="devcode">${esc(L.code)}</div>
       <p class="stat">Код действует до ${fmtT(L.expires_at)}. Страница обновится сама после входа.</p>
@@ -578,8 +578,8 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    <h2>Модели</h2>
    <div class="dev"><h2>Кто какую роль выполняет <span class="devtag">разработчик</span></h2>
    <div class="tablewrap pvroles"><table><tr><th>роль</th><th>рантайм</th></tr>
-    <tr><td><b>по умолчанию</b></td><td><select data-def="1" aria-label="Рантайм по умолчанию">${r.runtimes.map(x=>`<option value="${x}" ${x===r.runtime?'selected':''}>${rtl(x)}</option>`).join('')}</select>${r.runtime==='auto'?` <span class="stat">сейчас: ${esc(rtl(r.auto_resolves_to))}</span>`:''}</td></tr>
-    ${r.roles.map(role=>`<tr><td>${ri(role)}${esc(role)}</td><td><select data-role="${role}" aria-label="Рантайм для роли ${esc(role)}"><option value="">как по умолчанию</option>${r.runtimes.map(x=>`<option value="${x}" ${r.runtime_by_role[role]===x?'selected':''}>${rtl(x)}</option>`).join('')}</select></td></tr>`).join('')}
+    <tr><td><b>по умолчанию</b></td><td><select data-def="1" aria-label="Рантайм по умолчанию">${r.runtimes.map(x=>`<option value="${esc(x)}" ${x===r.runtime?'selected':''}>${rtl(x)}</option>`).join('')}</select>${r.runtime==='auto'?` <span class="stat">сейчас: ${esc(rtl(r.auto_resolves_to))}</span>`:''}</td></tr>
+    ${r.roles.map(role=>`<tr><td>${ri(role)}${esc(role)}</td><td><select data-role="${esc(role)}" aria-label="Рантайм для роли ${esc(role)}"><option value="">как по умолчанию</option>${r.runtimes.map(x=>`<option value="${x}" ${r.runtime_by_role[role]===x?'selected':''}>${rtl(x)}</option>`).join('')}</select></td></tr>`).join('')}
    </table></div></div>
    <div class="kv" style="margin-top:10px;max-width:520px"><span>модель Claude Code</span>${msel('m-cc','claude_code',r.models.claude_code,'sonnet')}
      <span>модель Codex</span>${msel('m-cx','codex',r.models.codex,'по умолчанию аккаунта')}</div>
