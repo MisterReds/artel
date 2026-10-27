@@ -341,7 +341,7 @@ function readyBanner(){const r=state.ready;if(!r||r.runtime!=='none')return '';
   return `<a class="alert" href="#/providers" role="alert"><b>Нет подключённого исполнителя.</b> Проекты не начнутся, пока не подключён Claude Code или Codex (или ключ API). Открыть «Подключения» →</a>`}
 function renderPortfolio(){const ps=state.ps;const att=ps.flatMap(p=>(p.attention||[]).map(a=>({...a,p})));
   const live=ps.filter(p=>p.live).length,done=ps.reduce((s,p)=>s+(p.tasks_done||0),0),tot=ps.reduce((s,p)=>s+(p.tasks_total||0),0);
-  const cost=ps.reduce((s,p)=>s+(p.cost_usd||0),0),agents=ps.reduce((s,p)=>s+(p.active_workers||0),0);
+  const cost=ps.reduce((s,p)=>s+(p.cost_usd||0),0)+((state.ready&&state.ready.concierge&&state.ready.concierge.usd)||0),agents=ps.reduce((s,p)=>s+(p.active_workers||0),0);
   const stages=['all',...new Set(ps.map(p=>p.stage))];
   const shown=ps.filter(p=>(state.pfilter==='all'||p.stage===state.pfilter)&&(!state.pq||(p.name+' '+p.goal).toLowerCase().includes(state.pq)));
   setAttn(att.length);

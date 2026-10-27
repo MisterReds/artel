@@ -451,7 +451,9 @@ def make_handler(runner: Runner, auth=None):
                 elif parts == ["api", "ready"]:
                     from ..runtimes import detect_runtime
 
-                    self._json({"runtime": detect_runtime(runner.config)})
+                    usage = chat.usage_total()
+                    self._json({"runtime": detect_runtime(runner.config),
+                                "concierge": {"tokens": usage["tokens"], "usd": usage["usd"]}})
                 elif parts == ["api", "providers"]:
                     from ..providers import overview
 

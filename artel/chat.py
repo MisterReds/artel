@@ -16,8 +16,10 @@ back as context.
 from __future__ import annotations
 
 import json
+import os
 import re
 import secrets
+import shutil
 import threading
 import time
 from collections import defaultdict, deque
@@ -33,6 +35,7 @@ MAX_MESSAGE = 2000      # one message from the owner
 MAX_PROJECTS = 30       # projects in a summary
 MAX_ACTIONS = 3         # actions proposed per message
 PROPOSAL_TTL_S = 600    # how long a proposal can be confirmed
+MAX_AGENT_JOURNAL = 2_000_000   # the hidden agent project starts over when its events journal passes this
 KEEP_LINES = 400        # history lines kept per channel on disk
 
 STATUS_RU = {"done": "готово", "running": "в работе", "planning": "планирование", "waiting_human": "ждёт человека",
@@ -205,11 +208,51 @@ def result_status(runner, slug: str) -> dict:
     return {k: st.get(k) for k in ("runnable", "running", "state", "url", "needs_confirm", "command")}
 
 
+# --- the concierge's own spend: it runs in a hidden project, so it has its own account ------------------------------
+_usage_lock = threading.Lock()
+
+
+def _usage_path() -> Path:
+    from .project import artel_home
+
+    return artel_home() / "chat" / "usage.json"
+
+
+def _read_usage() -> dict:
+    try:
+        return json.loads(_usage_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"tiers": {}}
+
+
+def record_usage(tier: str, usage: dict, cost_usd: float = 0.0) -> None:
+    tokens = int((usage or {}).get("input_tokens") or 0) + int((usage or {}).get("output_tokens") or 0)
+    with _usage_lock:
+        acct = _read_usage()
+        t = acct.setdefault("tiers", {}).setdefault(tier or "unknown", {"tokens": 0, "calls": 0, "usd": 0.0})
+        t["tokens"] += tokens
+        t["calls"] += 1
+        t["usd"] = round(t["usd"] + (cost_usd or 0.0), 6)
+        path = _usage_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(acct), encoding="utf-8")
+        os.replace(tmp, path)
+
+
+def usage_total() -> dict:
+    tiers = _read_usage().get("tiers") or {}
+    return {"tokens": sum(t["tokens"] for t in tiers.values()), "calls": sum(t["calls"] for t in tiers.values()),
+            "usd": round(sum(t["usd"] for t in tiers.values()), 6), "tiers": tiers}
+
+
 def spend_summary(runner) -> dict:
     from . import limits
 
     ps = portfolio_summary(runner)
-    return {"total_usd": round(sum(p["cost_usd"] for p in ps), 4), "tokens": sum(p["tokens"] for p in ps),
+    mine = usage_total()
+    return {"total_usd": round(sum(p["cost_usd"] for p in ps) + mine["usd"], 4),
+            "tokens": sum(p["tokens"] for p in ps) + mine["tokens"], "concierge": mine,
             "by_project": [{"slug": p["slug"], "usd": p["cost_usd"], "tokens": p["tokens"]} for p in ps
                            if p["cost_usd"] or p["tokens"]],
             "limited_runtimes": {k: v for k, v in limits.load().items()}}
@@ -279,8 +322,11 @@ def _overview(ps: list[dict]) -> dict:
 
 def _spend(ps: list[dict]) -> dict:
     total = sum(p["cost_usd"] for p in ps)
-    lines = [f"Потрачено всего: ${total:.2f}."]
+    mine = usage_total()
+    lines = [f"Потрачено всего: ${total + mine['usd']:.2f}."]
     lines += [f"• {p['slug']} — ${p['cost_usd']:.2f}" for p in ps if p["cost_usd"]]
+    if mine["calls"]:
+        lines.append(f"• Консьерж (этот чат) — ${mine['usd']:.2f}, {mine['tokens']} токенов")
     from . import limits
 
     for rt, until in limits.load().items():
@@ -513,6 +559,9 @@ def _agent_project(runner):
     from .project import Project, artel_home
 
     pr = getattr(runner, "chat_project", None)
+    if pr is not None and pr.log.path.exists() and pr.log.path.stat().st_size > MAX_AGENT_JOURNAL:
+        shutil.rmtree(pr.root, ignore_errors=True)   # its spend is kept in usage.json, nothing else is needed
+        pr = runner.chat_project = None
     if pr is None:
         try:
             pr = Project.open("concierge", runner.config, home=artel_home() / "chat_agent")
@@ -534,6 +583,10 @@ def ask_model(runner, message: str, ps: list[dict], history: list[dict]) -> Opti
             ctx.state["chat_runner"] = runner
             out = run_agent(runner.kernel, pr, role="concierge", system=SYSTEM, ctx=ctx, purpose="chat",
                             first_user=build_prompt(message, ps, history), max_turns=6)
+            from .routing import tier_for
+
+            record_usage(tier_for(runner.kernel.config, "concierge", pr), getattr(out, "usage", None),
+                         getattr(out, "cost_usd", 0.0))
     except Exception:  # noqa: BLE001 - the chat must answer even when the agent cannot
         return None
     return out.payload if out.name == "chat_reply" else None

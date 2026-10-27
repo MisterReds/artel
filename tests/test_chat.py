@@ -288,6 +288,33 @@ def test_earlier_replies_are_not_sent_back_to_the_model_as_instructions(world):
     assert "что с beta?" in outside                          # the owner's own turns still give context
 
 
+# --- the concierge's own spend ---------------------------------------------------------------------------------
+def test_concierge_usage_is_part_of_the_spend_and_the_dashboard_total(world):
+    runner, *_ = world
+    ask(runner, "что с beta?")
+    spend = chat.spend_summary(runner)
+    assert spend["concierge"]["tokens"] > 0 and spend["tokens"] >= spend["concierge"]["tokens"] + 20
+    ask(runner, "что с beta?")
+    assert chat.spend_summary(runner)["concierge"]["calls"] == 2
+    assert "Консьерж" in ask(runner, "Сколько потрачено?")["reply"]
+    acct = json.loads((chat.history_path("x").parent / "usage.json").read_text())
+    assert acct["tiers"] and sum(t["tokens"] for t in acct["tiers"].values()) == chat.spend_summary(runner)["concierge"]["tokens"]
+
+
+def test_the_agent_project_is_reset_when_its_journal_grows(world):
+    runner, *_ = world
+    ask(runner, "что с beta?")
+    journal = runner.chat_project.log.path
+    with journal.open("a") as fh:
+        fh.write(json.dumps({"seq": 0, "ts": 0, "kind": "pad", "pad": "x" * 2_100_000}) + "\n")
+    def tokens():
+        return chat.spend_summary(runner).get("concierge", {}).get("tokens", 0)
+    before = tokens()
+    ask(runner, "что с beta?")
+    assert journal.stat().st_size < 2_000_000
+    assert tokens() > before   # the account outlives the reset project
+
+
 # --- API ----------------------------------------------------------------------------------------------------
 @pytest.fixture
 def api(world):
@@ -318,6 +345,13 @@ def test_api_chat_answers_and_keeps_history(api):
     assert code == 200 and "alpha" in out["reply"] and out["refs"][0]["slug"] == "alpha" and out["proposed"] == []
     code, hist = call("/api/chat/history")
     assert code == 200 and [t["role"] for t in hist["turns"]] == ["user", "assistant"]
+
+
+def test_dashboard_gets_the_concierge_spend(api):
+    runner, call = api
+    call("/api/chat", {"message": "что с beta?"})
+    code, ready = call("/api/ready")
+    assert code == 200 and ready["concierge"]["tokens"] > 0 and "usd" in ready["concierge"]
 
 
 def test_api_chat_rejects_empty_forged_and_oversized_requests(api):
