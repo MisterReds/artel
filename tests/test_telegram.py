@@ -41,13 +41,15 @@ class FakeTelegram:
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
         self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
 
-    def msg(self, chat, text):
+    def msg(self, chat, text, user=None):
         self.uid += 1
-        self.updates.append({"update_id": self.uid, "message": {"chat": {"id": chat}, "text": text}})
+        self.updates.append({"update_id": self.uid, "message": {"chat": {"id": chat}, "text": text,
+                                                                "from": {"id": chat if user is None else user}}})
 
-    def press(self, chat, data):
+    def press(self, chat, data, user=None):
         self.uid += 1
         self.updates.append({"update_id": self.uid, "callback_query": {"id": "q", "data": data,
+                                                                       "from": {"id": chat if user is None else user},
                                                                        "message": {"chat": {"id": chat}}}})
 
     def texts(self, chat):
@@ -96,6 +98,7 @@ def test_goal_from_the_phone_runs_and_notifies(bot):
     b.store.data["paired"] = [7]
     tg.msg(7, "Напиши отчёт о продажах")
     b.poll_once(timeout=0)
+    assert wait_for(lambda: tg.sent, 5)  # the chat call runs in a worker
     offered = [b["text"] for row in tg.sent[-1]["reply_markup"]["inline_keyboard"] for b in row]
     assert "▶️ Начать как цель" in offered  # free text goes to the chat, which offers to start it as a goal
     tg.press(7, "go")

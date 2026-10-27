@@ -384,6 +384,7 @@ def test_free_text_in_a_paired_chat_goes_to_the_chat(bot):
     b, tg, runner = bot
     tg.msg(7, "Что ждёт меня?")
     b.poll_once(timeout=0)
+    assert wait_for(lambda: tg.texts(7), 5)
     assert "alpha" in tg.texts(7)[-1] and "Выбрать цвет логотипа" in tg.texts(7)[-1]
     assert [t["role"] for t in chat.load("telegram-7")] == ["user", "assistant"]
     assert chat.context("dashboard") == []  # channels are separate
@@ -393,6 +394,7 @@ def test_free_text_reply_offers_to_start_it_as_a_goal(bot):
     b, tg, runner = bot
     tg.msg(7, "Напиши отчёт о продажах")
     b.poll_once(timeout=0)
+    assert wait_for(lambda: tg.sent, 5)
     buttons = [btn for row in tg.sent[-1].get("reply_markup", {}).get("inline_keyboard", []) for btn in row]
     assert any(btn["callback_data"] == "go" for btn in buttons)
     tg.press(7, "go")
@@ -404,6 +406,7 @@ def test_free_text_from_an_unpaired_chat_gets_nothing(bot):
     b, tg, runner = bot
     tg.msg(99, "Что ждёт меня?")
     b.poll_once(timeout=0)
+    time.sleep(0.3)
     assert all("alpha" not in t for t in tg.texts(99))
     assert chat.context("telegram-99") == []
 
@@ -414,3 +417,115 @@ def test_commands_still_win_over_chat(bot):
     b.poll_once(timeout=0)
     assert any("Проектов: 3" in t for t in tg.texts(7))
     assert chat.context("telegram-7") == []
+
+
+# --- Telegram: a slow model must not freeze the poll loop ------------------------------------------------------
+def test_stop_is_processed_while_a_slow_chat_call_is_in_flight(bot, monkeypatch):
+    b, tg, runner = bot
+    release = threading.Event()
+    monkeypatch.setattr(chat, "respond", lambda *a, **kw: release.wait(10) and {"reply": "поздно", "proposed": [],
+                                                                               "refs": []})
+    stop = threading.Event()
+    runner.active["beta"] = stop
+    try:
+        tg.msg(7, "долгий вопрос")
+        t0 = time.time()
+        b.poll_once(timeout=0)
+        tg.msg(7, "/stop beta")
+        b.poll_once(timeout=0)
+        assert time.time() - t0 < 5 and stop.is_set()
+        assert "Остановлен." in tg.texts(7)
+        tg.msg(7, "ещё вопрос")
+        b.poll_once(timeout=0)
+        assert "Ещё думаю над прошлым вопросом" in tg.texts(7)[-1]
+    finally:
+        release.set()
+    assert wait_for(lambda: "поздно" in tg.texts(7), 5)
+    tg.msg(7, "третий")
+    b.poll_once(timeout=0)
+    assert wait_for(lambda: tg.texts(7).count("поздно") == 2, 5)  # the chat is free again
+
+
+# --- Telegram: only the paired owner in a private chat can act -----------------------------------------------------
+def _buttons(tg):
+    return [btn["callback_data"] for row in tg.sent[-1].get("reply_markup", {}).get("inline_keyboard", [])
+            for btn in row]
+
+
+def _resume_beta(runner, monkeypatch):
+    resumed = []
+    monkeypatch.setattr(runner, "resume", lambda slug, **kw: resumed.append(slug))
+    runner.config["scripted"] = {"chat_actions": [{"type": "resume_project", "project": "beta"}]}
+    return resumed
+
+
+def test_the_paired_owner_confirms_a_proposal_with_the_inline_button(bot, monkeypatch):
+    b, tg, runner = bot
+    resumed = _resume_beta(runner, monkeypatch)
+    tg.msg(7, "что с beta?")
+    b.poll_once(timeout=0)
+    assert wait_for(lambda: tg.sent, 5)
+    confirm_data = next(d for d in _buttons(tg) if d.startswith("chat:confirm:"))
+    assert resumed == []
+    tg.press(7, confirm_data)
+    b.poll_once(timeout=0)
+    assert resumed == ["beta"] and "Сделано" in tg.texts(7)[-1]
+    tg.press(7, confirm_data)
+    b.poll_once(timeout=0)
+    assert resumed == ["beta"] and "Не выполнено" in tg.texts(7)[-1]
+
+
+def test_cancel_drops_the_proposal(bot, monkeypatch):
+    b, tg, runner = bot
+    resumed = _resume_beta(runner, monkeypatch)
+    tg.msg(7, "что с beta?")
+    b.poll_once(timeout=0)
+    assert wait_for(lambda: tg.sent, 5)
+    pid = next(d for d in _buttons(tg) if d.startswith("chat:cancel:")).rsplit(":", 1)[1]
+    tg.press(7, f"chat:cancel:{pid}")
+    tg.press(7, f"chat:confirm:{pid}")
+    b.poll_once(timeout=0)
+    assert resumed == []
+
+
+def test_a_group_chat_gets_answers_but_no_proposals_and_cannot_confirm(bot, monkeypatch):
+    b, tg, runner = bot
+    resumed = _resume_beta(runner, monkeypatch)
+    b.store.data["paired"].append(-100)
+    tg.msg(7, "что с beta?")
+    b.poll_once(timeout=0)
+    assert wait_for(lambda: tg.sent, 5)
+    pid = next(d for d in _buttons(tg) if d.startswith("chat:confirm:")).rsplit(":", 1)[1]
+    tg.msg(-100, "что с beta?", user=7)
+    b.poll_once(timeout=0)
+    assert wait_for(lambda: tg.texts(-100), 5)
+    assert "Бот для заметок" in tg.texts(-100)[-1]
+    assert not [d for d in _buttons(tg) if d.startswith("chat:") or d == "go"]
+    tg.press(-100, f"chat:confirm:{pid}", user=7)
+    tg.press(-100, "go", user=7)
+    b.poll_once(timeout=0)
+    assert resumed == [] and chat.proposals(runner).items  # nothing ran; the private proposal is untouched
+
+
+def test_another_user_in_the_paired_chat_is_read_only(bot, monkeypatch):
+    b, tg, runner = bot
+    resumed = _resume_beta(runner, monkeypatch)
+    b.store.data["users"] = {"7": 7}
+    tg.msg(7, "что с beta?", user=8)
+    b.poll_once(timeout=0)
+    assert wait_for(lambda: tg.sent, 5)
+    assert not [d for d in _buttons(tg) if d.startswith("chat:")]
+    tg.msg(7, "что с beta?", user=7)
+    b.poll_once(timeout=0)
+    assert wait_for(lambda: len(tg.sent) == 2, 5)
+    assert [d for d in _buttons(tg) if d.startswith("chat:confirm:")]
+    assert resumed == []
+
+
+def test_pairing_remembers_who_paired(bot):
+    b, tg, runner = bot
+    b.store.data["paired"] = []
+    code = b.store.new_code()
+    tg.msg(55, f"/pair {code}", user=55)
+    b.poll_once(timeout=0)
+    assert b.store.data["paired"] == [55] and b.store.data["users"] == {"55": 55}
