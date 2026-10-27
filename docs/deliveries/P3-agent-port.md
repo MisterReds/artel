@@ -54,7 +54,20 @@ stream (fixture lines from tests/fakes) into the expected AgentEvent list; `wc -
    owner): the planner's brief lists the tools available on this machine; before a plan is accepted the first
    program of every check is resolved (`which`), a missing one sends the plan back with the list; a gate that
    fails with exit 126/127 or "not found" is classified as an environment failure, the replanner may rewrite the
-   check, and the worker is not blamed.
+   check, and the worker is not blamed. The same applies to other environment failures seen live: a proxy that
+   swallows loopback traffic (fixed on master: NO_PROXY gets loopback), a sandbox that cannot start
+   (`bwrap: setting up uid map: Permission denied`), a dead proxy (runs wait for the network instead of replanning).
+9. Tools without the owner (full autonomy): in this order — use what exists; install a pinned static binary from an
+   official release into ARTEL_HOME/tools/bin (checksum verified); install via micromamba from conda-forge into an
+   environment under ARTEL_HOME; project-local language packages (uv/pip venv, npm with a local prefix); only then
+   system packages through `system_install(packages, reason)`, executed by a root-owned wrapper
+   `/usr/local/sbin/artel-root` that the installer sets up once with the owner's consent (sudoers allows only the
+   wrapper; actions: `apt-get install -y --no-install-recommends -- <names>` from signed repos, the AppArmor profile
+   that lets bwrap use user namespaces; a configurable deny list of daemons/servers; no removals, no sources);
+   macOS uses brew, Windows winget (user scope). Every install is logged as a decision and can be undone.
+10. Sandbox network with a loopback proxy: when network is allowed and the proxy listens on loopback, the sandbox
+   shares the host network so the proxy stays reachable; test: a sandboxed command reaches an external address
+   through a proxy on 127.0.0.1.
 
 Acceptance: one test per item that fails before the change; full suite; green CI on six jobs; a live smoke on the
 owner's machine (one task on each subscription) before merge of stage B.
