@@ -346,3 +346,19 @@ def test_agent_env_passes_package_manager_settings_but_not_their_tokens(monkeypa
     names = {k.lower() for k in env}  # Windows upper-cases environment names
     assert {"npm_config_registry", "npm_config_cafile", "uv_index_url"} <= names
     assert not {"npm_config__authtoken", "npm_token", "uv_index_password"} & names
+
+
+def test_loopback_never_goes_through_the_owners_proxy(monkeypatch):
+    from artel.agent_env import agent_env
+
+    for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy", "NO_PROXY", "no_proxy"):
+        monkeypatch.delenv(k, raising=False)
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:10809")
+    monkeypatch.setenv("no_proxy", "corp.example")
+    env = agent_env("native")
+    for key in ("NO_PROXY", "no_proxy"):
+        hosts = env[key].split(",")
+        assert {"127.0.0.1", "localhost", "::1"} <= set(hosts) and "corp.example" in hosts
+    monkeypatch.delenv("HTTP_PROXY")
+    monkeypatch.delenv("no_proxy")
+    assert "NO_PROXY" not in agent_env("native")

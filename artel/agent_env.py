@@ -48,4 +48,18 @@ def agent_env(runtime: str, extra: Optional[dict] = None, config: Optional[dict]
         up = {a.upper() for a in allowed}
         env.update({k: v for k, v in src.items() if k.upper() in up})
     env.update(extra or {})
+    return with_loopback_bypass(env)
+
+
+LOOPBACK = ("127.0.0.1", "localhost", "::1")
+
+
+def with_loopback_bypass(env: dict) -> dict:
+    """A proxy from the owner's environment must never carry loopback traffic: an agent's own test server on
+    127.0.0.1 would be sent to the proxy and look dead. When any proxy is set, NO_PROXY/no_proxy get loopback."""
+    if not any(env.get(k) for k in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "all_proxy")):
+        return env
+    for key in ("NO_PROXY", "no_proxy"):
+        have = [h.strip() for h in (env.get(key) or env.get(key.swapcase()) or "").split(",") if h.strip()]
+        env[key] = ",".join(have + [h for h in LOOPBACK if h not in have])
     return env
