@@ -569,12 +569,24 @@ def model_available(config: dict) -> bool:
         return False
 
 
+def _discard(pr) -> None:
+    """Remove the concierge's project. Its open handles (board database) are closed first: Windows refuses to delete
+    open files. If the directory still cannot go, it is moved aside so a fresh project always starts empty."""
+    board = getattr(pr, "_board", None) or getattr(pr, "board", None)
+    if board is not None and hasattr(board, "close"):
+        board.close()
+    try:
+        shutil.rmtree(pr.root)
+    except OSError:
+        pr.root.rename(pr.root.with_name(f"{pr.root.name}.old-{int(time.time() * 1000)}"))
+
+
 def _agent_project(runner):
     from .project import Project, artel_home
 
     pr = getattr(runner, "chat_project", None)
     if pr is not None and pr.log.path.exists() and pr.log.path.stat().st_size > MAX_AGENT_JOURNAL:
-        shutil.rmtree(pr.root, ignore_errors=True)   # its spend is kept in usage.json, nothing else is needed
+        _discard(pr)   # its spend is kept in usage.json, nothing else is needed
         pr = runner.chat_project = None
     if pr is None:
         try:
