@@ -771,6 +771,8 @@ class Manager:
         v = out.payload
         self.project.log.append("audit/verdict", round=rounds, **v)
         if v["complete"]:
+            # a complete verdict without `run` clears an earlier one: stale commands are not kept
+            self.project.set_meta(run=v.get("run") or None)
             self.board.update(self.root_id, status="done", result=v["summary"], actor="auditor")
             self.board.comment(self.root_id, "auditor", f"GOAL MET: {v['summary']}")
             return
