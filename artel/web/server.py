@@ -19,10 +19,12 @@ import time
 from http.server import BaseHTTPRequestHandler
 
 from ..httpd import LocalHTTPServer
+from . import filesview
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .. import analytics, guardian
+from ..humanize import happenings, localize_stats, localize_view, ru
 from ..manager import human_comment, new_kernel, resume, run_goal
 from ..project import Project, list_projects
 
@@ -155,7 +157,8 @@ class Runner:
         return bool(ev)
 
 
-def project_view(project: Project, runner: Runner) -> dict:
+def project_view(project: Project, runner: Runner, user: bool = False) -> dict:
+    """The project page's payload. `user`: system strings in Russian (humanize); the dev mode keeps them raw."""
     snap = project.board.snapshot()
     workers = []
     running = {t["assignee"]: t["id"] for t in snap["tasks"] if t["status"] == "running"}
@@ -179,11 +182,14 @@ def project_view(project: Project, runner: Runner) -> dict:
 
     g = effective_grants(project, "worker")
     grants = {"read": g["read"], "write": g["write"], "refs": [str(r) for r in project.refs]}
-    return {"slug": project.slug, "meta": project.meta, "board": snap, "workers": workers, "stats": stats,
-            "grants": grants,
+    titles = {t["id"]: t for t in snap["tasks"]}
+    view = {"slug": project.slug, "meta": project.meta, "board": snap, "workers": workers, "stats": stats,
+            "grants": grants, "happenings": happenings(events, {k: {**v, "title": ru(v["title"]) if user else v["title"]}
+                                                                for k, v in titles.items()}),
             "active": analytics.active_agents(events, live), "stage": analytics.stage_of(project, snap["tasks"]),
             "recent_problems": errors,
             "notes": project.prompt_notes(), "live": project.slug in runner.active, "seq": project.log.seq}
+    return localize_view(view) if user else view
 
 
 def evolution_view() -> list[dict]:
@@ -428,7 +434,8 @@ def make_handler(runner: Runner, auth=None):
                 elif parts == ["api", "projects"]:
                     self._json([{**p, "live": p["slug"] in runner.active} for p in list_projects()])
                 elif parts == ["api", "portfolio"]:
-                    self._json(analytics.portfolio(runner.config, live=set(runner.active)))
+                    ps = analytics.portfolio(runner.config, live=set(runner.active))
+                    self._json([localize_stats(p) for p in ps] if q.get("mode") == ["user"] else ps)
                 elif parts == ["api", "analytics"]:
                     self._json(analytics.agent_analytics(analytics.portfolio(runner.config, live=set(runner.active))))
                 elif parts == ["api", "registry"]:
@@ -496,7 +503,8 @@ def make_handler(runner: Runner, auth=None):
                     self._json({"name": parts[2], "text": runner.kernel.get("skills").view(parts[2]),
                                 "ledger": runner.kernel.get("skills").ledger(parts[2])})
                 elif len(parts) == 3 and parts[:2] == ["api", "projects"]:
-                    self._json({**project_view(self._project(parts[2]), runner), "remote": auth is not None})
+                    self._json({**project_view(self._project(parts[2]), runner, user=q.get("mode") == ["user"]),
+                                "remote": auth is not None})
                 elif len(parts) == 4 and parts[3] == "run":
                     self._json(runner.results.status(self._project(parts[2])))
                 elif len(parts) == 4 and parts[3] == "archive":
@@ -505,6 +513,12 @@ def make_handler(runner: Runner, auth=None):
                     self._sse(self._project(parts[2]), int(q.get("after", ["0"])[0]))
                 elif len(parts) == 4 and parts[3] == "files":
                     self._files(self._project(parts[2]), q.get("path", [""])[0])
+                # --- file viewer (filesview.py): shared/ only, symlinks out of it refused ---
+                elif len(parts) == 4 and parts[3] in ("tree", "file", "raw"):
+                    getattr(self, "_fv_" + parts[3])(self._project(parts[2]), q.get("path", [""])[0],
+                                                     q.get("download") == ["1"])
+                elif len(parts) >= 5 and parts[3] == "preview":
+                    self._fv_preview(self._project(parts[2]), "/".join(parts[4:]))
                 else:
                     self._json({"error": "not found"}, 404)
             except FileNotFoundError as exc:
@@ -543,6 +557,72 @@ def make_handler(runner: Runner, auth=None):
                 text = target.read_bytes()[:400_000].decode("utf-8", errors="replace")
                 return self._json({"file": target.relative_to(base).as_posix(), "text": text})
             return self._json({"error": "not found"}, 404)
+
+        # --- file viewer ------------------------------------------------------------------------------------
+        def _fv_tree(self, project: Project, _rel: str, _dl: bool) -> None:
+            since = filesview.last_start(project.board.list())
+            self._json(filesview.tree(Path(project.shared), since))
+
+        def _fv_file(self, project: Project, rel: str, _dl: bool) -> None:
+            out = filesview.preview(Path(project.shared), rel)
+            self._json(out if out else {"error": "not found"}, 200 if out else 404)
+
+        def _fv_send(self, project: Project, rel: str, headers: dict, ctype: str | None = None,
+                     download: bool = False) -> None:
+            """One file's bytes (a single Range honoured, for video). Every response is sandboxed and nosniff."""
+            real = filesview.resolve(Path(project.shared), rel)
+            if real is None or not real.is_file():
+                return self._json({"error": "not found"}, 404)
+            size = real.stat().st_size
+            start, end, code = 0, size - 1, 200
+            m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range") or "")
+            if m and (m.group(1) or m.group(2)) and size:
+                a, b = m.groups()
+                start, end = (size - int(b), size - 1) if not a else (int(a), int(b) if b else size - 1)
+                start, end = max(0, start), min(end, size - 1)
+                if start > end:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.send_header("Content-Length", "0")
+                    return self.end_headers()
+                code = 206
+            self.send_response(code)
+            self.send_header("Content-Type", ctype or filesview.content_type(real))
+            self.send_header("Content-Length", str(end - start + 1 if size else 0))
+            self.send_header("Accept-Ranges", "bytes")
+            if code == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cache-Control", "no-store")
+            for k, v in headers.items():
+                self.send_header(k, v)
+            if download:
+                name = re.sub(r'[^\w. -]', "_", real.name)
+                self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+            self.end_headers()
+            with open(real, "rb") as f:
+                f.seek(start)
+                left = end - start + 1 if size else 0
+                while left > 0:
+                    chunk = f.read(min(64 * 1024, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+
+        def _fv_raw(self, project: Project, rel: str, download: bool) -> None:
+            """Bytes for <img>/<video>/<embed> and downloads. Page-like types are shown as plain text here: the
+            only place HTML runs is /preview, in a sandbox."""
+            real = filesview.resolve(Path(project.shared), rel)
+            ctype = None
+            if real is not None and real.suffix.lower() in (".html", ".htm", ".xml", ".xhtml"):
+                ctype = "text/plain; charset=utf-8"
+            self._fv_send(project, rel, {"Content-Security-Policy": "sandbox"}, ctype, download)
+
+        def _fv_preview(self, project: Project, rel: str) -> None:
+            """The file as a web page would get it (HTML, its CSS and scripts), in an opaque origin: the
+            `sandbox allow-scripts` policy keeps its scripts away from the dashboard's cookies, storage and DOM."""
+            self._fv_send(project, rel, {"Content-Security-Policy": "sandbox allow-scripts"})
 
         def _archive(self, project: Project) -> None:
             """shared/ as a zip, streamed to the client; symlinks that point outside shared/ are skipped."""
