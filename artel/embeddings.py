@@ -283,10 +283,10 @@ class Embedder:
         fully semantic without making the current caller wait."""
         with _warm_lock:
             _warm_queue.extend((self, t, (titles or [""] * len(texts))[i]) for i, t in enumerate(texts))
-            global _warm_thread
-            if _warm_thread is None or not _warm_thread.is_alive():
-                _warm_thread = threading.Thread(target=_warm_loop, daemon=True, name="embed-warm")
-                _warm_thread.start()
+            global _warm_running
+            if not _warm_running:
+                _warm_running = True
+                threading.Thread(target=_warm_loop, daemon=True, name="embed-warm").start()
 
     def embed(self, texts: list[str], kind: str = "document", task: str = "search",
               titles: Optional[list[str]] = None) -> list[list[float]]:
@@ -309,13 +309,23 @@ _embedders: dict = {}
 _failures: dict = {}
 _warm_lock = threading.Lock()
 _warm_queue: list = []
-_warm_thread: Optional[threading.Thread] = None
+_warm_running = False  # guarded by _warm_lock: a loop thread is alive and will still look at the queue
+
+
+def _warm_take() -> list:
+    """Pop the next batch; when empty, clear _warm_running under the same lock so warm() restarts the loop."""
+    global _warm_running
+    with _warm_lock:
+        batch, _warm_queue[:] = _warm_queue[:16], _warm_queue[16:]
+        if not batch:
+            _warm_running = False
+        return batch
 
 
 def _warm_loop() -> None:
+    global _warm_running
     while True:
-        with _warm_lock:
-            batch, _warm_queue[:] = _warm_queue[:16], _warm_queue[16:]
+        batch = _warm_take()
         if not batch:
             return
         emb = batch[0][0]
@@ -326,6 +336,7 @@ def _warm_loop() -> None:
             failed(emb.config, str(e))
             with _warm_lock:
                 _warm_queue.clear()
+                _warm_running = False
             return
 
 

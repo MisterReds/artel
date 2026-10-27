@@ -110,16 +110,19 @@ def check_command(command: str) -> tuple[float, str]:
 
 def _outside_write(path: str, workspace: Optional[Path]) -> Optional[tuple[float, str]]:
     p = Path(path)
-    if not p.is_absolute() and ".." not in p.parts:
+    posix_abs = path.startswith("/")  # "/etc/x" is absolute for the agent on every OS, though not for Windows' Path
+    if not p.is_absolute() and not posix_abs and ".." not in p.parts:
         return None
     try:
-        target = p.resolve() if p.is_absolute() else (Path(workspace or ".") / p).resolve()
+        target = p.resolve() if (p.is_absolute() or posix_abs) else (Path(workspace or ".") / p).resolve()
     except OSError:
         return None
     ws = Path(workspace).resolve() if workspace else None
     if ws and (target == ws or ws in target.parents):
         return None
-    if str(target).startswith(SENSITIVE_DIRS):
+    # also test the path as written: on macOS /etc, /var, ... are symlinks into /private, so the resolved
+    # target no longer starts with the sensitive prefix
+    if str(target).startswith(SENSITIVE_DIRS) or (posix_abs and p.as_posix().startswith(SENSITIVE_DIRS)):
         return 0.8, f"write to system path {target}"
     return 0.4, f"write outside the workspace: {target}"
 

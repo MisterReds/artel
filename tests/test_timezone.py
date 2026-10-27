@@ -75,7 +75,7 @@ def test_post_timezone_endpoint(tmp_path, monkeypatch):
     import threading
     import urllib.error
     import urllib.request
-    from http.server import ThreadingHTTPServer
+    from artel.httpd import LocalHTTPServer
 
     import yaml
 
@@ -84,7 +84,7 @@ def test_post_timezone_endpoint(tmp_path, monkeypatch):
 
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path))
     runner = Runner(deep_merge(DEFAULT_CONFIG, {"provider": "scripted"}))
-    httpd = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(runner))
+    httpd = LocalHTTPServer(("127.0.0.1", 0), make_handler(runner))
     threading.Thread(target=httpd.serve_forever, daemon=True).start()
     url = f"http://127.0.0.1:{httpd.server_address[1]}/api/providers/timezone"
 

@@ -133,13 +133,13 @@ def tool_name(server: str, tool: str) -> str:
     return (PREFIX + server + "__" + re.sub(r"[^A-Za-z0-9_-]", "_", tool))[:64]
 
 
-_SECRET_NAME = re.compile(r"KEY|TOKEN|SECRET|PASSW|CREDENTIAL|AUTH", re.I)
+def server_environ(config: Optional[dict] = None) -> dict:
+    """The environment an external MCP server starts with: the agent allowlist (``agent_env("native", config)``) and
+    nothing else from Artel's own environment; the secrets a server needs are the names/values its own ``env`` entry
+    declares (added by the caller)."""
+    from ..agent_env import agent_env
 
-
-def server_environ() -> dict:
-    """The environment an external MCP server starts with: Artel's, minus every other secret (API keys, tokens);
-    a server gets the secrets its own ``env`` entry names."""
-    return {k: v for k, v in os.environ.items() if not _SECRET_NAME.search(k)}
+    return agent_env("native", None, config)
 
 
 class _Rpc:
@@ -151,14 +151,15 @@ class _Rpc:
 class StdioClient(_Rpc):
     """JSON-RPC over a child process's stdin/stdout, one JSON message per line."""
 
-    def __init__(self, command: str, args: list, env: Optional[dict] = None, cwd: Optional[str] = None):
+    def __init__(self, command: str, args: list, env: Optional[dict] = None, cwd: Optional[str] = None,
+                 config: Optional[dict] = None):
         from ..tools import resolve, shell_env
 
         try:
             self.proc = subprocess.Popen([resolve(command) or command, *args], stdin=subprocess.PIPE,
                                          stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, bufsize=1,
                                          encoding="utf-8", errors="replace", cwd=cwd,
-                                         env=shell_env({**server_environ(), **(env or {})}),
+                                         env=shell_env({**server_environ(config), **(env or {})}),
                                          start_new_session=os.name == "posix")
         except OSError as exc:
             raise McpError(f"cannot start MCP server {command!r}: {exc}")
@@ -282,8 +283,8 @@ class HttpClient(_Rpc):
 class McpServer:
     """One configured server: connects lazily, initializes once, lists and calls tools."""
 
-    def __init__(self, name: str, spec: dict, cwd: Optional[str] = None):
-        self.name, self.spec, self.cwd = name, spec, cwd
+    def __init__(self, name: str, spec: dict, cwd: Optional[str] = None, config: Optional[dict] = None):
+        self.name, self.spec, self.cwd, self.config = name, spec, cwd, config
         self._rpc: Optional[_Rpc] = None
         self._lock = threading.Lock()
 
@@ -292,7 +293,7 @@ class McpServer:
             if self._rpc is None:
                 s = self.spec
                 rpc = HttpClient(s["url"], s.get("headers")) if s["type"] == "http" else \
-                    StdioClient(s["command"], s["args"], s.get("env"), self.cwd)
+                    StdioClient(s["command"], s["args"], s.get("env"), self.cwd, self.config)
                 try:
                     rpc.request("initialize", {"protocolVersion": PROTOCOL, "capabilities": {},
                                                "clientInfo": {"name": "artel", "version": "0.2"}})
@@ -372,7 +373,7 @@ def register_tools(kernel) -> Any:
         if not native:
             continue
         spec = {**spec, "allow": native}
-        srv = McpServer(name, spec)
+        srv = McpServer(name, spec, config=kernel.config)
         try:
             tools = srv.list_tools()
         except Exception as exc:  # noqa: BLE001

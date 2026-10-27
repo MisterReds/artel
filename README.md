@@ -18,21 +18,37 @@ Codex CLI и Claude Code CLI по умолчанию не ставятся. Ко
 с downloads.claude.ai с проверкой SHA-256 по манифесту) в `~/.artel/tools/bin`: без прав администратора и без
 Node.js. «Удалить» убирает их оттуда.
 
-**Linux / macOS**
-```bash
-# если GitHub CLI уже вошёл в аккаунт:
-bash <(gh api repos/MisterReds/artel/contents/install.sh -H "Accept: application/vnd.github.raw")
-# иначе: скачайте install.sh со страницы репозитория (Raw → сохранить) и выполните
-bash install.sh
-```
-Опции: `--with-codex`, `--with-claude` (сразу поставить CLI), `--service` (дашборд в фоне: systemd --user /
-launchd), `--no-start`, `--dir ПУТЬ`.
+**Установка одной командой**
 
-**Windows** (PowerShell): скачайте `install.ps1` и выполните
-```powershell
-powershell -ExecutionPolicy Bypass -File install.ps1
+Linux / macOS (репозиторий приватный, `gh` уже вошёл в аккаунт):
+```bash
+gh api repos/MisterReds/artel/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
 ```
-Опции: `-WithCodex`, `-WithClaude`, `-Service` (запуск дашборда при входе в Windows), `-NoStart`, `-Dir ПУТЬ`.
+Windows (PowerShell):
+```powershell
+iex (gh api repos/MisterReds/artel/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String)
+```
+Если репозиторий публичный:
+```bash
+curl -fsSL https://raw.githubusercontent.com/MisterReds/artel/master/install.sh | bash
+```
+```powershell
+irm https://raw.githubusercontent.com/MisterReds/artel/master/install.ps1 | iex
+```
+Опции через pipe: `... | bash -s -- --with-codex --service`. В PowerShell через `iex` опции задаются переменными
+окружения: `$env:ARTEL_NOSTART=1; $env:ARTEL_SERVICE=1; $env:ARTEL_WITH_CODEX=1` и т. п. перед командой.
+Опции: `--with-codex`, `--with-claude` (сразу поставить CLI), `--service` (дашборд в фоне: systemd --user /
+launchd; в Windows — запуск при входе), `--no-start`, `--dir ПУТЬ`, `--yes`.
+
+**Переустановка одной командой**: `artel reinstall` (или `... | bash -s -- --reinstall`,
+`$env:ARTEL_REINSTALL=1` перед командой для Windows). Удаляются только свежеклонируемая копия `~/.artel/app` и
+окружение `~/.artel/venv` (копия с локальными правками или неотправленными коммитами переезжает в
+`~/.artel/app.bak-<время>`), затем всё ставится заново и фоновая служба перезапускается. Конфиг, проекты, ключи и
+остальное в `~/.artel` не трогаются. `--yes` — без вопроса.
+
+Вручную (без одной команды): скачайте `install.sh` со страницы репозитория (Raw → сохранить) и выполните
+`bash install.sh`; в Windows — `powershell -ExecutionPolicy Bypass -File install.ps1` (опции `-WithCodex`,
+`-WithClaude`, `-Service`, `-NoStart`, `-Reinstall`, `-Dir ПУТЬ`).
 
 Подписка Codex: «Провайдеры» → «Установить Codex CLI» → «Войти через device code».
 
@@ -349,6 +365,10 @@ worktree к текущему `shared/`; отменённая задача уда
 Windows), команда выполняется без неё, а в результате и в журнале (`sandbox/unavailable`) есть явная пометка;
 `require: true` вместо этого отказывает. Правила политики команд (`policy`) действуют как прежде. Рантаймы Claude
 Code и Codex запускают команды своими инструментами и своей песочницей (у Codex — `workspace-write` с worktree задачи).
+
+**Проверки задач и политика.** Проверки (`checks`) проходят через ту же политику команд. Спросить разрешение им не у кого,
+поэтому вердикт `prompt` для проверки равен отказу: «blocked by policy (prompt): …; task checks cannot ask for approval —
+change the check or the policy». Переключатель в конфиге: `gates: {policy: enforce}` (по умолчанию) или `off`.
 
 ## Самоулучшение: Artel улучшает Artel
 

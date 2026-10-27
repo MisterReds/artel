@@ -26,11 +26,12 @@ from typing import Optional
 from .. import policy
 from ..agent import LoopDetector, Outcome, _short
 from ..prompts import CONTINUATION
+from ..tools import StderrTail, group_popen_kwargs
 from ..tooling import ToolContext
 from . import mcp_client
 from .claude_code import PROXY_SCRIPT, READONLY_ROLES, ToolBridge, child_env
 
-TERMINAL_GRACE_S = 0.5  # after a terminal tool: how long to wait for the turn's closing usage event
+TERMINAL_GRACE_S = 10.0  # after a terminal tool: the longest we wait for the turn's closing usage event
 
 DEFAULTS = {"binary": "codex", "model": None, "sandbox": "workspace-write", "max_resumes": 3, "timeout_s": 2400,
             "home": None, "reasoning_effort": None, "extra_args": [],
@@ -91,10 +92,10 @@ def codex_settings(config: dict) -> dict:
     return {**DEFAULTS, **(config.get("codex") or {})}
 
 
-def codex_env(cfg: dict) -> dict:
+def codex_env(cfg: dict, config: Optional[dict] = None) -> dict:
     from ..tools import env_with_tools
 
-    env = env_with_tools(child_env())
+    env = env_with_tools(child_env(config, "codex"))
     if cfg.get("home"):
         env["CODEX_HOME"] = str(Path(cfg["home"]).expanduser())
     return env
@@ -108,7 +109,7 @@ def _toml_table(d: dict) -> str:
     return "{" + ", ".join(f"{_toml(k)}={_toml(v)}" for k, v in d.items()) + "}"
 
 
-def sandbox_mode(cc: dict, refresh: bool = False) -> str:
+def sandbox_mode(cc: dict, refresh: bool = False, config: Optional[dict] = None) -> str:
     """How Codex's own sandbox can run on this machine, probed once with `codex sandbox -- true`:
     "sandbox" (as configured), "sandbox+network" (works only with network on — e.g. bubblewrap may not set up a
     loopback in a new network namespace), or "none" (unusable; Artel's grants and command policy still apply)."""
@@ -122,14 +123,17 @@ def sandbox_mode(cc: dict, refresh: bool = False) -> str:
         _sandbox_mode[key] = "sandbox"
         return "sandbox"
 
+    probe_cmd = (["cmd", "/c", "echo ok> probe && type probe"] if sys.platform == "win32"
+                 else ["sh", "-c", "echo ok > probe && cat probe"])
+
     def works(network: bool) -> tuple[bool, str]:
         cfg = ["-c", 'sandbox_mode="workspace-write"']
         if network:
             cfg += ["-c", "sandbox_workspace_write.network_access=true"]
         try:
             with tempfile.TemporaryDirectory() as tmp:
-                p = subprocess.run([binary, "sandbox", *cfg, "--", "sh", "-c", "echo ok > probe && cat probe"],
-                                   cwd=tmp, capture_output=True, text=True, timeout=60, env=codex_env(cc),
+                p = subprocess.run([binary, "sandbox", *cfg, "--", *probe_cmd],
+                                   cwd=tmp, capture_output=True, text=True, timeout=60, env=codex_env(cc, config),
                                    encoding="utf-8", errors="replace")
         except (OSError, subprocess.SubprocessError) as e:
             return False, str(e)
@@ -269,6 +273,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
         run_dir = project.root / ".cc" / f"{role}-scratch"
         run_dir.mkdir(parents=True, exist_ok=True)
     try:
+        usage_missing = False
         for attempt in range(1 + int(cc["max_resumes"])):
             if stop_event is not None and stop_event.is_set():
                 out.status = "stopped"
@@ -277,7 +282,7 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
             if reason:
                 out.status, out.error = "budget", reason
                 break
-            mode = sandbox_mode(cc)
+            mode = sandbox_mode(cc, config=kernel.config)
             if mode == "none" and not ctx.state.get("codex_sandbox_noted"):
                 ctx.state["codex_sandbox_noted"] = True
                 project.log.append("codex/sandbox", actor=actor, task_id=task_id, mode=mode, reason=sandbox_note(cc),
@@ -289,12 +294,14 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                               thread_id=thread_id, last_message=last_msg, grants=grants, mode=mode,
                               mcp_servers=ext_servers)
             proc = subprocess.Popen(args, cwd=run_dir, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-                                    stderr=subprocess.PIPE, text=True, env={**codex_env(cc), **ext_env}, bufsize=1,
-                                    encoding="utf-8", errors="replace")
+                                    stderr=subprocess.PIPE, text=True, env={**codex_env(cc, kernel.config), **ext_env}, bufsize=1,
+                                    encoding="utf-8", errors="replace", **group_popen_kwargs())
+            err_tail = StderrTail(proc)
             proc.stdin.write(prompt)
             proc.stdin.close()
             killer = threading.Timer(float(cc["timeout_s"]), terminate_tree, (proc, True))
             killer.start()
+            got_usage = False
             failure = ""
             blocked = ""
             stopped_by_us = False
@@ -316,6 +323,8 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                         tout = int(u.get("output_tokens") or 0)
                         out.usage["input_tokens"] += tin
                         out.usage["output_tokens"] += tout
+                        out.usage["cached"] = out.usage.get("cached", 0) + int(u.get("cached_input_tokens") or 0)
+                        got_usage = True
                         project.add_usage(tin, tout, cost_usd=0.0)
                     elif typ in ("turn.failed", "error"):
                         err = ev.get("error") or {}
@@ -344,8 +353,8 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                             stopped_by_us = stopped_by_us or terminate_tree(proc)
                     if ctx.terminal and not stopped_by_us:
                         # the run is finished as soon as Artel accepted a terminal tool; do not let Codex continue.
-                        # Its closing turn.completed (the turn's token usage) normally follows within milliseconds:
-                        # wait for it briefly, but stop at once if Codex starts anything new.
+                        # Its closing turn.completed (the turn's token usage) follows shortly: keep reading until it
+                        # arrives or TERMINAL_GRACE_S passes, but stop at once if Codex starts anything new.
                         if typ in ("turn.completed", "item.started") or grace is not None and not grace.is_alive():
                             stopped_by_us = terminate_tree(proc)
                         elif grace is None:
@@ -357,7 +366,8 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
                     grace.cancel()
                     stopped_by_us = True
                 proc.wait()
-            stderr = proc.stderr.read() if proc.stderr else ""
+            usage_missing = not got_usage  # the last attempt decides
+            stderr = err_tail.text()
             broken = ctx.state.pop("codex_sandbox_broken", None)
             if broken and not ctx.terminal:
                 key = (cc.get("binary"), cc.get("home"))
@@ -399,7 +409,8 @@ def run_codex(kernel, project, *, role: str, system: str, first_user: str, ctx: 
     out.tool_calls += bridge.calls
     project.log.append("agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
                        terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage,
-                       cost_usd=0.0, error=out.error, runtime="codex", model=model_label)
+                       cost_usd=0.0, error=out.error, runtime="codex", model=model_label,
+                       **({"usage_missing": True} if usage_missing else {}))
     return out
 
 
