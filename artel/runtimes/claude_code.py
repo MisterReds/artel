@@ -24,14 +24,14 @@ import sys
 import threading
 import time
 import uuid
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from typing import Optional
 
 from .. import policy
 from ..agent import LoopDetector, Outcome, _short, execute_tool
 from ..prompts import CONTINUATION
-from ..tools import terminate_tree
+from ..tools import StderrTail, group_popen_kwargs, terminate_tree
 from . import mcp_client
 from ..tooling import READONLY_ROLES, ToolContext
 
@@ -61,15 +61,17 @@ WRITE_TOOLS = ("Write", "Edit", "MultiEdit")
 # The MCP proxy is started by its file path, never `-m artel.runtimes.mcp_proxy`: the CLI starts it in the agent's
 # workspace, and when that workspace is a checkout of Artel (evolution) `-m` would import that checkout's proxy.
 PROXY_SCRIPT = str(Path(__file__).resolve().with_name("mcp_proxy.py"))
+POLICY_SCRIPT = str(Path(__file__).resolve().parent.parent / "policy.py")
 
 DEFAULTS = {"binary": "claude", "model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
             "timeout_s": 2400, "effort": None, "extra_args": []}
 
 
-def child_env() -> dict:
+def child_env(config: Optional[dict] = None, runtime: str = "claude_code") -> dict:
+    from ..agent_env import agent_env
     from ..tools import env_with_tools
 
-    env = env_with_tools({k: v for k, v in os.environ.items() if k not in SESSION_ENV})
+    env = env_with_tools({k: v for k, v in agent_env(runtime, config=config).items() if k not in SESSION_ENV})
     env["ARTEL_CHILD"] = "1"
     if sys.platform == "win32":
         env.setdefault("PYTHONUTF8", "1")  # Python children (the MCP proxy, policy hook) speak UTF-8 like the CLIs
@@ -123,7 +125,9 @@ class ToolBridge:
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 self._reply(bridge.call(req["name"], req.get("args") or {}))
 
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        from ..httpd import LocalHTTPServer
+
+        self.httpd = LocalHTTPServer(("127.0.0.1", 0), Handler)
         self.url = f"http://127.0.0.1:{self.httpd.server_address[1]}"
         threading.Thread(target=self.httpd.serve_forever, daemon=True).start()
 
@@ -155,8 +159,10 @@ def build_dir_args(grants: Optional[dict]) -> list:
 
 
 def policy_hook_settings(project_root) -> str:
-    """``--settings`` JSON: a PreToolUse hook that runs ``python -m artel.policy`` on every Bash command."""
-    cmd = f"{shlex.quote(sys.executable)} -m artel.policy {shlex.quote(str(project_root))}"
+    """``--settings`` JSON: a PreToolUse hook that runs artel/policy.py on every Bash command. By file path in
+    isolated mode (-I), never ``-m``: the hook runs in the agent's workspace, where a planted artel/policy.py or
+    PYTHONPATH would otherwise replace the check."""
+    cmd = f"{shlex.quote(sys.executable)} -I {shlex.quote(POLICY_SCRIPT)} {shlex.quote(str(project_root))}"
     return json.dumps({"hooks": {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": cmd}]}]}})
 
 
@@ -260,7 +266,9 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
                 args += ["--resume", session_id]
             args += list(cc.get("extra_args") or [])
             proc = subprocess.Popen(args, cwd=ctx.workspace, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
-                                    env=child_env(), bufsize=1, encoding="utf-8", errors="replace")
+                                    env=child_env(kernel.config), bufsize=1, encoding="utf-8", errors="replace",
+                                    **group_popen_kwargs())
+            err_tail = StderrTail(proc)
             killer = threading.Timer(float(cc["timeout_s"]), terminate_tree, (proc, True))
             killer.start()
             pending: dict[str, tuple] = {}
@@ -333,7 +341,7 @@ def run_claude_code(kernel, project, *, role: str, system: str, first_user: str,
             finally:
                 killer.cancel()
                 proc.wait()
-            stderr = proc.stderr.read() if proc.stderr else ""
+            stderr = err_tail.text()
             if result_ev:
                 u = result_ev.get("usage") or {}
                 tin = (u.get("input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0) + \

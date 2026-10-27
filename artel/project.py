@@ -21,8 +21,10 @@ from __future__ import annotations
 import json
 import os
 import re
+import tempfile
 import threading
 import time
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -32,7 +34,43 @@ import yaml
 from .board import Board
 from .kernel import EventLog
 
+_META_TRIES = 40  # project.json read/replace retries (Windows sharing violations)
+_META_WAIT = 0.05
+
+
+@contextmanager
+def _file_lock(path: Path):
+    """Exclusive lock on ``path`` shared by every Project object and process that opens the same project:
+    a per-object threading lock alone lets two objects (a resumed run and a background thread of the previous one)
+    interleave their read-modify-write of project.json and lose fields."""
+    with open(path, "a+b") as f:
+        if os.name == "nt":
+            import msvcrt
+
+            f.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(f.fileno(), msvcrt.LK_LOCK, 1)
+                    break
+                except OSError:  # LK_LOCK gives up after ~10 s; keep waiting
+                    continue
+            try:
+                yield
+            finally:
+                f.seek(0)
+                msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
+            try:
+                yield
+            finally:
+                fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
 DEFAULT_CONFIG: dict[str, Any] = {
+    "agent_env": {"pass": []},          # extra env var names agents' shells and CLIs may inherit (artel/agent_env.py)
+    "gates": {"policy": "enforce"},      # enforce | off: task checks (gates) obey policy.yaml; they cannot ask, so "prompt" fails
     "provider": "anthropic",            # anthropic | openai_compat | scripted
     "openai_compat": {"base_url": "https://api.deepseek.com/v1", "api_key_env": "DEEPSEEK_API_KEY"},
     "models": {                          # per role; a worker persona may override
@@ -245,15 +283,42 @@ class Project:
     # --- metadata -------------------------------------------------------
     @property
     def meta(self) -> dict:
-        return json.loads((self.root / "project.json").read_text(encoding="utf-8"))
+        path = self.root / "project.json"
+        for attempt in range(_META_TRIES):
+            try:
+                return json.loads(path.read_text(encoding="utf-8"))
+            except (PermissionError, json.JSONDecodeError):
+                # Windows: a concurrent os.replace briefly denies opening the file. Not a real error.
+                if attempt == _META_TRIES - 1:
+                    raise
+                time.sleep(_META_WAIT)
+        raise AssertionError("unreachable")
 
     def _write_meta(self, m: dict) -> None:
-        tmp = self.root / f".project.json.{threading.get_ident()}.tmp"
-        tmp.write_text(json.dumps(m, ensure_ascii=False, indent=2), encoding="utf-8")
-        tmp.replace(self.root / "project.json")
+        target = self.root / "project.json"
+        fd, tmp_name = tempfile.mkstemp(dir=self.root, prefix=".project.json.", suffix=".tmp")
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                f.write(json.dumps(m, ensure_ascii=False, indent=2))
+            for attempt in range(_META_TRIES):
+                try:
+                    os.replace(tmp_name, target)
+                    return
+                except PermissionError:
+                    # Windows refuses to replace a file another handle has open (a concurrent reader).
+                    if attempt == _META_TRIES - 1:
+                        raise
+                    time.sleep(_META_WAIT)
+        finally:
+            if os.path.exists(tmp_name):
+                os.unlink(tmp_name)
+
+    def _meta_update(self):
+        """Read-modify-write of project.json, serialised across objects and processes (see _file_lock)."""
+        return _file_lock(self.root / ".project.lock")
 
     def set_meta(self, **fields: Any) -> dict:
-        with self._meta_lock:
+        with self._meta_lock, self._meta_update():
             m = self.meta
             m.update(fields)
             self._write_meta(m)
@@ -262,7 +327,7 @@ class Project:
         return m
 
     def add_usage(self, input_tokens: int, output_tokens: int, cost_usd: float = 0.0) -> dict:
-        with self._meta_lock:
+        with self._meta_lock, self._meta_update():
             m = self.meta
             u = m["usage"]
             u["input_tokens"] += input_tokens

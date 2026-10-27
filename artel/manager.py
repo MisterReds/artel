@@ -28,7 +28,7 @@ from typing import Any, Optional
 
 from . import prompts
 from .agent import Outcome
-from . import guardian
+from . import guardian, policy
 from .runtimes import run_agent
 from .snapshot import Snapshot
 from .tools import shell_env, shell_run
@@ -340,10 +340,29 @@ class Manager:
         cwd = cwd or self.project.shared
         # gates observe, they must not change the deliverable (bytecode / pytest caches made reviewers reject
         # work that had been cleaned up before the gate ran)
-        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1", "ARTEL_SHARED": str(cwd),
-               "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()}
+        from .agent_env import agent_env
+
+        env = agent_env("native", {"PYTHONDONTWRITEBYTECODE": "1", "ARTEL_SHARED": str(cwd),
+                                   "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()},
+                        self.cfg)
         sb = sandbox.settings(self.cfg)
         for cmd in task["checks"]:
+            # a check is a shell command like any other: the command policy applies (nobody to ask: prompt = fail)
+            reason = None
+            if str((self.cfg.get("gates") or {}).get("policy", "enforce")).lower() != "off":
+                try:
+                    verdict = policy.evaluate(cmd, self.project.root)
+                    if verdict.decision != "allow":
+                        reason = (f"blocked by policy ({verdict.decision}): "
+                                  f"{verdict.rule.id}: {verdict.justification or verdict.decision}")
+                except policy.PolicyError as exc:
+                    reason = f"blocked by policy (error): policy cannot be read: {exc}"
+            if reason:
+                res = {"command": cmd, "exit": -1,
+                       "output": f"{reason}; task checks cannot ask for approval — change the check or the policy"}
+                results.append(res)
+                self.project.log.append("gate/result", task_id=task["id"], **res)
+                continue
             # gates run unsandboxed unless `sandbox.gates` asks for it (then writable: the gate cwd + temp)
             run = sandbox.plan(self.cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off")
             try:

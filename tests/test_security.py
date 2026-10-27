@@ -207,3 +207,141 @@ def test_the_mcp_proxy_works_from_a_workspace_that_is_another_artel_checkout(hom
         assert "task_submit" in names, p.stderr
     finally:
         bridge.close()
+
+
+# ---- urgent fixes: policy hook by path, agent env allowlist, policy on checks, redacted journal ----
+
+def test_policy_hook_ignores_a_planted_workspace_policy(home, tmp_path):
+    import shlex
+    import subprocess
+    from artel.runtimes.claude_code import policy_hook_settings
+
+    ws = tmp_path / "ws"
+    (ws / "artel").mkdir(parents=True)
+    (ws / "artel" / "__init__.py").write_text("")
+    (ws / "artel" / "policy.py").write_text("def main(argv=None):\n    return 0\n")
+    proj = tmp_path / "proj"
+    proj.mkdir()
+    hook = json.loads(policy_hook_settings(proj))["hooks"]["PreToolUse"][0]["hooks"][0]["command"]
+    env = {**os.environ, "ARTEL_HOME": str(home), "PYTHONPATH": str(ws)}
+    for cmd, code in (("rm -rf /", 2), ("echo hi", 0)):
+        r = subprocess.run(shlex.split(hook), input=json.dumps({"tool_input": {"command": cmd}}), cwd=ws, env=env,
+                           capture_output=True, text=True)
+        assert r.returncode == code, (cmd, r.stderr)
+
+
+def test_secrets_do_not_reach_agent_environments(home, monkeypatch):
+    from artel.runtimes.claude_code import child_env
+    from artel.runtimes.codex import codex_env
+
+    for k, v in {"ARTEL_TELEGRAM_TOKEN": "t", "GITHUB_TOKEN": "g", "ANTHROPIC_API_KEY": "a", "OPENAI_API_KEY": "o",
+                 "EXTRA_OK": "x"}.items():
+        monkeypatch.setenv(k, v)
+    monkeypatch.setenv("PATH", "/usr/bin:/bin")
+    c, x = child_env(), codex_env({})
+    for env in (c, x):
+        assert "ARTEL_TELEGRAM_TOKEN" not in env and "GITHUB_TOKEN" not in env and "EXTRA_OK" not in env
+        assert "/usr/bin" in env["PATH"]
+    assert c["ANTHROPIC_API_KEY"] == "a" and "OPENAI_API_KEY" not in c
+    assert x["OPENAI_API_KEY"] == "o" and "ANTHROPIC_API_KEY" not in x
+    assert child_env({"agent_env": {"pass": ["EXTRA_OK"]}})["EXTRA_OK"] == "x"
+
+
+def test_native_bash_has_no_secrets(home, tmp_path, monkeypatch):
+    from artel.agent_env import agent_env
+
+    monkeypatch.setenv("ARTEL_TELEGRAM_TOKEN", "TGVAL123")
+    monkeypatch.setenv("GITHUB_TOKEN", "GHVAL123")
+    env = agent_env("native", {"ARTEL_SHARED": "/s"})
+    import subprocess
+
+    out = subprocess.run(["env"], env=env, capture_output=True, text=True).stdout
+    assert "VAL123" not in out and "ARTEL_SHARED=/s" in out and "PATH=" in out
+
+
+def test_task_checks_obey_the_command_policy(home, tmp_path):
+    from artel.manager import Manager
+
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    project = Project.create("g", cfg, name="gates", workdir=str(tmp_path / "wd"))
+    marker = tmp_path / "ran"
+    mgr = Manager.__new__(Manager)
+    mgr.project, mgr.cfg = project, cfg
+    res = mgr.run_gates({"id": "t1", "checks": ["rm -rf / ; touch " + str(marker), "echo ok"]})
+    assert res[0]["exit"] != 0 and res[0]["output"].startswith("blocked by policy") and not marker.exists()
+    assert res[1]["exit"] == 0 and "ok" in res[1]["output"]
+
+
+def test_journal_is_redacted(home, tmp_path):
+    from artel.kernel import EventLog
+
+    log = EventLog(tmp_path / "events.jsonl")
+    log.append("tool/result", output="key sk-ant-api03-abcdefghijklmnopqrstuvwx and " + "ghp_" + "a" * 36,
+               nested={"cmd": ["echo ghp_" + "b" * 36]})
+    text = (tmp_path / "events.jsonl").read_text()
+    assert "sk-ant-api03-abcdefghij" not in text and "ghp_" + "a" * 36 not in text and "ghp_" + "b" * 36 not in text
+
+
+def test_gate_policy_message_and_switch(home, tmp_path):
+    from artel.manager import Manager
+
+    def run(extra):
+        cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", **extra})
+        project = Project.create("g", cfg, name="gates" + str(len(extra)), workdir=str(tmp_path / ("wd" + str(len(extra)))))
+        mgr = Manager.__new__(Manager)
+        mgr.project, mgr.cfg = project, cfg
+        return mgr.run_gates({"id": "t1", "checks": ["rm -rf / --no-preserve-root --dry-run-nonexistent-flag; echo hi"]})[0]
+
+    assert DEFAULT_CONFIG["gates"] == {"policy": "enforce"}
+    res = run({})
+    assert res["exit"] == -1 and res["output"].startswith("blocked by policy (")
+    assert "task checks cannot ask for approval — change the check or the policy" in res["output"]
+
+
+def test_gate_policy_off_skips_the_policy(home, tmp_path, monkeypatch):
+    from artel import policy
+    from artel.manager import Manager
+
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "gates": {"policy": "off"}})
+    project = Project.create("g", cfg, name="gatesoff", workdir=str(tmp_path / "wdoff"))
+    monkeypatch.setattr(policy, "evaluate", lambda *a, **k: pytest.fail("policy must not be consulted"))
+    mgr = Manager.__new__(Manager)
+    mgr.project, mgr.cfg = project, cfg
+    assert mgr.run_gates({"id": "t1", "checks": ["echo ok"]})[0]["exit"] == 0
+
+
+def test_agent_env_allowlist_additions(monkeypatch):
+    from artel.agent_env import agent_env
+
+    for name in ("HOMEDRIVE", "PROGRAMFILES(X86)", "COMPUTERNAME", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO",
+                 "ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                 "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_FOUNDRY_RESOURCE", "SSH_AUTH_SOCK", "DISPLAY"):
+        monkeypatch.setenv(name, "v")
+    monkeypatch.setenv("CLAUDE_CODE_USE_FOUNDRY", "1")
+    native, cc = agent_env("native"), agent_env("claude_code")
+    for name in ("HOMEDRIVE", "PROGRAMFILES(X86)", "COMPUTERNAME", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO"):
+        assert name in native
+    for name in ("ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL", "CLAUDE_CODE_MAX_OUTPUT_TOKENS",
+                 "CLAUDE_CODE_USE_FOUNDRY", "ANTHROPIC_FOUNDRY_RESOURCE"):
+        assert name in cc and name not in native
+    assert "SSH_AUTH_SOCK" not in cc and "DISPLAY" not in cc
+
+
+def test_redact_url_credentials_and_jwt():
+    from artel.reports import redact
+
+    assert redact("https://user:p4ss@host.com/x") == "https://<creds>@host.com/x"
+    assert "secret" not in redact("postgres://u:secret@db:5432/x")
+    assert redact("t eyJhbGciOiJIUzI1.eyJzdWIiOiIxMjM0.SflKxwRJSMeKKF2Q") == "t <jwt>"
+
+
+def test_agent_env_passes_package_manager_settings_but_not_their_tokens(monkeypatch):
+    from artel.agent_env import agent_env
+
+    for k, v in {"npm_config_registry": "r", "NPM_CONFIG_CAFILE": "c", "UV_INDEX_URL": "u",
+                 "npm_config__authToken": "x", "NPM_TOKEN": "x", "UV_INDEX_PASSWORD": "x"}.items():
+        monkeypatch.setenv(k, v)
+    env = agent_env("native")
+    names = {k.lower() for k in env}  # Windows upper-cases environment names
+    assert {"npm_config_registry", "npm_config_cafile", "uv_index_url"} <= names
+    assert not {"npm_config__authtoken", "npm_token", "uv_index_password"} & names

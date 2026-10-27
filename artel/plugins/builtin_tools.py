@@ -9,6 +9,7 @@ import subprocess
 from pathlib import Path
 
 from .. import guardian, policy, sandbox
+from ..agent_env import agent_env
 from ..kernel import ToolSpec
 from ..tooling import READONLY_ROLES, ToolContext, ToolError, window_text
 from ..tools import shell_env, shell_run
@@ -75,7 +76,8 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
         ctx.terminal = policy.prompt_terminal(verdict, command)
         return f"command NOT run: policy requires human approval ({verdict.justification}); task sent to a person"
     timeout = int(timeout or ctx.kernel.config.get("tool_timeout_s", 300))
-    env = {**os.environ, "ARTEL_SHARED": str(ctx.shared_dir), "ARTEL_WORKSPACE": str(ctx.workspace)}
+    env = agent_env("native", {"ARTEL_SHARED": str(ctx.shared_dir), "ARTEL_WORKSPACE": str(ctx.workspace)},
+                    ctx.kernel.config)
     # OS sandbox (W2-sandbox): writes only to the deliverables this agent works on, its workspace and temp
     # judges (read-only roles) write only to their own workspace; run_agent's judge_guard undoes the rest
     judge = ctx.role in READONLY_ROLES or not ctx.grants()["write"]
