@@ -10,8 +10,10 @@ import csv
 import io
 import mimetypes
 import os
+import re
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 PREVIEW_MAX = 2 * 1024 * 1024  # larger files are offered for download only
 CSV_ROWS = 1000
@@ -184,3 +186,9 @@ def preview(base: Path, rel: str) -> Optional[dict]:
 
 def content_type(path: Path) -> str:
     return TYPES.get(path.suffix.lower()) or mimetypes.types_map.get(path.suffix.lower()) or "application/octet-stream"
+
+
+def attachment(name: str) -> str:
+    """Content-Disposition for a download: an ASCII fallback plus the RFC 5987 UTF-8 name (headers are Latin-1)."""
+    ascii_name = re.sub(r"[^A-Za-z0-9._ -]", "_", name) or "download"
+    return f"attachment; filename=\"{ascii_name}\"; filename*=UTF-8''{quote(name, safe='')}"

@@ -597,8 +597,7 @@ def make_handler(runner: Runner, auth=None):
             for k, v in headers.items():
                 self.send_header(k, v)
             if download:
-                name = re.sub(r'[^\w. -]', "_", real.name)
-                self.send_header("Content-Disposition", f'attachment; filename="{name}"')
+                self.send_header("Content-Disposition", filesview.attachment(real.name))
             self.end_headers()
             with open(real, "rb") as f:
                 f.seek(start)
@@ -643,10 +642,9 @@ def make_handler(runner: Runner, auth=None):
                                 z.write(real, f.relative_to(base).as_posix())
                 size = tmp.tell()
                 tmp.seek(0)
-                fname = re.sub(r"[^\w.-]", "_", project.slug) + ".zip"
                 self.send_response(200)
                 self.send_header("Content-Type", "application/zip")
-                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self.send_header("Content-Disposition", filesview.attachment(project.slug + ".zip"))
                 self.send_header("Content-Length", str(size))
                 self.end_headers()
                 shutil.copyfileobj(tmp, self.wfile, 64 * 1024)

@@ -230,3 +230,19 @@ def test_portfolio_user_mode_localizes_cards(project, base):
     assert raw["attention"][0]["title"] == "Research and outline"
     assert user["attention"][0]["title"] == "Исследование и план"
     assert user["attention"][0]["question"] == "Нужен пароль от банка"
+
+
+# --- non-Latin-1 file names, hostile CSV, errors never drop the connection ------------------------------------
+def test_download_of_a_cyrillic_file_name_works_and_names_the_file(project, base):
+    from urllib.parse import quote, unquote
+
+    (project.shared / "отчёт.md").write_text("# итог")
+    for route in ("/raw?path=" + quote("отчёт.md") + "&download=1", "/raw?path=" + quote("отчёт.md"),
+                  "/preview/" + quote("отчёт.md")):
+        code, h, body = get(base + route)
+        assert code == 200 and body == "# итог".encode()
+    code, h, _ = get(base + "/raw?path=" + quote("отчёт.md") + "&download=1")
+    cd = h["Content-Disposition"]
+    cd.encode("latin-1")  # a header value must be Latin-1 on the wire
+    assert cd.startswith("attachment; filename=\"") and "filename*=UTF-8''" in cd
+    assert unquote(cd.split("filename*=UTF-8''")[1]) == "отчёт.md"
