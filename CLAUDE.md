@@ -31,6 +31,33 @@ same instructions.
 8. **Ask for JSON or fixed-size answers** and say the size limit in the prompt.
 9. **Do not repeat work**: a subagent's result is the answer; do not re-derive it.
 
+## Engineering rules (every change, main session and subagents)
+
+Adapted in our own words from Robert C. Martin's ub-mode (github.com/unclebob/ub-mode) and our own incidents.
+
+1. **Failing test first.** Before changing code, write the test that reproduces the defect or pins the new
+   behaviour, run it, and see it fail for the expected reason. The change is accepted only with that evidence:
+   the failing output before, the passing output after. "Not verified on the old code" is a rejection.
+2. **Tests check behaviour.** A test calls the code as its user does and checks what that user sees. A test that
+   would still pass if the functions under test returned nothing (or a constant) is deleted or rewritten.
+3. **Root causes only.** A guard, retry, sleep, longer timeout or loosened assertion that hides a failure is not a
+   fix. Reproduce, find the cause, fix the cause.
+4. **Attack the premise.** When two fixes that share one premise fail the same check, stop: write the premise in
+   one sentence, test it directly, and only then try again. (Our cases: "the work is bad" when the environment was
+   broken — `rg`, proxy, sandbox; three replans each.)
+5. **Smallest sufficient change; subtract before adding.** One decision lives in one place. Remove complexity
+   before adding any. New requirements get the design they would have had from the start, delivered in pieces.
+6. **Boundaries.** Parse and validate outside data once where it enters (contracts); trust it inside. Make illegal
+   states unrepresentable. Keep logic in pure functions.
+7. **Shared state.** If two actors do not need the same mutable thing, give each its own; if they do, one writer,
+   enforced by structure (lock, single owner). Operations are idempotent: twice, or after a crash midway, ends the
+   same.
+8. **Small verified units.** Finish one unit, check it, commit it (why, what, how proven), then the next. A branch
+   reaches master only with green CI on all six jobs.
+9. **Quality gates on changed code** (when the tools are present; skip a missing tool and say so): CRAP < 10 per
+   changed function (radon complexity + coverage), no duplicate blocks (pylint duplicate-code), mutation run
+   (mutmut) on changed files with no surviving mutants left unexplained.
+
 ## Project rules
 
 - Answers to the owner in Russian; code, comments and commits in English.
