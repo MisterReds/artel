@@ -24,9 +24,9 @@
     md: [['k', '^#{1,6} [^\\n]*'], ['s', '```[\\s\\S]*?```|`[^`\\n]+`'], ['d', '\\*\\*[^*\\n]+\\*\\*'], ['f', '\\[[^\\]\\n]+\\]\\([^)\\n]+\\)'], ['p', '^\\s*(?:[-*+]|\\d+\\.) ']]
   };
   RULES.ts = RULES.js.map((r, i) => i === 2 ? ['k', words(JS + ' interface type enum implements public private protected readonly namespace declare abstract keyof')] : r);
-  const compiled = {};
+  const compiled = Object.create(null);
   function rulesFor(lang) {
-    if (!RULES[lang]) return null;
+    if (!Object.hasOwn(RULES, lang)) return null;
     return compiled[lang] || (compiled[lang] = {cls: RULES[lang].map(r => r[0]),
       re: new RegExp(RULES[lang].map(r => '(' + r[1] + ')').join('|'), 'gm')});
   }
@@ -55,6 +55,7 @@
   }
 
   /* ---------- Markdown (headings, lists, code, quotes, tables, links, images) ---------- */
+  const linkOk = u => /^(https?:\/\/|mailto:|#)/i.test(u);  // anything else (javascript:, data:, relative paths) is plain text
   const safeUrl = u => /^(https?:\/\/|mailto:|#|[\w./%~-])/i.test(u) && !/^\s*(javascript|data|vbscript):/i.test(u);
   function joinPath(dir, rel) {
     const parts = dir ? dir.split('/') : [];
@@ -68,11 +69,13 @@
     let s = esc(src).replace(/`([^`\n]+)`/g, (_, c) => { keep.push('<code>' + c + '</code>'); return '\u0000' + (keep.length - 1) + '\u0000'; });
     s = s.replace(/!\[([^\]]*)\]\(([^)\s]+)\)/g, (_, alt, u) => {
       if (/^https?:\/\//i.test(u) || !safeUrl(u) || !ctx) return '<span class="md-alt">[' + alt + ']</span>';
-      const p = joinPath(ctx.dir, decodeURIComponent(u.replace(/&amp;/g, '&')));
+      let dec;
+      try { dec = decodeURIComponent(u.replace(/&amp;/g, '&')); } catch (e) { return '<span class="md-alt">[' + alt + ']</span>'; }
+      const p = joinPath(ctx.dir, dec);
       return p == null ? alt : '<img alt="' + alt + '" src="' + esc(ctx.raw(p)) + '">';
     });
     s = s.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, t, u) => {
-      if (!safeUrl(u)) return t;
+      if (!linkOk(u)) return t;
       const ext = /^https?:\/\//i.test(u);
       return '<a href="' + u + '"' + (ext ? ' target="_blank" rel="noopener noreferrer"' : '') + '>' + t + '</a>';
     });
@@ -153,7 +156,16 @@
     return box;
   }
 
-  function jsonNode(key, val, depth) {
+  const JSON_NODES = 5000, JSON_DEPTH = 30;
+  function jsonLimit(text, onText) {
+    const d = el('div', {class: 'fv-note'}, text + ' ');
+    if (onText) d.append(el('button', {type: 'button', onclick: onText}, 'показать как текст'));
+    return d;
+  }
+  /* Children are built when a node is first opened; at most JSON_NODES nodes in all and JSON_DEPTH levels deep. */
+  function jsonNode(key, val, depth, b, onText) {
+    if (b.n >= JSON_NODES) { if (b.cut) return null; b.cut = true; return jsonLimit('Слишком много узлов (' + JSON_NODES + '), остальное скрыто.', onText); }
+    b.n++;
     const label = key == null ? '' : '<span class="t-p">' + esc(key) + '</span>: ';
     if (val === null || typeof val !== 'object') {
       const cls = typeof val === 'string' ? 's' : typeof val === 'number' ? 'n' : 'k';
@@ -161,16 +173,22 @@
       d.innerHTML = label + '<span class="t-' + cls + '">' + esc(JSON.stringify(val)) + '</span>';
       return d;
     }
+    if (depth >= JSON_DEPTH) return jsonLimit('Вложенность глубже ' + JSON_DEPTH + ' уровней не показана.', onText);
     const arr = Array.isArray(val), keys = Object.keys(val);
     const det = el('details', {class: 'jn'});
-    if (depth < 2) det.open = true;
     const sum = el('summary');
     sum.innerHTML = label + (arr ? '[' : '{') + '<span class="stat"> ' + keys.length + (arr ? ' эл.' : ' ключ.') + '</span>' + (arr ? ']' : '}');
     det.append(sum);
     const body = el('div', {class: 'jb'});
-    keys.slice(0, 300).forEach(k => body.append(jsonNode(arr ? '[' + k + ']' : k, val[k], depth + 1)));
-    if (keys.length > 300) body.append(el('div', {class: 'fv-note'}, '… ещё ' + (keys.length - 300)));
     det.append(body);
+    let filled = false;
+    const fill = () => {
+      if (filled) return;
+      filled = true;
+      keys.slice(0, 300).forEach(k => { const c = jsonNode(arr ? '[' + k + ']' : k, val[k], depth + 1, b, onText); if (c) body.append(c); });
+      if (keys.length > 300) body.append(el('div', {class: 'fv-note'}, '… ещё ' + (keys.length - 300)));
+    };
+    if (depth < 2) { det.open = true; fill(); } else det.addEventListener('toggle', () => { if (det.open) fill(); });
     return det;
   }
 
@@ -300,7 +318,7 @@
             src: api + '/preview/' + r.path.split('/').map(encodeURIComponent).join('/')});
         case 'json': {
           if (S.view === 'source') return codeView(r.text, 'json');
-          try { const d = el('div', {class: 'fv-json', role: 'tree'}); d.append(jsonNode(null, JSON.parse(r.text), 0)); return d; } catch (e) {
+          try { const d = el('div', {class: 'fv-json', role: 'tree'}); d.append(jsonNode(null, JSON.parse(r.text), 0, {n: 0}, () => { S.view = 'source'; paint(r); })); return d; } catch (e) {
             return el('div', null, el('div', {class: 'fv-note'}, 'Это не корректный JSON: ' + e.message), codeView(r.text, 'json'));
           }
         }
@@ -316,7 +334,7 @@
             el('a', {class: 'btn primary', href: raw(r.path) + '&download=1', download: r.name}, 'Скачать'));
       }
     }
-    function paint(r) { view.replaceChildren(toolbar(r), el('div', {class: 'fv-body'}, body(r))); }
+    function paint(r) { view.replaceChildren(toolbar(r), r.note ? el('div', {class: 'fv-note'}, r.note) : '', el('div', {class: 'fv-body'}, body(r))); }
     async function openFile(p) {
       S.sel = p; S.view = 'rendered'; host.dataset.screen = 'view';
       drawTree();
@@ -337,5 +355,5 @@
       if (best) openFile(best.path);
     }};
   }
-  window.ArtelFiles = {mount, hl, md, fmtSize};
+  window.ArtelFiles = {mount, hl, md, fmtSize, jsonNode: (v, onText) => jsonNode(null, v, 0, {n: 0}, onText)};
 })();
