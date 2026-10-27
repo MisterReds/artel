@@ -315,7 +315,7 @@
         case 'html':
           if (S.view === 'source') return codeView(r.text, 'html');
           return el('iframe', {class: 'fv-frame', sandbox: 'allow-scripts', title: 'Предпросмотр: ' + r.name,
-            src: api + '/preview/' + r.path.split('/').map(encodeURIComponent).join('/')});
+            src: api + '/preview/' + (r.preview_token ? '@' + r.preview_token + '/' : '') + r.path.split('/').map(encodeURIComponent).join('/')});
         case 'json': {
           if (S.view === 'source') return codeView(r.text, 'json');
           try { const d = el('div', {class: 'fv-json', role: 'tree'}); d.append(jsonNode(null, JSON.parse(r.text), 0, {n: 0}, () => { S.view = 'source'; paint(r); })); return d; } catch (e) {

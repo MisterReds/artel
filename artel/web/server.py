@@ -33,6 +33,7 @@ LOGIN = Path(__file__).parent / "login.html"
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_BODY = 1_000_000
 # Reachable without a session in remote mode: the login page, its assets and the PWA shell files.
+PREVIEW_TOKEN = re.compile(r"@\d{1,12}\.[0-9a-f]{64}$")
 PUBLIC_GET = {"login", "sw.js", "manifest.webmanifest", "favicon.ico", "favicon.svg", "api/auth/status"}
 PUBLIC_POST = {"api/auth/login", "api/auth/logout"}
 REGISTRY = Path(__file__).parent.parent / "data" / "harnesses.json"
@@ -377,12 +378,18 @@ def make_handler(runner: Runner, auth=None):
                     return "cross-origin request"
             return None
 
-        def _gate(self, key: str, public: set) -> bool:
+        def _preview_token_ok(self, parts: list[str]) -> bool:
+            """A preview URL `.../preview/@<token>/<path>` with a genuine token for that project and directory."""
+            if auth is None or len(parts) < 6 or parts[0] != "api" or parts[1] != "projects" or parts[3] != "preview":
+                return False
+            return bool(PREVIEW_TOKEN.match(parts[4])) and auth.preview_ok(parts[4][1:], parts[2], "/".join(parts[5:]))
+
+        def _gate(self, key: str, public: set, token_ok: bool = False) -> bool:
             """True when the request may proceed; otherwise the refusal has been sent."""
             if not self._host_ok():
                 self._json({"error": "unknown host"}, 421)
                 return False
-            if auth is None or key in public or key.startswith("static/") or self._authed():
+            if auth is None or token_ok or key in public or key.startswith("static/") or self._authed():
                 return True
             if key.startswith("api/"):
                 self._json({"error": "login required"}, 401)
@@ -427,7 +434,7 @@ def make_handler(runner: Runner, auth=None):
             url = urlparse(self.path)
             parts = [unquote(p) for p in url.path.strip("/").split("/") if p]
             q = parse_qs(url.query)
-            if not self._gate("/".join(parts), PUBLIC_GET):
+            if not self._gate("/".join(parts), PUBLIC_GET, self._preview_token_ok(parts)):
                 return
             try:
                 if not parts:
@@ -531,7 +538,10 @@ def make_handler(runner: Runner, auth=None):
                     self._fv_guard(getattr(self, "_fv_" + parts[3]), self._project(parts[2]),
                                    q.get("path", [""])[0], q.get("download") == ["1"])
                 elif len(parts) >= 5 and parts[3] == "preview":
-                    self._fv_guard(self._fv_preview, self._project(parts[2]), "/".join(parts[4:]))
+                    rest = parts[4:]
+                    if len(rest) > 1 and auth is not None and PREVIEW_TOKEN.match(rest[0]):  # checked by the gate
+                        rest = rest[1:]
+                    self._fv_guard(self._fv_preview, self._project(parts[2]), "/".join(rest))
                 else:
                     self._json({"error": "not found"}, 404)
             except FileNotFoundError as exc:
@@ -587,10 +597,13 @@ def make_handler(runner: Runner, auth=None):
 
         def _fv_tree(self, project: Project, _rel: str, _dl: bool) -> None:
             since = filesview.last_start(project.board.list())
-            self._json({**filesview.tree(Path(project.shared), since), "root": str(Path(project.shared).resolve())})
+            root = {} if auth is not None else {"root": str(Path(project.shared).resolve())}  # no server paths remotely
+            self._json({**filesview.tree(Path(project.shared), since), **root})
 
         def _fv_file(self, project: Project, rel: str, _dl: bool) -> None:
             out = filesview.preview(Path(project.shared), rel)
+            if out and out["kind"] == "html" and auth is not None:
+                out["preview_token"] = auth.preview_token(project.slug, rel)
             self._json(out if out else {"error": "not found"}, 200 if out else 404)
 
         def _fv_send(self, project: Project, rel: str, headers, ctype: str | None = None,
@@ -656,7 +669,8 @@ def make_handler(runner: Runner, auth=None):
         def _fv_preview(self, project: Project, rel: str) -> None:
             """The file as a web page would get it (HTML, its CSS and scripts), in an opaque origin: the
             `sandbox allow-scripts` policy keeps its scripts away from the dashboard's cookies, storage and DOM."""
-            self._fv_send(project, rel, {"Content-Security-Policy": "sandbox allow-scripts"})
+            self._fv_send(project, rel, {"Content-Security-Policy": "sandbox allow-scripts",
+                                                    "Referrer-Policy": "no-referrer"})
 
         def _archive(self, project: Project) -> None:
             """shared/ as a zip, streamed to the client; symlinks that point outside shared/ are skipped."""

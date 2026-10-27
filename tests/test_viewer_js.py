@@ -157,3 +157,44 @@ def test_previewed_html_cannot_change_the_dashboard(tmp_path, monkeypatch):
         pw.stop()
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_remote_mode_preview_loads_relative_css_js_and_images(tmp_path, monkeypatch):
+    """Through a real login session: the sandboxed (opaque-origin) preview frame must still fetch its sibling files."""
+    from artel.web.auth import Auth
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    project = Project.create("goal", cfg, home=tmp_path / "home")
+    site = project.shared / "site"
+    site.mkdir()
+    (site / "index.html").write_text('<link rel=stylesheet href="s.css"><script src="a.js"></script><img id=i src="p.png">'
+                                     '<p id=r>pending</p>')
+    (site / "s.css").write_text("#r{color:rgb(1, 2, 3)}")
+    (site / "a.js").write_text("window.onload=()=>{document.getElementById('r').textContent='js-ran'}")
+    import base64
+    (site / "p.png").write_bytes(base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg=="))
+    auth = Auth(home=tmp_path / "home")
+    token = auth.rotate()
+    httpd = LocalHTTPServer(("127.0.0.1", 0), make_handler(Runner(cfg), auth))
+    httpd.daemon_threads = True
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{httpd.server_address[1]}"
+    pw, br = chromium()
+    try:
+        page = br.new_page()
+        assert page.request.post(base + "/api/auth/login", data={"token": token}).ok
+        page.goto(f"{base}/#/p/{project.slug}")
+        page.wait_for_selector("#tab-files")
+        page.click("#tab-files")
+        page.click('.fv-row[data-p="site/index.html"]')
+        frame = page.wait_for_selector("iframe.fv-frame").content_frame()
+        frame.wait_for_selector("#r", state="attached", timeout=10000)  # the page itself loads
+        frame.wait_for_function("document.getElementById('r').textContent==='js-ran'", timeout=10000)
+        assert frame.evaluate("getComputedStyle(document.getElementById('r')).color") == "rgb(1, 2, 3)"
+        assert frame.evaluate("document.getElementById('i').naturalWidth") == 1
+    finally:
+        br.close()
+        pw.stop()
+        httpd.shutdown()
+        httpd.server_close()
