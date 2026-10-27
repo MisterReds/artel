@@ -21,7 +21,11 @@ from artel.web.server import Runner, make_handler
 posix_only = pytest.mark.skipif(sys.platform == "win32", reason="process groups, symlinks and /proc checks are POSIX; "
                                                                 "Windows kills the tree with taskkill instead")
 
-SERVER = '''import http.server, os, subprocess, sys
+SERVER = '''import http.server, os, socketserver, subprocess, sys
+class Srv(http.server.ThreadingHTTPServer):
+    def server_bind(self):  # HTTPServer.server_bind() does a reverse-DNS getfqdn(): ~20-35 s on macOS CI runners
+        socketserver.TCPServer.server_bind(self)
+        self.server_name, self.server_port = self.server_address[:2]
 port = int(os.environ["PORT"])
 child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(120)"])
 open("child.pid", "w").write(str(child.pid))
@@ -30,7 +34,7 @@ class H(http.server.BaseHTTPRequestHandler):
         self.send_response(200); self.end_headers(); self.wfile.write(b"hello")
     def log_message(self, *a): pass
 print("Serving on http://0.0.0.0:%d" % port, flush=True)
-http.server.ThreadingHTTPServer(("127.0.0.1", port), H).serve_forever()
+Srv(("127.0.0.1", port), H).serve_forever()
 '''
 
 
@@ -543,7 +547,8 @@ def test_api_start_needs_confirmation_for_command(web, project):
     u = f"{base}/api/projects/{project.slug}/run"
     code, _, body = call(u, "POST", {"action": "start"})
     j = json.loads(body)
-    assert code == 428 and j["command"].startswith("python3 server.py")
+    # POSIX shows `python3 server.py`; Windows runs sys.executable (a quoted path), so only the tail is common
+    assert code == 428 and j["command"].endswith("server.py") and "python" in j["command"]
     assert call(u, "POST", {"action": "start", "confirmed": True, "command": "something else"})[0] == 428
     assert not Project.open(project.slug, DEFAULT_CONFIG).meta.get("run_confirmed")
     code, _, body = call(u, "POST", {"action": "start", "confirmed": True, "command": j["command"]})
@@ -598,7 +603,9 @@ def test_cli_run_stops_child_on_sigterm(project):
         while not pf.exists() and time.time() < end:
             time.sleep(0.1)
         rec = json.loads(pf.read_text())
-        time.sleep(1.5)
+        end = time.time() + 40
+        while time.time() < end and not ResultRunner(DEFAULT_CONFIG).status(project).get("state") == "running":
+            time.sleep(0.2)  # up and answering (a slow runner needs a while), not just started
         # the web side sees the CLI-started run as running
         assert ResultRunner(DEFAULT_CONFIG).status(project)["running"] is True
         p.terminate()

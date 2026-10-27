@@ -235,7 +235,7 @@ def test_artel_tools_reach_the_bridge_even_with_a_system_http_proxy(env, monkeyp
 def test_codex_with_a_megabyte_of_stderr_does_not_deadlock(env, monkeypatch):
     cfg, project, _ = env
     monkeypatch.setenv("FAKE_CODEX_STDERR_KB", "1024")
-    cfg = deep_merge(cfg, {"codex": {"timeout_s": 30}})
+    cfg = deep_merge(cfg, {"codex": {"timeout_s": 120}})  # generous: a loaded CI runner once needed >30 s for the whole fake run
     out, ctx = _run(cfg, project)
     # a blocked stderr pipe would hang the CLI until the 30 s kill: the run would end killed, not through the tool
     assert out.status == "terminal" and out.name == "task_submit", out.error
