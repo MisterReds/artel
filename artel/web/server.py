@@ -515,10 +515,10 @@ def make_handler(runner: Runner, auth=None):
                     self._files(self._project(parts[2]), q.get("path", [""])[0])
                 # --- file viewer (filesview.py): shared/ only, symlinks out of it refused ---
                 elif len(parts) == 4 and parts[3] in ("tree", "file", "raw"):
-                    getattr(self, "_fv_" + parts[3])(self._project(parts[2]), q.get("path", [""])[0],
-                                                     q.get("download") == ["1"])
+                    self._fv_guard(getattr(self, "_fv_" + parts[3]), self._project(parts[2]),
+                                   q.get("path", [""])[0], q.get("download") == ["1"])
                 elif len(parts) >= 5 and parts[3] == "preview":
-                    self._fv_preview(self._project(parts[2]), "/".join(parts[4:]))
+                    self._fv_guard(self._fv_preview, self._project(parts[2]), "/".join(parts[4:]))
                 else:
                     self._json({"error": "not found"}, 404)
             except FileNotFoundError as exc:
@@ -559,6 +559,19 @@ def make_handler(runner: Runner, auth=None):
             return self._json({"error": "not found"}, 404)
 
         # --- file viewer ------------------------------------------------------------------------------------
+        def _fv_guard(self, fn, *args) -> None:
+            """Any failure in a file route is an HTTP 500 with a short message, never a dropped connection."""
+            try:
+                fn(*args)
+            except (BrokenPipeError, ConnectionResetError, FileNotFoundError):
+                raise
+            except Exception as exc:  # noqa: BLE001
+                self.log_error("file route failed: %r", exc)
+                try:
+                    self._json({"error": "internal error"}, 500)
+                except OSError:  # headers were already sent: nothing more to say
+                    self.close_connection = True
+
         def _fv_tree(self, project: Project, _rel: str, _dl: bool) -> None:
             since = filesview.last_start(project.board.list())
             self._json({**filesview.tree(Path(project.shared), since), "root": str(Path(project.shared).resolve())})

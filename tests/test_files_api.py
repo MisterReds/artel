@@ -246,3 +246,22 @@ def test_download_of_a_cyrillic_file_name_works_and_names_the_file(project, base
     cd.encode("latin-1")  # a header value must be Latin-1 on the wire
     assert cd.startswith("attachment; filename=\"") and "filename*=UTF-8''" in cd
     assert unquote(cd.split("filename*=UTF-8''")[1]) == "отчёт.md"
+
+
+def test_csv_with_a_field_over_the_parser_limit_falls_back_to_text(project, base):
+    (project.shared / "big.csv").write_text("a,b\n" + "x" * 200_000 + ",2\n")
+    code, r = jget(base + "/file?path=big.csv")
+    assert code == 200 and r["kind"] == "text" and r["text"].startswith("a,b") and r["note"]
+
+
+def test_a_failure_in_a_file_route_is_an_http_error_not_a_dropped_connection(project, base, monkeypatch):
+    from artel.web import filesview
+
+    def boom(*a, **k):
+        raise RuntimeError("disk on fire")
+
+    monkeypatch.setattr(filesview, "preview", boom)
+    monkeypatch.setattr(filesview, "tree", boom)
+    for route in ("/file?path=a.txt", "/tree"):
+        code, r = jget(base + route)
+        assert code == 500 and "error" in r and "disk on fire" not in json.dumps(r)

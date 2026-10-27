@@ -180,7 +180,10 @@ def preview(base: Path, rel: str) -> Optional[dict]:
         return {**out, "kind": "toolarge"}
     text = real.read_bytes().decode("utf-8", errors="replace")
     if kind == "csv":
-        return {**out, **csv_rows(text, real.suffix.lower())}
+        try:
+            return {**out, **csv_rows(text, real.suffix.lower())}
+        except csv.Error:  # e.g. a field above the parser's size limit: show the raw text instead
+            return {**out, "kind": "text", "text": text, "note": "Не удалось разобрать таблицу, показан исходный текст"}
     return {**out, "text": text}
 
 
