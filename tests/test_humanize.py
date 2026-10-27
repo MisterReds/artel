@@ -32,7 +32,7 @@ def test_block_question_takes_the_reason_not_the_evidence():
 
 EV = [
     {"seq": 1, "ts": 100, "kind": "board/task_created", "task_id": "t1", "title": "Research"},
-    {"seq": 2, "ts": 101, "kind": "board/task_moved", "task_id": "t1", "frm": "ready", "to": "running", "actor": "Ada"},
+    {"seq": 2, "ts": 101, "kind": "board/task_moved", "task_id": "t1", "frm": "ready", "to": "running", "actor": "manager"},
     {"seq": 3, "ts": 102, "kind": "tool/call", "tool": "bash", "input": {}},
     {"seq": 4, "ts": 103, "kind": "board/task_moved", "task_id": "t1", "frm": "running", "to": "review", "actor": "Ada"},
     {"seq": 5, "ts": 104, "kind": "review/verdict", "task_id": "t1", "passed": True, "feedback": "ok"},

@@ -93,7 +93,8 @@ def _sentence(e: dict, tasks: dict) -> Optional[tuple[str, str, Optional[str]]]:
     """(text, tone, task_id) for an event a person cares about, else None."""
     k, tid = e["kind"], e.get("task_id")
     if k == "board/task_moved":
-        to, who = e.get("to"), e.get("actor") or (tasks.get(tid) or {}).get("assignee") or ""
+        to = e.get("to")
+        who = (tasks.get(tid) or {}).get("assignee") or role_ru(e.get("actor")) or ""  # the manager only moves cards
         if to == "running":
             return f"{who} приступает к {_title(tasks, tid)}".strip(), "info", tid
         if to == "review":

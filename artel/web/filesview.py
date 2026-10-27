@@ -66,6 +66,9 @@ def is_text(head: bytes) -> bool:
         return exc.start >= len(head) - 3
 
 
+KNOWN = set(LANGS) | IMAGES | VIDEOS | TEXTISH | {".pdf", ".csv", ".tsv"}
+
+
 def kind_of(path: Path, head: bytes = b"") -> str:
     """markdown | html | code | json | csv | image | pdf | video | text | binary"""
     ext = path.suffix.lower()
@@ -132,7 +135,7 @@ def tree(base: Path, since: float = 0.0) -> dict:
                 continue
             st = real.stat()
             items.append({"path": rel, "dir": False, "size": st.st_size, "mtime": st.st_mtime,
-                          "kind": kind_of(real),
+                          "kind": kind_of(real, _head(real, 512) if real.suffix.lower() not in KNOWN else b""),
                           "changed": bool(since) and st.st_mtime >= since})
         if len(items) >= TREE_MAX:
             truncated = True

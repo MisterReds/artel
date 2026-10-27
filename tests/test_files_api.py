@@ -62,6 +62,7 @@ def test_tree_lists_files_with_sizes_kinds_and_collapses_noise(project, base):
     assert by["docs/a.md"]["kind"] == "markdown" and by["docs/a.md"]["size"] == 4
     assert by["app.py"]["kind"] == "code" and by["app.py"]["dir"] is False
     assert by["node_modules"]["collapsed"] is True and by[".git"]["collapsed"] is True
+    assert r["root"] == str(project.shared.resolve())
     assert not any(p.startswith("node_modules/") or p.startswith(".git/") for p in by)
 
 
@@ -159,6 +160,22 @@ def test_raw_serves_bytes_with_safe_headers_and_download(project, base):
     code, h, body = get(base + "/raw?path=i.png&download=1")
     assert h["Content-Type"] == "image/png" and 'attachment; filename="i.png"' in h["Content-Disposition"]
     assert body == b"\x89PNG\r\n\x1a\n"
+
+
+def test_pdf_is_viewable_inline_but_downloads_stay_sandboxed(project, base):
+    (project.shared / "d.pdf").write_bytes(b"%PDF-1.4\n")
+    code, h, _ = get(base + "/raw?path=d.pdf")
+    assert h["Content-Type"] == "application/pdf" and "Content-Security-Policy" not in h
+    assert h["X-Content-Type-Options"] == "nosniff"
+    assert "attachment" in get(base + "/raw?path=d.pdf&download=1")[1]["Content-Disposition"]
+
+
+def test_raw_honours_a_byte_range_for_video(project, base):
+    (project.shared / "v.mp4").write_bytes(bytes(range(100)))
+    r = urllib.request.Request(base + "/raw?path=v.mp4", headers={"Range": "bytes=10-19"})
+    with urllib.request.urlopen(r) as resp:
+        assert resp.status == 206 and resp.read() == bytes(range(10, 20))
+        assert resp.headers["Content-Range"] == "bytes 10-19/100"
 
 
 def test_html_route_is_sandboxed_and_resolves_relative_files(project, base):

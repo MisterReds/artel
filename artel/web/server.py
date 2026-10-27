@@ -561,7 +561,7 @@ def make_handler(runner: Runner, auth=None):
         # --- file viewer ------------------------------------------------------------------------------------
         def _fv_tree(self, project: Project, _rel: str, _dl: bool) -> None:
             since = filesview.last_start(project.board.list())
-            self._json(filesview.tree(Path(project.shared), since))
+            self._json({**filesview.tree(Path(project.shared), since), "root": str(Path(project.shared).resolve())})
 
         def _fv_file(self, project: Project, rel: str, _dl: bool) -> None:
             out = filesview.preview(Path(project.shared), rel)
@@ -614,10 +614,12 @@ def make_handler(runner: Runner, auth=None):
             """Bytes for <img>/<video>/<embed> and downloads. Page-like types are shown as plain text here: the
             only place HTML runs is /preview, in a sandbox."""
             real = filesview.resolve(Path(project.shared), rel)
-            ctype = None
+            ctype, headers = None, {"Content-Security-Policy": "sandbox"}
             if real is not None and real.suffix.lower() in (".html", ".htm", ".xml", ".xhtml"):
                 ctype = "text/plain; charset=utf-8"
-            self._fv_send(project, rel, {"Content-Security-Policy": "sandbox"}, ctype, download)
+            if real is not None and real.suffix.lower() == ".pdf" and not download:
+                headers = {}  # the browser's PDF viewer does not run inside a sandboxed document; a PDF has no script
+            self._fv_send(project, rel, headers, ctype, download)
 
         def _fv_preview(self, project: Project, rel: str) -> None:
             """The file as a web page would get it (HTML, its CSS and scripts), in an opaque origin: the
