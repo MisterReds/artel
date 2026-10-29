@@ -1039,6 +1039,11 @@ class Manager:
                     if classify(str(e)) != "limit" or not out or alt == "none" or alt.split(":")[0] in out:
                         break
                     self.note("provider_switch", to=alt, reason=str(e)[:300])
+            if exc is not None and self.stop.is_set():  # the owner stopped it while planning waited: not a failure
+                self.project.set_meta(status="stopped", network_wait=None)
+                self.project.log.append("project/status", status="stopped")
+                self.kernel.emit("project_end", project=self.project, status="stopped", usage=self.project.meta["usage"])
+                return "stopped"
             if exc is not None:  # a project that cannot start must say why, not crash
                 reason = str(exc)
                 kind = classify(reason)

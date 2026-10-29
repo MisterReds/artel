@@ -98,3 +98,21 @@ def test_dashboard_names_the_wait():
     html = (Path(artel.web.__file__).parent / "index.html").read_text(encoding="utf-8")
     assert "network_wait:'нет сети / прокси недоступен, жду'" in html
     assert PROJECT_STATUS["network_wait"] == "нет сети / прокси недоступен, жду"
+
+
+def test_stop_during_planning_network_wait_ends_stopped(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()                                          # nothing listens: the wait never ends by itself
+    monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{port}")
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05, "network_probe_s": 0.05,
+                                      "network_probe_max_s": 0.2})
+    k = new_kernel(cfg)
+    k.provide("llm:scripted", ProxyDownProvider(k.get("llm") or k.get("llm_factory")(), port))
+    project = Project.create("write hello.txt containing hello", cfg, name="net", workdir=str(tmp_path / "wd"))
+    m = Manager(k, project)
+    threading.Timer(0.6, m.stop.set).start()
+    assert m.run() == "stopped"
+    assert project.meta["status"] == "stopped"
