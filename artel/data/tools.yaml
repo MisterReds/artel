@@ -1,0 +1,140 @@
+# Pinned static tool binaries. Every entry is an official release asset; sha256 comes from the checksum file the
+# project publishes next to it (source: field). An entry without a published checksum is omitted, never guessed.
+# `member` is the file name looked up inside an archive; no member = the download is the binary itself.
+tools:
+  ripgrep:
+    version: "15.1.0"
+    bin: rg
+    checksums: the .sha256 file beside each asset
+    platforms:
+      linux-x86_64:
+        url: https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-unknown-linux-musl.tar.gz
+        sha256: 1c9297be4a084eea7ecaedf93eb03d058d6faae29bbc57ecdaf5063921491599
+        member: rg
+      linux-aarch64:
+        url: https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-aarch64-unknown-linux-gnu.tar.gz
+        sha256: 2b661c6ef508e902f388e9098d9c4c5aca72c87b55922d94abdba830b4dc885e
+        member: rg
+      macos-arm64:
+        url: https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-aarch64-apple-darwin.tar.gz
+        sha256: 378e973289176ca0c6054054ee7f631a065874a352bf43f0fa60ef079b6ba715
+        member: rg
+      macos-x86_64:
+        url: https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-apple-darwin.tar.gz
+        sha256: 64811cb24e77cac3057d6c40b63ac9becf9082eedd54ca411b475b755d334882
+        member: rg
+      windows-x86_64:
+        url: https://github.com/BurntSushi/ripgrep/releases/download/15.1.0/ripgrep-15.1.0-x86_64-pc-windows-msvc.zip
+        sha256: 124510b94b6baa3380d051fdf4650eaa80a302c876d611e9dba0b2e18d87493a
+        member: rg.exe
+  jq:
+    version: "1.8.1"
+    bin: jq
+    checksums: sha256sum.txt of the release
+    platforms:
+      linux-x86_64:
+        url: https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-amd64
+        sha256: 020468de7539ce70ef1bceaf7cde2e8c4f2ca6c3afb84642aabc5c97d9fc2a0d
+      linux-aarch64:
+        url: https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-linux-arm64
+        sha256: 6bc62f25981328edd3cfcfe6fe51b073f2d7e7710d7ef7fcdac28d4e384fc3d4
+      macos-arm64:
+        url: https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-arm64
+        sha256: a9fe3ea2f86dfc72f6728417521ec9067b343277152b114f4e98d8cb0e263603
+      macos-x86_64:
+        url: https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-macos-amd64
+        sha256: e80dbe0d2a2597e3c11c404f03337b981d74b4a8504b70586c354b7697a7c27f
+      windows-x86_64:
+        url: https://github.com/jqlang/jq/releases/download/jq-1.8.1/jq-windows-amd64.exe
+        sha256: 23cb60a1354eed6bcc8d9b9735e8c7b388cd1fdcb75726b93bc299ef22dd9334
+  gh:
+    version: "2.85.0"
+    bin: gh
+    checksums: gh_2.85.0_checksums.txt of the release
+    platforms:
+      linux-x86_64:
+        url: https://github.com/cli/cli/releases/download/v2.85.0/gh_2.85.0_linux_amd64.tar.gz
+        sha256: 5dcc4e282b9c22c0d31c217805976448c966cfc56c20157c78385a8a62c93cf0
+        member: gh
+      linux-aarch64:
+        url: https://github.com/cli/cli/releases/download/v2.85.0/gh_2.85.0_linux_arm64.tar.gz
+        sha256: c554878f62506c88464ef94474322d899dfb30468bb234f23e2355e8e1613cb2
+        member: gh
+      macos-arm64:
+        url: https://github.com/cli/cli/releases/download/v2.85.0/gh_2.85.0_macOS_arm64.zip
+        sha256: 3d6999b85fa1e63aadec49b65986280578e8094c394a3776c24c789f0cc73cef
+        member: gh
+      macos-x86_64:
+        url: https://github.com/cli/cli/releases/download/v2.85.0/gh_2.85.0_macOS_amd64.zip
+        sha256: e58bdb7da9cf4c5254f6b847198d18af7c07c486c2a3af94ad957a48c1051c1c
+        member: gh
+      windows-x86_64:
+        url: https://github.com/cli/cli/releases/download/v2.85.0/gh_2.85.0_windows_amd64.zip
+        sha256: def347c8bbb22c79109dc546d1c083753512e54fd48deca41aad73b9beef9277
+        member: gh.exe
+  uv:
+    version: "0.9.20"
+    bin: uv
+    checksums: the .sha256 file beside each asset
+    platforms:
+      linux-x86_64:
+        url: https://github.com/astral-sh/uv/releases/download/0.9.20/uv-x86_64-unknown-linux-gnu.tar.gz
+        sha256: 01ac5d872ab4cf6b11965c9df317f699882405f0319872fe3dbbb3adb045600b
+        member: uv
+      linux-aarch64:
+        url: https://github.com/astral-sh/uv/releases/download/0.9.20/uv-aarch64-unknown-linux-gnu.tar.gz
+        sha256: 0451ecac1d0ed43d5870927df84c3d1dc93d72cf1933310acfadce5ad457c587
+        member: uv
+      macos-arm64:
+        url: https://github.com/astral-sh/uv/releases/download/0.9.20/uv-aarch64-apple-darwin.tar.gz
+        sha256: c3f4b03a5d526119d41fa8b8f255aa8053c49d787778df654895e3d174b1519a
+        member: uv
+      macos-x86_64:
+        url: https://github.com/astral-sh/uv/releases/download/0.9.20/uv-x86_64-apple-darwin.tar.gz
+        sha256: 0059dc2986e7032c12b7039e1a66e570ab5c3a41598263c76e5a9c4e7da9f971
+        member: uv
+      windows-x86_64:
+        url: https://github.com/astral-sh/uv/releases/download/0.9.20/uv-x86_64-pc-windows-msvc.zip
+        sha256: be51ed9fcba5be4ac9c41a46aaf8af5cef86624fe27e2c645771b174069e049d
+        member: uv.exe
+  micromamba:
+    version: "2.3.2-0"
+    bin: micromamba
+    checksums: the .sha256 file beside each asset
+    platforms:
+      linux-x86_64:
+        url: https://github.com/mamba-org/micromamba-releases/releases/download/2.3.2-0/micromamba-linux-64
+        sha256: ffc3cb8d52d4d6b354bdbb979c407719c485392b74e462cbd50811aa88e58f85
+      linux-aarch64:
+        url: https://github.com/mamba-org/micromamba-releases/releases/download/2.3.2-0/micromamba-linux-aarch64
+        sha256: 7154d66112a623d8d930f8aab467347971d5c1403a84b1c25d19298f4fb9da03
+      macos-arm64:
+        url: https://github.com/mamba-org/micromamba-releases/releases/download/2.3.2-0/micromamba-osx-arm64
+        sha256: d8d506fe8f8bc8d8c923a9434f5eba90d4ce3444a63ca1db08be8bb5ee51bc18
+      macos-x86_64:
+        url: https://github.com/mamba-org/micromamba-releases/releases/download/2.3.2-0/micromamba-osx-64
+        sha256: 145ffe653d3684a646025941c76298ab3b0fa02a4625873bfb9a81a8f5933cdd
+      windows-x86_64:
+        url: https://github.com/mamba-org/micromamba-releases/releases/download/2.3.2-0/micromamba-win-64.exe
+        sha256: 4b328171d0eae31bd58ca773880492fee05e2fa2f7e9e1a876a0c39a1cf92906
+
+# Names that differ between ecosystems. Default: the tool's own name everywhere. `alias`: the binary name a system
+# package installs when it is not the tool's name (Debian's fd-find installs `fdfind`). fd has no published checksum
+# file, so it is not in `tools:` (never a guessed hash); it still comes through conda-forge or the system manager.
+packages:
+  rg: {apt: ripgrep, brew: ripgrep, winget: BurntSushi.ripgrep.MSVC, conda: ripgrep}
+  fd: {apt: fd-find, brew: fd, winget: sharkdp.fd, conda: fd-find, alias: fdfind}
+  jq: {apt: jq, brew: jq, winget: jqlang.jq, conda: jq}
+  gh: {apt: gh, brew: gh, winget: GitHub.cli, conda: gh}
+  uv: {brew: uv, winget: astral-sh.uv, conda: uv}
+  git: {apt: git, brew: git, winget: Git.Git, conda: git}
+  curl: {apt: curl, brew: curl, conda: curl}
+  make: {apt: make, brew: make, conda: make}
+  node: {apt: nodejs, brew: node, winget: OpenJS.NodeJS.LTS, conda: nodejs}
+  npm: {apt: npm, brew: node, conda: nodejs}
+  pandoc: {apt: pandoc, brew: pandoc, winget: JohnMacFarlane.Pandoc, conda: pandoc}
+  ffmpeg: {apt: ffmpeg, brew: ffmpeg, winget: Gyan.FFmpeg, conda: ffmpeg}
+  pdftotext: {apt: poppler-utils, brew: poppler, conda: poppler}
+  convert: {apt: imagemagick, brew: imagemagick, conda: imagemagick}
+  sqlite3: {apt: sqlite3, brew: sqlite, conda: sqlite}
+  shellcheck: {apt: shellcheck, brew: shellcheck, winget: koalaman.shellcheck, conda: shellcheck}

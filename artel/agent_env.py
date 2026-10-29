@@ -48,6 +48,10 @@ def agent_env(runtime: str, extra: Optional[dict] = None, config: Optional[dict]
         up = {a.upper() for a in allowed}
         env.update({k: v for k, v in src.items() if k.upper() in up})
     env.update(extra or {})
+    if env.get("PATH"):  # what Artel installed for the agents (ARTEL_HOME/tools) must be on their shells' PATH
+        from .tools import with_tool_dirs
+
+        env["PATH"] = with_tool_dirs(env["PATH"])
     return with_loopback_bypass(env)
 
 

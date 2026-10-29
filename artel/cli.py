@@ -606,6 +606,26 @@ def _evolve_once(args) -> int:
     return 0
 
 
+def cmd_tools(args) -> int:
+    """Programs Artel installed for the agents (artel/provision.py): list them, install one, or undo an install."""
+    from . import provision
+
+    if args.action == "remove":
+        res = provision.remove(args.name or "")
+        print("removed" if res["ok"] else res["error"])
+        return 0 if res["ok"] else 1
+    if args.action == "install":
+        path = provision.ensure(args.name or "", why="requested with `artel tools install`")
+        print(path or f"not installed: {provision.last_reason(args.name or '')}")
+        return 0 if path else 1
+    rows = provision.installed()
+    for name, r in sorted(rows.items()):
+        print(f"{name}\t{r.get('method')}\t{r.get('version') or '-'}\t{r.get('path')}")
+    if not rows:
+        print("nothing installed by Artel")
+    return 0
+
+
 def cmd_providers(args) -> int:
     import subprocess
 
@@ -1121,6 +1141,11 @@ def main(argv=None) -> int:
     ev.add_argument("--runtimes", help="subscriptions in order of preference, e.g. claude_code,codex: a limit on one "
                                        "moves the work to the next (overrides evolve.runtimes in the config)")
     ev.set_defaults(fn=cmd_evolve)
+
+    tl = sub.add_parser("tools", help="programs Artel installed for agents: list | install <name> | remove <name>")
+    tl.add_argument("action", nargs="?", default="list", choices=["list", "install", "remove"])
+    tl.add_argument("name", nargs="?")
+    tl.set_defaults(fn=cmd_tools)
 
     pv = sub.add_parser("providers", help="subscriptions, API keys and runtimes; Codex device-code login")
     pv.add_argument("action", nargs="?", default="status",

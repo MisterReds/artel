@@ -54,10 +54,22 @@ def bin_dir() -> Path:
     return tools_dir() / "bin"
 
 
+def conda_bin_dirs() -> list:
+    e = tools_dir() / "conda" / "envs" / "artel"
+    return [str(p) for p in ((e / "Library" / "bin", e / "Scripts", e) if WIN else (e / "bin",)) if p.is_dir()]
+
+
+def with_tool_dirs(path: str) -> str:
+    """PATH with Artel's tools dir first and its conda environment last (so conda's python never shadows the system's)."""
+    parts = [p for p in path.split(os.pathsep) if p]
+    head = [str(bin_dir())] if bin_dir().exists() else []
+    tail = conda_bin_dirs()
+    return os.pathsep.join(head + [p for p in parts if p not in head and p not in tail] + tail)
+
+
 def env_with_tools(env: Optional[dict] = None) -> dict:
     env = dict(os.environ if env is None else env)
-    if bin_dir().exists():
-        env["PATH"] = os.pathsep.join([str(bin_dir()), env.get("PATH", "")])
+    env["PATH"] = with_tool_dirs(env.get("PATH", ""))
     return env
 
 
