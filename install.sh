@@ -44,7 +44,8 @@ DIR="${ARTEL_DIR-$HOME/.artel/app}"
 VENV="${ARTEL_VENV-$HOME/.artel/venv}"
 BIN="${ARTEL_BIN:-$HOME/.local/bin}"
 CODEX=0 CLAUDE=0 SERVICE=0 START=1 YES=0 REINSTALL=0 REMOVE_ROOT=0
-ROOT_WRAPPER=/usr/local/sbin/artel-root ROOT_SUDOERS=/etc/sudoers.d/artel ROOT_CONF=/etc/artel-root.conf
+ROOT_WRAPPER="${ARTEL_ROOT_WRAPPER:-/usr/local/sbin/artel-root}" ROOT_SUDOERS="${ARTEL_ROOT_SUDOERS:-/etc/sudoers.d/artel}"
+ROOT_CONF=/etc/artel-root.conf
 [ "${ARTEL_REINSTALL:-}" = 1 ] && REINSTALL=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -81,6 +82,7 @@ confirm() {
 
 OS="$(uname -s)"
 SUDO=""; [ "$(id -u)" = 0 ] || SUDO="sudo"
+SUDO="${ARTEL_SUDO-$SUDO}"  # tests run the installer without sudo
 PM=""
 if [ "$OS" = Darwin ]; then PM=brew
 elif have apt-get; then PM=apt
@@ -200,7 +202,6 @@ reinstall_prepare() {
   if [ "$svc" = systemd ]; then systemctl --user stop artel.service 2>/dev/null || true; SERVICE=1
   elif [ "$svc" = launchd ]; then launchctl unload "$HOME/Library/LaunchAgents/ai.artel.dashboard.plist" 2>/dev/null || true; SERVICE=1
   fi
-  root_remove
   case "$app_action" in delete) rm -rf "$DIR" ;; move) move_aside "$DIR" app ;; esac
   case "$venv_action" in delete) rm -rf "$VENV" ;; move) move_aside "$VENV" "virtual environment" ;; esac
 }
@@ -237,7 +238,10 @@ root_setup() {
   [ "$OS" = Linux ] || return 0
   local src="$DIR/artel/data/artel-root.sh" tpl="$DIR/artel/data/artel-sudoers.tpl" user tmp
   [ -f "$src" ] && [ -f "$tpl" ] || { note "root wrapper files missing in $DIR; skipped"; return 0; }
-  ask_root || { note "no root wrapper (system packages and the AppArmor profile stay a manual step)"; return 0; }
+  if root_installed && [ "${ARTEL_ALLOW_ROOT:-}" != 0 ]; then  # the owner consented once: a reinstall does not ask again
+    note "root wrapper kept ($ROOT_WRAPPER); remove: bash install.sh --remove-root"; return 0
+  fi
+  ask_root || { root_remove; note "no root wrapper (system packages and the AppArmor profile stay a manual step)"; return 0; }
   have sudo || [ "$(id -u)" = 0 ] || { note "sudo is not available; root wrapper skipped"; return 0; }
   user="$(id -un)"
   case "$user" in ""|*[!A-Za-z0-9_.-]*|-*) note "unusual user name '$user'; root wrapper skipped"; return 0 ;; esac
@@ -254,7 +258,7 @@ root_setup() {
   $SUDO install -m 0440 -o root -g root "$tmp/sudoers" "$ROOT_SUDOERS"
   rm -rf "$tmp"
   note "$user may run $ROOT_WRAPPER (apt-install, apparmor-bwrap) without a password; nothing else"
-  note "remove: bash install.sh --remove-root (also done by artel reinstall)"
+  note "remove: bash install.sh --remove-root (answering no at install time removes it too)"
 }
 
 main() {

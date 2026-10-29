@@ -189,6 +189,6 @@ def test_installer_asks_once_defaults_to_no_and_removes_both_files():
     assert "install -m 0755 -o root -g root" in INSTALL and "visudo -cf" in INSTALL and "TESTHOOK-BEGIN" in INSTALL
     remove = INSTALL[INSTALL.index("root_remove() {"):INSTALL.index("root_setup() {")]
     assert "$ROOT_SUDOERS" in remove and "$ROOT_WRAPPER" in remove
-    prep = INSTALL[INSTALL.index("reinstall_prepare() {"):INSTALL.index("main() {")]
-    assert "root_remove" in prep  # reinstall removes both
+    prep = INSTALL[INSTALL.index("reinstall_prepare() {"):INSTALL.index("# --- root wrapper")]
+    assert "root_remove" not in prep  # reinstall keeps what the owner consented to; see test_reinstall.py
     assert "--remove-root" in INSTALL
