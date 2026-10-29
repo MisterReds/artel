@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -64,7 +65,11 @@ def effective_grants(project: Any, role: str, workspace: Optional[Path] = None,
             write += _paths(project, layer.get("write"))
     if role in READONLY_ROLES:
         write = []
-    write = [w for w in dict.fromkeys(write) if w not in refs]
+    from .sandbox import protected_paths
+
+    guarded = protected_paths(project.root)  # a grant on the config itself (policy.yaml, skills/...) is void
+    write = [w for w in dict.fromkeys(write) if w not in refs and not any(
+        w == g or w.startswith(g.rstrip("/\\") + os.sep) for g in guarded)]
     return {"read": list(dict.fromkeys(write + read)), "write": write}
 
 
@@ -148,6 +153,11 @@ class ToolContext:
             raise ToolError(f"{kind} to '{path}' denied: not in {kind} grants {shown}; "
                             "use a workspace-relative path or shared/...")
         if write:
+            from .sandbox import protected_paths
+
+            if any(inside(Path(pp)) for pp in protected_paths(self.project.root)):
+                raise ToolError(f"{path!r} is protected configuration (policy.yaml, artel.yaml or the skills "
+                                "library): agents never write it; ask the owner")
             protected = {"events.jsonl", "board.db", "project.json"}
             if target.parent == root and target.name in protected:
                 raise ToolError(f"{target.name} is managed by the harness")

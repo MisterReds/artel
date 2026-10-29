@@ -387,11 +387,19 @@ class Manager:
                 self.project.log.append("gate/result", task_id=task["id"], **res)
                 continue
             # gates run unsandboxed unless `sandbox.gates` asks for it (then writable: the gate cwd + temp)
-            run = sandbox.plan(self.cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off")
+            run = sandbox.plan(self.cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off",
+                               project_root=self.project.root)
+            if sandbox.refusal(run, self.cfg):  # demanded backend missing: the check does not run unsandboxed
+                res = {"command": cmd, "exit": -1, "output": f"command NOT run: {run.error}"}
+                results.append(res)
+                self.project.log.append("gate/result", task_id=task["id"], **res)
+                continue
             try:
                 p = subprocess.run(run.argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
                                    timeout=int(self.cfg.get("gate_timeout_s", 900)), env=shell_env(env))
-                res = {"command": cmd, "exit": p.returncode, "output": window_text(p.stdout + p.stderr, 3000)}
+                failed = sandbox.start_failure(run, p.returncode, p.stderr) if sb["require"] else ""
+                res = {"command": cmd, "exit": p.returncode if not failed else -1,
+                       "output": window_text(p.stdout + p.stderr, 3000) if not failed else f"command NOT run: {failed}"}
             except subprocess.TimeoutExpired:
                 res = {"command": cmd, "exit": -1, "output": "timed out"}
             results.append(res)

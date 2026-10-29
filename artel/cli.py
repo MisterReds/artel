@@ -712,6 +712,7 @@ def cmd_providers(args) -> int:
     em = o["embeddings"]
     print(f"  {'Эмбеддинги':<14} {('включены: ' + em['active']) if em['active'] != 'off' else ('выключены' if em['installed'] else 'не установлены — поиск по словам'):<34} "
           f"{'EmbeddingGemma 2 ' + em['quant'] + ', ' + str(em['dim']) + 'd' if em['installed'] else 'artel providers install embeddings'}")
+    print(f"  {'Изоляция':<14} {o['sandbox']['message']}")
     r = o["routing"]
     print(f"  рантайм по умолчанию: {r['runtime']}" + (f" (сейчас → {r['auto_resolves_to']})" if r["runtime"] == "auto" else "")
           + "".join(f"; {k}: {v}" for k, v in r["runtime_by_role"].items()))

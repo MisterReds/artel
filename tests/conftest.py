@@ -32,3 +32,18 @@ def no_host_evolve_process(monkeypatch):
     import artel.evolve.supervisor as sv
     monkeypatch.setattr(sv, "evolve_process_running", lambda **kw: False)
 
+
+
+@pytest.fixture(autouse=True)
+def sandbox_off_unless_asked(request, monkeypatch):
+    """The product default is sandbox.mode auto; CI runners often cannot create user namespaces, so the general
+    suite runs with the sandbox off. Tests of the sandbox itself opt in with @pytest.mark.real_sandbox_default."""
+    if request.node.get_closest_marker("real_sandbox_default"):
+        return
+    from artel import project, sandbox
+    monkeypatch.setitem(project.DEFAULT_CONFIG["sandbox"], "mode", "off")
+    monkeypatch.setitem(sandbox.DEFAULTS, "mode", "off")
+
+
+def pytest_configure(config):
+    config.addinivalue_line("markers", "real_sandbox_default: keep the product's default sandbox settings")
