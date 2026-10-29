@@ -211,7 +211,7 @@ class Outcome:
     terminal: Optional[tuple] = None
     turns: int = 0
     tool_calls: int = 0
-    usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0})
+    usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0, "cached": 0})
     digest: list = field(default_factory=list)
     error: str = ""
     cost_usd: float = 0.0
@@ -299,6 +299,7 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
                        effort=effort, system=system, user=first_user, tools=[t["name"] for t in tools])
     seen_comments = len(project.board.comments(task_id)) if task_id else 0
     idle_turns = 0
+    usage_missing = False
     detector = LoopDetector()
 
     def loop_event(loop_kind: str, stage: str, **details: Any) -> None:
@@ -343,13 +344,16 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
             journal_agent_event(project.log, "llm/error", actor=actor, task_id=task_id, error=str(exc))
             break
         out.turns = turn
-        for k in ("input_tokens", "output_tokens"):
-            out.usage[k] += resp.usage.get(k, 0)
+        for k in ("input_tokens", "output_tokens", "cached"):
+            out.usage[k] = out.usage.get(k, 0) + resp.usage.get(k, 0)
+        if not resp.usage:  # the provider reported nothing for this response: the totals are incomplete
+            usage_missing = True
         from .analytics import cost_usd as _price
 
         cost = _price(resp.model, resp.usage.get("input_tokens", 0), resp.usage.get("output_tokens", 0)) or 0.0
         out.cost_usd += cost
-        project.add_usage(resp.usage.get("input_tokens", 0), resp.usage.get("output_tokens", 0), cost_usd=cost)
+        project.add_usage(resp.usage.get("input_tokens", 0), resp.usage.get("output_tokens", 0), cost_usd=cost,
+                          cached=resp.usage.get("cached", 0))
         journal_agent_event(project.log, "llm/response", actor=actor, role=role, task_id=task_id, turn=turn, model=resp.model,
                            stop_reason=resp.stop_reason, usage=resp.usage, blocks=resp.blocks)
         if ctx.run_id:
@@ -425,7 +429,8 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
         messages.append({"role": "user", "content": "\n\n".join([CONTINUATION] + notes)})
 
     journal_agent_event(project.log, "agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
-                       terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage, error=out.error)
+                       terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage, error=out.error,
+                       **({"usage_missing": True} if usage_missing else {}))
     return out
 
 
@@ -436,7 +441,7 @@ def budget_guard(config: dict):
     def check(project) -> Optional[str]:
         meta = project.meta
         u = meta["usage"]
-        if b.get("max_total_tokens") and u["input_tokens"] + u["output_tokens"] >= b["max_total_tokens"]:
+        if b.get("max_total_tokens") and u["input_tokens"] + u["output_tokens"] + u.get("cached", 0) >= b["max_total_tokens"]:
             return f"token budget {b['max_total_tokens']} exhausted"
         if b.get("max_hours") and time.time() - meta["created_at"] >= b["max_hours"] * 3600:
             return f"time budget {b['max_hours']}h exhausted"

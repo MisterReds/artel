@@ -59,7 +59,7 @@ def print_board(project: Project) -> None:
 
     print(f"{banner()}  {m['name']}  [{status(m['status'])}]  "
           f"{project.slug}")
-    print(f"  tokens in/out {u['input_tokens']}/{u['output_tokens']}  requests {u['requests']}  "
+    print(f"  tokens in/out/cached {u['input_tokens']}/{u['output_tokens']}/{u.get('cached', 0)}  requests {u['requests']}  "
           f"audits {m.get('audit_rounds', 0)}")
     for p in project.personas():
         print(f"  @{p.name} — {p.role}")
@@ -246,6 +246,8 @@ METRIC_LINES = (  # (key in measure(), label, threshold key in check(), format)
     ("expensive_token_share", "Доля дорогих токенов", "expensive_token_share_max", "{:.1%}"),
     ("expensive_call_share", "Доля дорогих вызовов", "expensive_call_share_max", "{:.1%}"),
     ("tokens_total", "Токенов всего", None, "{}"),
+    ("cached_tokens", "Из них чтений кэша", None, "{}"),
+    ("usage_missing_runs", "Запусков без отчёта о расходе", None, "{}"),
     ("tasks_done", "Задач принято", None, "{}"),
     ("tokens_per_accepted", "Токенов на принятую задачу", None, "{}"),
     ("success_rate", "Доля успешных задач", None, "{:.1%}"),
@@ -267,6 +269,8 @@ def format_metrics(m: dict, checks: Optional[dict] = None) -> str:
             c = checks[check_key]
             mark = "  " + ("·" if c["ok"] is None else "✓" if c["ok"] else "✗") + f" (порог {c['limit']})"
         lines.append(f"{label}: {text}{mark}")
+    if m.get("tokens_incomplete"):
+        lines.append("Токены неполные: часть запусков не сообщила расход")
     for rt, n in sorted((m.get("tokens_by_runtime") or {}).items()):
         lines.append(f"Токенов, {rt}: {n}")
     if m.get("verdict"):

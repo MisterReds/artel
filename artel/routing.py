@@ -40,6 +40,12 @@ def settings(config: dict) -> dict:
     return out
 
 
+def _tokens(usage: Optional[dict]) -> int:
+    """Every token a run handled: uncached input + output + cache reads."""
+    u = usage or {}
+    return int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0) + int(u.get("cached") or 0)
+
+
 def expensive_used(project) -> int:
     """Tokens the expensive tier has spent in this project (from its agent/end events)."""
     if project is None:
@@ -51,7 +57,7 @@ def expensive_used(project) -> int:
     for e in project.log.read():
         if e.get("kind") == "agent/end" and e.get("tier") == "expensive":
             u = e.get("usage") or {}
-            total += int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0)
+            total += _tokens(u)
     return total
 
 
@@ -92,8 +98,8 @@ def record(project, tier: str, usage: dict) -> None:
     if project is None or not tier:
         return
     t = dict(project.meta.get("tiers") or {})
-    tokens = int((usage or {}).get("input_tokens") or 0) + int((usage or {}).get("output_tokens") or 0)
-    t[f"{tier}_tokens"] = int(t.get(f"{tier}_tokens") or 0) + tokens
+    t[f"{tier}_tokens"] = int(t.get(f"{tier}_tokens") or 0) + _tokens(usage)
+    t[f"{tier}_cached"] = int(t.get(f"{tier}_cached") or 0) + int((usage or {}).get("cached") or 0)
     t[f"{tier}_calls"] = int(t.get(f"{tier}_calls") or 0) + 1
     project.set_meta(tiers=t)
 

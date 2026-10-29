@@ -68,7 +68,7 @@ def test_codex_runtime_does_work_and_finishes_through_artel_tools(env):
     args = json.loads((tmp / "calls.jsonl").read_text(encoding="utf-8").splitlines()[0])
     assert args[:2] == ["exec", "--json"] and "workspace-write" in args and "--add-dir" in args
     assert 'approval_policy="never"' in args and args[-1] == "-"
-    assert out.usage["input_tokens"] == 1000 and out.usage["output_tokens"] == 200
+    assert out.usage["input_tokens"] == 600 and out.usage["output_tokens"] == 200  # 1000 reported, 400 of them cached
 
 
 def test_codex_without_terminal_tool_is_resumed_and_readonly_roles_get_readonly_sandbox(env, monkeypatch):
@@ -246,7 +246,7 @@ def test_codex_usage_arriving_after_the_terminal_tool_is_recorded(env, monkeypat
     monkeypatch.setenv("FAKE_CODEX_USAGE_DELAY", "1")
     out, ctx = _run(cfg, project)
     assert out.status == "terminal"
-    assert out.usage["input_tokens"] == 1000 and out.usage["output_tokens"] == 200 and out.usage["cached"] == 400
+    assert out.usage["input_tokens"] == 600 and out.usage["output_tokens"] == 200 and out.usage["cached"] == 400
     end = [e for e in project.log.read() if e["kind"] == "agent/end" and e.get("runtime") == "codex"][-1]
     assert not end.get("usage_missing")
 

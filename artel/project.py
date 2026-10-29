@@ -255,7 +255,7 @@ class Project:
             n += 1
         root.mkdir(parents=True)
         meta = {"goal": goal, "name": name or goal[:80], "status": "planning", "created_at": time.time(),
-                "usage": {"input_tokens": 0, "output_tokens": 0, "requests": 0}, "audit_rounds": 0,
+                "usage": {"input_tokens": 0, "output_tokens": 0, "cached": 0, "requests": 0}, "audit_rounds": 0,
                 "root_task": None}
         if workdir:
             meta["workdir"] = str(Path(workdir).resolve())
@@ -326,12 +326,13 @@ class Project:
             self.log.append("project/status", status=fields["status"])
         return m
 
-    def add_usage(self, input_tokens: int, output_tokens: int, cost_usd: float = 0.0) -> dict:
+    def add_usage(self, input_tokens: int, output_tokens: int, cost_usd: float = 0.0, cached: int = 0) -> dict:
         with self._meta_lock, self._meta_update():
             m = self.meta
             u = m["usage"]
             u["input_tokens"] += input_tokens
             u["output_tokens"] += output_tokens
+            u["cached"] = u.get("cached", 0) + cached
             u["requests"] += 1
             u["cost_usd"] = round(u.get("cost_usd", 0.0) + (cost_usd or 0.0), 6)
             self._write_meta(m)

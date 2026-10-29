@@ -7,7 +7,7 @@ into the project journal, the policy gate, loop detection, the terminal tool and
 the :class:`Outcome` the callers use.
 
 Codec interface (module attributes): NAME, LABEL, DEFAULTS, INSTALL_HINT, NO_SESSION, OK_EXIT, TRACK_STOP, LOG_ROLE,
-GATE_TOOL, SHELL_TOOL, TRACK_MISSING_USAGE, STRIP_STDERR, [TERMINAL_GRACE_S]; settings(config), prepare(run), note(run), first_prompt(),
+GATE_TOOL, SHELL_TOOL, STRIP_STDERR, [TERMINAL_GRACE_S]; settings(config), prepare(run), note(run), first_prompt(),
 start_info(run), model_seen(cc), launch(run), parse(line), loop_msg(name, input), [sandbox_recover(cc, text)].
 Data keys of AgentEvent the loop understands: text/tool_call "response" ({"n", "fields"} on the first event of one
 model response), tool_call "bridged"/"label"/"turn"/"observe"/"edited"/"phase", tool_result "digest"/"sandbox_broken",
@@ -228,11 +228,11 @@ class Run:
         tin, tout, cost = int(d["input_tokens"]), int(d["output_tokens"]), float(d.get("cost_usd") or 0.0)
         out.usage["input_tokens"] += tin
         out.usage["output_tokens"] += tout
-        if "cached" in d:
-            out.usage["cached"] = out.usage.get("cached", 0) + int(d["cached"])
+        cached = int(d.get("cached") or 0)
+        out.usage["cached"] = out.usage.get("cached", 0) + cached
         out.cost_usd += cost
         self.got_usage = True
-        self.project.add_usage(tin, tout, cost_usd=cost)
+        self.project.add_usage(tin, tout, cost_usd=cost, cached=cached)
 
     def _observe(self, name: str, inp: dict) -> None:
         verdict = self.detector.observe_tool(name, inp)
@@ -433,5 +433,5 @@ def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str
     journal_agent_event(project.log, "agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
                        terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage,
                        cost_usd=round(out.cost_usd, 4), error=out.error, runtime=codec.NAME, model=run.model,
-                       **({"usage_missing": True} if usage_missing and codec.TRACK_MISSING_USAGE else {}))
+                       **({"usage_missing": True} if usage_missing else {}))
     return out
