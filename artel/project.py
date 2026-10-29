@@ -110,9 +110,9 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "provider_by_role": {},              # e.g. {librarian: local}
     "embeddings": {"backend": "auto", "dim": 768},  # meaning-based search (artel/embeddings.py): auto = local if installed
     "isolation": {"worktrees": False},   # true: each task works in its own git worktree, merged on acceptance
-    "sandbox": {                         # OS sandbox for agents' bash (artel/sandbox.py); off = as before
-        "mode": "off",                   # off | auto | bwrap | seatbelt
-        "network": True, "writable": [], "temp": True, "require": False, "gates": False,
+    "sandbox": {                         # OS sandbox for agents' bash and task checks (artel/sandbox.py); off = none
+        "mode": "auto",                  # off | auto | bwrap | seatbelt
+        "network": True, "writable": [], "temp": True, "require": True, "gates": True,
     },
     "gate_timeout_s": 900,              # shell gates often run a whole test suite; tool calls keep tool_timeout_s
     "runtime": "auto",                   # auto | native | claude_code | codex (auto: whatever is connected)

@@ -413,7 +413,9 @@ def save_embeddings(config: dict, data: dict, path: Optional[Path] = None) -> di
 
 
 def overview(config: dict) -> dict:
-    return {"embeddings": embeddings_status(config),"codex": codex_status(config), "claude_code": claude_code_status(config),
+    from .sandbox import status as sandbox_status
+
+    return {"sandbox": sandbox_status(config), "embeddings": embeddings_status(config),"codex": codex_status(config), "claude_code": claude_code_status(config),
             "keys": api_keys(config), "routing": routing(config),
             "timezone": __import__("artel.tz", fromlist=["info"]).info(config)}
 

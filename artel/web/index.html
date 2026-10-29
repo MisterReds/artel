@@ -672,7 +672,9 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       <button id="cx-cancel">Отменить</button>`
      :L.phase==='starting'?'<p class="stat">Запрашиваю код…</p>'
      :L.phase==='error'?`<pre>${esc(L.error||'')}</pre>`:L.phase==='done'?'<p style="color:var(--ok)">Вход выполнен.</p>':'';
+   const sb=o.sandbox||{};
    box.innerHTML=`<p class="stat">Кто выполняет работу. Достаточно одного: подписка Claude (Claude Code) или ChatGPT (Codex) подключается входом в их программу; ключи API задаются только переменными окружения — их значения здесь не показываются и не хранятся.</p>
+   <p class="stat" id="sandbox-status" style="color:${sb.active?'var(--ok)':'var(--warn,inherit)'}">Изоляция: ${esc(sb.message||'—')}</p>
    <div class="pv">
     <div class="pvc"><h3>${ri('worker')}Codex${st(cx.logged_in,'подключён',cx.installed?'не подключён':'не установлен')}</h3>
       <div class="kv"><span>вход</span><span>${cx.logged_in?esc(cx.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка ChatGPT (device code) или ключ API</span>${cx.installed?`<span>CLI</span><span>${esc(cx.version)}${cx.by_artel?' · в папке Artel':''}</span><span>модель</span><span>${esc(cx.model||'')}</span>`:''}</div>
