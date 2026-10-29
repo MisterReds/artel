@@ -13,6 +13,7 @@
 <meta name="apple-mobile-web-app-title" content="Artel">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="/static/fonts/fonts.css">
+<link rel="stylesheet" href="/static/files.css?v=2">
 <style>
 :root{
   /* Artel brand: copper on warm paper. Status colours are distinct from the brand so a running task never
@@ -75,15 +76,26 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
 .chips button{padding:3px 10px;font-size:12.5px;border-radius:99px}.chips button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .alert{border-left:3px solid var(--bad);background:var(--panel);border-radius:8px;padding:8px 12px;margin-bottom:6px;cursor:pointer}
-.stepper{display:flex;gap:0;margin:8px 0 4px;flex-wrap:wrap}
-.step{flex:1;min-width:90px;text-align:center;font-size:12px;padding:6px 4px;border-bottom:3px solid var(--line);color:var(--muted)}
-.step.past{border-color:var(--ok);color:var(--ink)}.step.now{border-color:var(--accent);color:var(--accent);font-weight:600}
+.stepper{list-style:none;display:flex;align-items:center;margin:12px 0 2px;padding:0}
+.step{flex:1;display:flex;align-items:center}.step:last-child{flex:none}
+.step .sd{width:14px;height:14px;border-radius:50%;border:2px solid var(--todo);background:var(--panel);flex:none}
+.step::after{content:"";flex:1;height:2px;background:var(--line);margin:0 4px}.step:last-child::after{display:none}
+.step.past .sd{background:var(--ok);border-color:var(--ok)}.step.past::after{background:var(--ok)}
+.step.now .sd{border-color:var(--accent);background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 25%,transparent)}
+.step.now.bad .sd{border-color:var(--bad);background:var(--bad);box-shadow:0 0 0 4px color-mix(in srgb,var(--bad) 25%,transparent)}
+.stlabel{font-size:13px;margin:4px 0 8px}.sumline{font:600 17px/1.4 var(--text);margin:6px 0 0}
+.phead{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px}.pname{font-size:20px;font-weight:600;flex:1;min-width:200px;overflow-wrap:anywhere}.pctl{display:flex;gap:8px;flex-wrap:wrap}
+.legend{list-style:none;display:flex;gap:6px 14px;flex-wrap:wrap;margin:6px 0 0;padding:0;font-size:12.5px;color:var(--muted)}
+.legend li{display:flex;align-items:center;gap:5px}.legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
 .team{display:flex;gap:10px;overflow-x:auto;padding-bottom:6px}
 .worker{min-width:210px;max-width:250px;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer}
 .worker b{display:block}.worker .role{color:var(--muted);font-size:12px}
 .worker .now{font-size:12px;margin-top:6px;color:var(--run)}
-.board{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:10px;align-items:start}
-.col{background:color-mix(in srgb,var(--chip) 60%,transparent);border-radius:12px;padding:8px;min-height:110px}
+.board{display:flex;flex-wrap:wrap;gap:10px;align-items:flex-start}
+.col{flex:1 1 170px;min-width:150px;background:color-mix(in srgb,var(--chip) 60%,transparent);border-radius:12px;padding:8px;min-height:110px}
+.col.col0{flex:0 0 auto;min-width:0;min-height:0;padding:4px 10px}.col.col0 h3{margin:0;gap:10px}
+.col.need{background:color-mix(in srgb,var(--bad) 9%,var(--panel));border:1px solid var(--bad)}.col.need h3{color:var(--bad)}
+.btabs{display:none;gap:6px;margin:6px 0;overflow-x:auto}.btabs button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
 .col h3{font-size:12px;margin:2px 4px 8px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between}
 .card{background:var(--panel);border:1px solid var(--line);border-left:3px solid var(--line);border-radius:10px;padding:8px 10px;margin-bottom:8px;cursor:pointer}
 .card.running{border-left-color:var(--run)}.card.review{border-left-color:var(--rev)}.card.done{border-left-color:var(--ok)}
@@ -117,8 +129,21 @@ pre{font-family:var(--mono);font-size:12px;white-space:pre-wrap;background:var(-
 .tl{display:flex;flex-direction:column;gap:2px;font-size:12.5px}.tl div{display:flex;gap:10px}.tl .ts{color:var(--muted);font-family:var(--mono);min-width:72px}
 .feedbtn{display:none}
 @media (max-width:1100px){.layout{grid-template-columns:1fr}.feed{display:none}.feed.show{display:flex;position:fixed;inset:0;z-index:5}.feedbtn{display:inline-block}}
-@media (max-width:720px){.wrap,.layout .pmain{padding:12px 16px}header{padding:10px 16px;gap:8px}header .logo{flex:1}nav{order:3;flex:0 0 100%;flex-wrap:nowrap;overflow-x:auto}nav a{white-space:nowrap}.board{grid-template-columns:1fr}.col{min-height:0}.grid{grid-template-columns:1fr}}
+@media (max-width:720px){.wrap,.layout .pmain{padding:12px 16px}header{padding:10px 16px;gap:8px}header .logo{flex:1}nav{order:3;flex:0 0 100%;flex-wrap:nowrap;overflow-x:auto}nav a{white-space:nowrap}.board.tabbed{display:block}.board.tabbed .col:not(.act){display:none}.board.tabbed .col{min-height:0}.btabs{display:flex}.grid{grid-template-columns:1fr}}
 button:disabled{opacity:.45;cursor:default}
+button.danger{background:transparent;border-color:var(--bad);color:var(--bad)}
+.toasts{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom,0px));z-index:30;display:flex;flex-direction:column;gap:8px;width:min(560px,calc(100vw - 32px))}
+.toast{background:var(--ink);color:var(--bg);border-radius:10px;padding:10px 12px 10px 14px;display:flex;gap:10px;align-items:center;box-shadow:0 6px 24px rgba(0,0,0,.28)}
+.toast.bad{background:var(--bad);color:var(--brand-ink)}.toast button{background:transparent;border-color:currentColor;color:inherit}
+.ask{border:1px solid var(--bad);border-left-width:4px;border-radius:12px;background:color-mix(in srgb,var(--bad) 6%,var(--panel));padding:12px 14px;margin:8px 0}
+.ask-h{font:600 13px/1.3 var(--text);color:var(--bad);text-transform:uppercase;letter-spacing:.04em}.ask-h span{display:inline-block;width:18px;height:18px;border-radius:50%;background:var(--bad);color:var(--brand-ink);text-align:center;line-height:18px;margin-right:4px}
+.ask .q{font-size:16px;font-weight:600;margin:6px 0 10px;overflow-wrap:anywhere}.ask .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.hap{overflow:auto;flex:1}.hap-l{list-style:none;margin:0;padding:10px 14px;display:flex;flex-direction:column;gap:12px}.hap-l li{display:flex;gap:8px;font-size:14px}
+.hap-l time{color:var(--muted);font-variant-numeric:tabular-nums;flex:none}.hap-l li.bad{color:var(--bad);font-weight:600}.hap-l li.ok{color:var(--ok)}
+body.devmode .usr{display:none}body.devmode .devfeed{display:flex;flex-direction:column;flex:1;min-height:0}
+#pm[data-tab=files] .over{display:none}#pm[data-tab=over] #pm-files{display:none}
+.ptabs{margin:14px 0 4px}.ptabs button{min-width:96px}.ptabs button.on,.btabs button.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+.onboard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;max-width:640px;margin:12px 0}.onboard h2{text-transform:none;font:600 18px/1.3 var(--display);letter-spacing:0;color:var(--ink);margin:0 0 6px}
 @media (pointer:coarse){
  button,nav a,.chips button,summary,select,input:not([type=checkbox]):not([type=radio]),.files a,.logo,.set .row a,a.back{min-height:44px}
  button{min-width:44px}.dclose{width:44px;height:44px}
@@ -162,7 +187,7 @@ body:not(.devmode) .dev{display:none!important}
   <nav id="nav" aria-label="Разделы">
     <a href="#/portfolio" data-v="portfolio">Проекты</a>
     <a href="#/providers" data-v="providers">Подключения</a>
-    <a href="#/failures" data-v="failures">Сбои</a>
+    <a class="dev" href="#/failures" data-v="failures">Сбои</a>
     <a href="#/settings" data-v="settings">Настройки</a>
     <a class="dev" href="#/agents" data-v="agents">Воркеры</a>
     <a class="dev" href="#/skills" data-v="skills">Навыки</a>
@@ -180,6 +205,9 @@ body:not(.devmode) .dev{display:none!important}
 <main id="main"><h1 class="sr" id="h1"></h1><div id="view"></div></main>
 <div class="sr" id="live" aria-live="polite"></div>
 <dialog id="dlg"><div class="dlg" id="dlgbody"></div></dialog>
+<dialog id="dlg2" style="width:min(480px,94vw)"></dialog>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/static/files.js?v=2"></script>
 <script>
 // --- brand: role icons (16px line icons, currentColor) ----------------------------------------------
 const RI={
@@ -213,9 +241,29 @@ const onAct=(e,fn)=>{e.setAttribute('role','button');e.tabIndex=0;e.onclick=fn;e
 // re-render only when the markup changed, and keep keyboard focus across re-renders
 function setHTML(el,html){if(!el||el._html===html)return false;const a=document.activeElement;
   const key=a&&el.contains(a)&&a!==el?(a.id?'#'+a.id:a.getAttribute('href')?'[href="'+a.getAttribute('href')+'"]':a.dataset&&a.dataset.t?'[data-t="'+a.dataset.t+'"]':a.dataset&&a.dataset.w?'[data-w="'+a.dataset.w+'"]':''):'';
-  el._html=html;el.innerHTML=html;if(key){const n=el.querySelector(key);if(n)n.focus({preventScroll:true})}return true}
+  el._html=html;el.innerHTML=html;if(key){const n=el.querySelector(key);if(n){n.focus({preventScroll:true});if(n.setSelectionRange&&n.value)n.setSelectionRange(n.value.length,n.value.length)}}return true}
 const authed=r=>{if(r.status===401){location.replace('/login');throw new Error('login required')}return r};
-const api=(p,o)=>fetch(p,o).then(authed).then(r=>r.json());
+const SK='<div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i><i class="sk" style="width:60%"></i></div>';
+// failed calls end in one toast with «Повторить» (never a bare «Загрузка…», never window.alert)
+let netT=0;
+function netFail(e){if(e&&e.message==='login required')return;const n=Date.now();if(n-netT<8000)return;netT=n;toast('Не удалось связаться с сервером.',{bad:true,id:'net',action:{label:'Повторить',fn:()=>route()}})}
+const api=(p,o)=>fetch(p,o).then(authed).then(r=>r.json()).catch(e=>{netFail(e);throw e});
+// the user mode asks the server for Russian wording of system strings; the developer mode gets the raw payload
+const MQ=u=>DEV?u:u+(u.includes('?')?'&':'?')+'mode=user';
+function toast(msg,o){o=o||{};const box=$('#toasts');if(o.id){const old=box.querySelector('[data-id="'+o.id+'"]');if(old)old.remove()}
+  const t=document.createElement('div');t.className='toast'+(o.bad?' bad':'');if(o.id)t.dataset.id=o.id;t.setAttribute('role',o.bad?'alert':'status');
+  const sp=document.createElement('span');sp.textContent=msg;sp.style.flex='1';t.append(sp);
+  if(o.action){const b=document.createElement('button');b.type='button';b.textContent=o.action.label;b.onclick=()=>{t.remove();o.action.fn()};t.append(b)}
+  const x=document.createElement('button');x.type='button';x.setAttribute('aria-label','Закрыть уведомление');x.textContent='×';x.onclick=()=>t.remove();t.append(x);
+  box.append(t);setTimeout(()=>t.remove(),o.ms||(o.bad?15000:4000));return t}
+// confirmation dialog (replaces window.confirm); `run` executes on «ok» with the buttons disabled, resolves true when done
+function ask(o){return new Promise(res=>{const d=$('#dlg2');
+  d.innerHTML=`<div class="dlg"><h3 id="dlg2t">${esc(o.title)}</h3><p>${esc(o.text||'')}</p><div style="display:flex;gap:8px;justify-content:flex-end;margin-top:12px;flex-wrap:wrap"><button type="button" id="ask-no">${esc(o.cancel||'Отмена')}</button><button type="button" class="${o.danger?'danger':'primary'}" id="ask-yes">${esc(o.ok||'Да')}</button></div></div>`;
+  d.setAttribute('aria-labelledby','dlg2t');let done=false;const fin=v=>{if(done)return;done=true;if(d.open)d.close();res(v)};
+  $('#ask-no').onclick=()=>fin(false);d.onclose=()=>fin(false);
+  $('#ask-yes').onclick=async()=>{if(!o.run)return fin(true);const y=$('#ask-yes'),n=$('#ask-no');y.disabled=n.disabled=true;y.textContent='Выполняю…';
+    try{await o.run();fin(true)}catch(e){y.disabled=n.disabled=false;y.textContent=o.ok||'Да';toast('Не удалось выполнить.',{bad:true})}};
+  d.showModal();$('#ask-no').focus()})}
 fetch('/api/auth/status').then(r=>r.json()).then(s=>{
   if(s.insecure&&location.protocol!=='https:'&&!/^(localhost|127\.|\[::1\])/.test(location.hostname))$('#netwarn').classList.add('show');
   if(s.remote){$('#logout').style.display='inline-block';$('#logout').onclick=async()=>{await fetch('/api/auth/logout',{method:'POST',headers:{'Content-Type':'application/json'}});location.replace('/login')}}
@@ -235,7 +283,7 @@ const fmtT=ts=>fmtTime(ts,false), fmtDT=ts=>fmtTime(ts,true);
 fetch('/api/providers').then(r=>r.json()).then(j=>{TZ=(j.timezone||{}).configured||''}).catch(()=>{});
 const num=v=>v==null?'—':Number(v).toLocaleString();
 const pct=v=>v==null?'—':Math.round(v*100)+'%';
-let timer=null, es=null, state={};
+let timer=null, es=null, state={drafts:{}};
 try{const t=localStorage.getItem('artel-theme');if(t)document.documentElement.dataset.theme=t}catch(e){}
 // Режим разработчика: эволюция, реестр харнессов, плагины, статистика воркеров, сырые события, токены и роли
 let DEV=false;try{DEV=localStorage.getItem('artel-dev')==='1'}catch(e){}
@@ -254,7 +302,7 @@ applyTheme(document.documentElement.dataset.theme||'',false);
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>applyTheme(document.documentElement.dataset.theme||'',false))}catch(e){}
 // tab title shows how many projects wait for an answer
 let ATTN=0;function setAttn(n){ATTN=n;document.title=n>0?`Artel — ${cnt(n,'вопрос','вопроса','вопросов')} к вам`:'Artel'}
-async function pollAttn(){if(document.hidden)return;try{const ps=await api('/api/portfolio');if(Array.isArray(ps))setAttn(ps.reduce((s,p)=>s+(p.attention||[]).length,0))}catch(e){}}
+async function pollAttn(){if(document.hidden)return;try{const ps=await api(MQ('/api/portfolio'));if(Array.isArray(ps))setAttn(ps.reduce((s,p)=>s+(p.attention||[]).length,0))}catch(e){}}
 pollAttn();setInterval(pollAttn,20000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollAttn()});
 const dlgEl=$('#dlg');dlgEl.addEventListener('click',e=>{if(e.target===dlgEl)dlgEl.close()});
 /* Диагност: «Почему?» — объяснение сбоя на доступной модели */
@@ -271,16 +319,17 @@ function labelDlg(){const h=$('#dlgbody h3');if(h){h.id='dlgtitle';dlgEl.setAttr
 const DCLOSE='<button class="dclose" aria-label="Закрыть" title="Закрыть" onclick="dlgEl.close()">×</button>';
 function dlg(html){$('#dlgbody').innerHTML=html+'<div style="text-align:right;margin-top:12px"><button onclick="dlgEl.close()">Закрыть</button></div>'+DCLOSE;labelDlg();dlgEl.showModal()}
 const EXAMPLES=['Сайт-визитка для кофейни','Телеграм-бот для записи на приём','Таблица личных расходов','Лендинг для мероприятия'];
-$('#newbtn').onclick=()=>{$('#dlgbody').innerHTML=`<h3>Что нужно сделать?</h3><p class="stat">Опишите результат своими словами. Artel соберёт команду, разделит работу на задачи, выполнит и проверит их. Ход работы виден на странице проекта.</p>
+function openNew(pre){$('#dlgbody').innerHTML=`<h3>Что нужно сделать?</h3><p class="stat">Опишите результат своими словами. Artel соберёт команду, разделит работу на задачи, выполнит и проверит их. Ход работы виден на странице проекта.</p>
   <textarea id="goal" rows="4" autofocus aria-label="Что нужно сделать" placeholder="Например: сайт-визитка для кофейни с меню и контактами"></textarea>
   <div class="exs" role="group" aria-label="Примеры">${EXAMPLES.map(x=>`<button type="button" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
   <details class="more"><summary>Дополнительно</summary><input id="pname" aria-label="Название проекта (необязательно)" placeholder="Название (необязательно)"><p class="stat">Без названия оно возьмётся из цели.</p></details>
   <div style="margin-top:8px"><button class="primary" id="go">Запустить</button></div>`+DCLOSE;labelDlg();dlgEl.showModal();
-  const goal=$('#goal');goal.focus();
+  const goal=$('#goal');goal.value=pre||'';goal.focus();
   document.querySelectorAll('[data-ex]').forEach(b=>b.onclick=()=>{goal.value=b.dataset.ex;goal.focus()});
   $('#go').onclick=async()=>{const g=goal.value.trim();if(!g){goal.focus();return}const go=$('#go');go.disabled=true;go.textContent='Запускаю…';
     try{const r=await post('/api/projects',{goal:g,name:$('#pname').value.trim()});dlgEl.close();location.hash='#/p/'+encodeURIComponent(r.slug)}
-    catch(e){go.disabled=false;go.textContent='Запустить'}}};
+    catch(e){go.disabled=false;go.textContent='Запустить'}}}
+$('#newbtn').onclick=()=>openNew();
 
 function route(){state.lastLive=undefined;clearInterval(timer);clearInterval(resPoll);if(es){es.close();es=null}
   const h=location.hash.slice(2)||'portfolio';const [v,arg]=h.split('/');
@@ -290,7 +339,7 @@ function route(){state.lastLive=undefined;clearInterval(timer);clearInterval(res
 window.addEventListener('hashchange',route);
 
 /* ---------- Сбои ---------- */
-async function failures(){$('#view').innerHTML='<div class="wrap" id="fl"><div class="empty">Загрузка…</div></div>';
+async function failures(){$('#view').innerHTML='<div class="wrap" id="fl"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
   const draw=async()=>{const d=await api('/api/reports');const gh=d.github||{},st=d.settings||{};
     const WHO={artel:'Artel',owner:'владелец',provider:'провайдер',unknown:'неизвестно'};
     $('#fl').innerHTML=`<p class="stat">Каждый сбой — текстовый отчёт: что сломалось, причина и шаги от Диагноста, версия и система. Ключи, токены, e-mail и пути пользователя вырезаются до сохранения.</p>
@@ -311,7 +360,7 @@ async function failures(){$('#view').innerHTML='<div class="wrap" id="fl"><div c
   await draw()}
 
 /* ---------- Настройки ---------- */
-async function settings(){$('#view').innerHTML='<div class="wrap set" id="st"><div class="empty">Загрузка…</div></div>';
+async function settings(){$('#view').innerHTML='<div class="wrap set" id="st"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
   const [o,u]=await Promise.all([api('/api/providers'),api('/api/update')]);const tz=o.timezone||{};
   const theme=document.documentElement.dataset.theme||'';
   $('#st').innerHTML=`<section aria-labelledby="g-look"><h3 id="g-look">Внешний вид</h3><div class="row" role="radiogroup" aria-label="Тема">${THEMES.map(([v,l])=>`<label class="switch"><input type="radio" name="th" value="${v}" ${v===theme?'checked':''}> ${l}</label>`).join('')}</div></section>
@@ -333,12 +382,12 @@ async function settings(){$('#view').innerHTML='<div class="wrap set" id="st"><d
 
 /* ---------- Портфель ---------- */
 async function portfolio(){
-  const draw=async()=>{const [ps,r]=await Promise.all([api('/api/portfolio'),api('/api/ready')]);state.ps=ps;state.ready=r;renderPortfolio()};
-  $('#view').innerHTML='<div class="wrap" id="pf"><div class="empty">Загрузка…</div></div>';state.pfilter=state.pfilter||'all';state.pq=state.pq||'';
+  const draw=async()=>{const [ps,r]=await Promise.all([api(MQ('/api/portfolio')),api('/api/ready')]);state.drafts=state.drafts||{};state.ps=ps;state.ready=r;renderPortfolio()};
+  $('#view').innerHTML='<div class="wrap" id="pf"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';state.pfilter=state.pfilter||'all';state.pq=state.pq||'';
   await draw();timer=setInterval(draw,3000)}
 function readyBanner(){const r=state.ready;if(!r||r.runtime!=='none')return '';
   return `<a class="alert" href="#/providers" role="alert"><b>Нет подключённого исполнителя.</b> Проекты не начнутся, пока не подключён Claude Code или Codex (или ключ API). Открыть «Подключения» →</a>`}
-function renderPortfolio(){const ps=state.ps;const att=ps.flatMap(p=>(p.attention||[]).map(a=>({...a,p})));
+function renderPortfolio(){const ps=state.ps;if(typing())return;const att=ps.flatMap(p=>(p.attention||[]).map(a=>({...a,p})));
   const live=ps.filter(p=>p.live).length,done=ps.reduce((s,p)=>s+(p.tasks_done||0),0),tot=ps.reduce((s,p)=>s+(p.tasks_total||0),0);
   const cost=ps.reduce((s,p)=>s+(p.cost_usd||0),0),agents=ps.reduce((s,p)=>s+(p.active_workers||0),0);
   const stages=['all',...new Set(ps.map(p=>p.stage))];
@@ -347,16 +396,23 @@ function renderPortfolio(){const ps=state.ps;const att=ps.flatMap(p=>(p.attentio
   const html=`${readyBanner()}<div class="kpis">
     <div class="kpi"><b style="color:${att.length?'var(--bad)':'inherit'}">${att.length}</b><span>Нужно вам</span></div><div class="kpi"><b>${live}</b><span>В работе</span></div>
     <div class="kpi dev"><b>${agents}</b><span>воркеров в работе</span></div><div class="kpi dev"><b>${money(cost)}</b><span>оценка стоимости API</span></div></div>
-  ${att.length?`<div role="alert"><h2>Нужен ваш ответ <span class="stat">${cnt(att.length,'вопрос','вопроса','вопросов')}</span></h2>${att.map(a=>`<a class="alert" href="#/p/${encodeURIComponent(a.p.slug)}"><b>${esc(a.p.name)}</b> · ${esc(a.title)} <span class="stat">· ${esc(a.assignee)} · ${esc(a.reason)}</span></a>`).join('')}</div>`:''}
-  <h2>${cnt(ps.length,'проект','проекта','проектов')}</h2><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><div class="chips" role="group" aria-label="Фильтр по этапу">${stages.map(s=>`<button data-f="${esc(s)}" aria-pressed="${state.pfilter===s}" class="${state.pfilter===s?'on':''}">${s==='all'?'все':esc(chipText(s))} ${s==='all'?ps.length:ps.filter(p=>p.stage===s).length}</button>`).join('')}</div>
-    <input id="pq" aria-label="Поиск по проектам" placeholder="Поиск по проектам" value="${esc(state.pq)}" style="max-width:280px"></div>
-  ${shown.length?`<div class="grid">${shown.map(pcard).join('')}</div>`:`<div class="empty"><svg class="mark" viewBox="0 0 64 64"><g fill="none" stroke="currentColor" stroke-width="6" stroke-linecap="round"><line x1="32" y1="9" x2="11" y2="55"/><line x1="32" y1="9" x2="53" y2="55"/><line x1="20.5" y1="36" x2="43.5" y2="36"/></g></svg><div style="max-width:420px;margin:0 auto;text-align:left"><b>Как начать</b><ol style="margin:8px 0 0;padding-left:20px">
-    <li>«Подключения» — войдите в Claude Code или Codex (подписка) либо задайте ключ API.</li>
-    <li>«+ Новый проект» — опишите, что нужно получить.</li>
-    <li>Следите за доской проекта; если исполнителю нужен ваш ответ, проект попросит.</li></ol></div></div>`}`;
+  ${att.length?`<div role="alert"><h2>Нужен ваш ответ <span class="stat">${cnt(att.length,'вопрос','вопроса','вопросов')}</span></h2>${att.map(a=>a.reason==='нужен человек'?askCard(a,{slug:a.p.slug,pname:a.p.name,link:true}):`<a class="alert" href="#/p/${encodeURIComponent(a.p.slug)}"><b>${esc(a.p.name)}</b> · ${esc(a.title)} <span class="stat">· ${esc(a.assignee)} · ${esc(a.reason)}</span></a>`).join('')}</div>`:''}
+  ${ps.length?`<h2>${cnt(ps.length,'проект','проекта','проектов')}</h2><div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center"><div class="chips" role="group" aria-label="Фильтр по этапу">${stages.map(s=>`<button data-f="${esc(s)}" aria-pressed="${state.pfilter===s}" class="${state.pfilter===s?'on':''}">${s==='all'?'все':esc(chipText(s))} ${s==='all'?ps.length:ps.filter(p=>p.stage===s).length}</button>`).join('')}</div>
+    <input id="pq" aria-label="Поиск по проектам" placeholder="Поиск по проектам" value="${esc(state.pq)}" style="max-width:280px"></div>`:onboardHtml()}
+  ${!ps.length?'':shown.length?`<div class="grid">${shown.map(pcard).join('')}</div>`:'<div class="empty">Ничего не найдено.</div>'}`;
   if(!setHTML($('#pf'),html))return;
+  wireAsks($('#pf'),()=>portfolio_redraw());
+  const ob=$('#ob-new');if(ob)ob.onclick=()=>openNew();
+  document.querySelectorAll('[data-obex]').forEach(b=>b.onclick=()=>openNew(b.dataset.obex));
   document.querySelectorAll('.chips button').forEach(b=>b.onclick=()=>{state.pfilter=b.dataset.f;renderPortfolio()});
   const q=$('#pq');q.oninput=()=>{state.pq=q.value.toLowerCase();renderPortfolio();const n=$('#pq');n.focus();n.setSelectionRange(n.value.length,n.value.length)}}
+function portfolio_redraw(){api(MQ('/api/portfolio')).then(ps=>{state.ps=ps;renderPortfolio()}).catch(()=>{})}
+// first run: one clear next step instead of an empty grid
+const onboardHtml=()=>`<section class="onboard" aria-labelledby="ob-h"><h2 id="ob-h">Опишите первую цель</h2>
+  <p class="stat">Расскажите своими словами, что нужно получить. Artel соберёт команду, разделит работу на задачи, выполнит и проверит их. Если понадобится ваш ответ, он появится здесь.</p>
+  <div class="exs" role="group" aria-label="Примеры">${EXAMPLES.map(x=>`<button type="button" data-obex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
+  <button class="primary" id="ob-new">Описать цель</button>
+  <p class="stat" style="margin-top:12px">Нужен исполнитель: <a href="#/providers">«Подключения»</a> — войдите в Claude Code или Codex (подписка) либо задайте ключ API.</p></section>`;
 function segbar(c,total){if(!total)return '<div class="bar"></div>';return `<div class="bar">${['done','review','running','ready','todo','blocked'].map(s=>c[s]?`<i class="s-${s}" style="width:${c[s]/total*100}%" title="${({done:'готово',review:'на проверке',running:'в работе',ready:'готово к старту',todo:'в очереди',blocked:'нужен ответ'})[s]}: ${c[s]}"></i>`:'').join('')}</div>`}
 function pcard(p){const c=p.counts||{};const n=(p.attention||[]).length;return `<a class="pcard" href="#/p/${encodeURIComponent(p.slug)}">
   <div class="top"><span class="dot ${p.live?'live':''}"></span><span class="nm">${esc(p.name)}</span>${chip(p.stage)}</div>
@@ -367,49 +423,118 @@ function pcard(p){const c=p.counts||{};const n=(p.attention||[]).length;return `
   ${n?`<div class="human">⚠ ${n} ${plural(n,'задача требует','задачи требуют','задач требуют')} внимания</div>`:''}</a>`}
 
 /* ---------- Проект ---------- */
-async function project(slug){state.slug=slug;state.events=[];
-  $('#view').innerHTML=`<div class="layout"><div class="pmain" id="pm"><div class="empty">Загрузка…</div></div>
-    <section class="feed" id="feed" aria-label="Лента событий"><div class="feedhead"><input id="filter" aria-label="Поиск по ленте" placeholder="Поиск по ленте: имя, задача, слово…"><button class="feedbtn" id="closefeed" aria-label="Закрыть ленту">×</button></div><div id="events"></div></section></div>`;
-  $('#filter').oninput=()=>{$('#events').innerHTML='';state.events.forEach(appendEvent)};$('#closefeed').onclick=()=>$('#feed').classList.remove('show');
-  await refresh();
+async function project(slug){state.slug=slug;state.events=[];state.fv=null;state.ptab='over';state.drafts=state.drafts||{};
+  $('#view').innerHTML=`<div class="layout"><div class="pmain" id="pm" data-tab="over"><div id="pm-main">${SK}</div><div id="pm-files"></div></div>
+    <section class="feed" id="feed" aria-label="${DEV?'Лента событий':'Что происходит'}">
+      <div class="feedhead usr"><b>Что происходит</b><button class="feedbtn closefeed" aria-label="Закрыть">×</button></div><div id="hap" class="usr hap" aria-live="polite"></div>
+      <div class="dev devfeed"><div class="feedhead"><input id="filter" aria-label="Поиск по ленте" placeholder="Поиск по ленте: имя, задача, слово…"><button class="feedbtn closefeed" aria-label="Закрыть ленту">×</button></div><div id="events"></div></div></section></div>`;
+  $('#filter').oninput=()=>{$('#events').innerHTML='';state.events.forEach(appendEvent)};document.querySelectorAll('.closefeed').forEach(b=>b.onclick=()=>$('#feed').classList.remove('show'));
+  await refresh().catch(()=>{});
   es=new EventSource(`/api/projects/${encodeURIComponent(slug)}/events?after=0`);
   es.onmessage=m=>{const e=JSON.parse(m.data);state.events.push(e);if(state.events.length>5000)state.events.shift();appendEvent(e);
-    if(/^(board|run|project|worker|review|audit|manager|agent\/(start|end)|llm\/error|provider|tool\/call)/.test(e.kind))schedule()}}
-let pending=null;function schedule(){if(!pending)pending=setTimeout(()=>{pending=null;refresh()},400)}
-async function refresh(){const v=await api(`/api/projects/${encodeURIComponent(state.slug)}`);if(v.error){$('#pm').innerHTML=`<div class="empty">${esc(v.error)}</div>`;return}
-  state.v=v;const m=v.meta,st=v.stats,u=m.usage;$('#h1').textContent=m.name;
+    if(/^file\//.test(e.kind)&&state.ptab==='files'&&state.fv){clearTimeout(state.fvT);state.fvT=setTimeout(()=>state.fv&&state.fv.reload(),800)}
+    if(/^(board|run|project|worker|review|audit|manager|agent\/(start|end)|llm\/error|provider|tool\/call|owner)/.test(e.kind))schedule()}}
+let pending=null;function schedule(){if(!pending)pending=setTimeout(()=>{pending=null;refresh().catch(()=>{})},400)}
+const typing=()=>{const a=document.activeElement;return !!(a&&a.matches&&a.matches('textarea[data-reply]')&&a.value)};
+const fmtHM=ts=>{const o={hour:'2-digit',minute:'2-digit',hourCycle:'h23'};try{return new Intl.DateTimeFormat('ru-RU',TZ?{...o,timeZone:TZ}:o).format(new Date(ts*1000))}catch(e){return new Intl.DateTimeFormat('ru-RU',o).format(new Date(ts*1000))}};
+const LEG=[['done','готово'],['review','на проверке'],['running','в работе'],['ready','готово к старту'],['todo','в очереди'],['blocked','нужен ответ']];
+const legend=c=>`<ul class="legend" aria-label="Расшифровка полосы">${LEG.filter(([s])=>c[s]).map(([s,l])=>`<li><i class="s-${s}" aria-hidden="true"></i>${l} ${c[s]}</li>`).join('')}</ul>`;
+// one line that answers «что сейчас?»
+function summaryLine(v,needsMe){const st=v.stats,m=v.meta,prog=`${st.tasks_done} из ${st.tasks_total} ${plural(st.tasks_total,'задачи','задач','задач')}`;
+  if(m.status==='done'||st.stage==='done')return `Готово · ${prog}`;
+  if(needsMe||st.stage==='waiting_human')return `Ждёт вашего ответа · ${prog}`;
+  if(st.stage==='stopped')return `Пауза · ${prog}`;
+  if(['paused_budget','error','needs_review'].includes(st.stage))return `${(STAGE[st.stage]||st.stage).replace(/^./,c=>c.toUpperCase())} · ${prog}`;
+  return `${v.live?'Идёт':'Не запущен'}: ${STAGE[st.stage]||st.stage} · ${prog}`}
+function stepperHtml(st,waiting){let si=STEPS.indexOf(st.stage);if(st.stage==='done')si=STEPS.length;else if(si<0&&waiting)si=1;
+  return `<ol class="stepper" aria-label="Этапы проекта">${STEPS.map((s,i)=>`<li class="step ${i<si?'past':i===si?'now'+(waiting?' bad':''):''}"${i===si?' aria-current="step"':''}><span class="sd" aria-hidden="true"></span><span class="sr">${STAGE[s]}</span></li>`).join('')}</ol>
+   <div class="stlabel">${si>=STEPS.length?'Все этапы пройдены':si>=0?`Этап ${si+1} из ${STEPS.length}: <b>${waiting?'ждёт вашего ответа':STAGE[STEPS[si]]}</b>`:esc(STAGE[st.stage]||st.stage)}</div>`}
+// «Нужен ваш ответ»: the question in plain words, the reply field right here
+function askCard(a,o){const id=a.task_id,q=a.question||'Исполнитель просит вашего решения. В подробностях видно, что он уже пробовал.';
+  return `<div class="ask" role="group" aria-labelledby="ah-${esc(id)}"><div class="ask-h" id="ah-${esc(id)}"><span aria-hidden="true">!</span> Нужен ваш ответ</div>
+    <div class="stat">${o.pname?esc(o.pname)+' · ':''}${esc(a.title)}${a.assignee?' · '+esc(a.assignee):''}</div>
+    <div class="q">${esc(q)}</div>
+    <label class="sr" for="reply-${esc(id)}">Ваш ответ по задаче «${esc(a.title)}»</label>
+    <textarea id="reply-${esc(id)}" data-reply="${esc(id)}" data-slug="${esc(o.slug)}" rows="2" placeholder="Напишите ответ, решение или дайте доступ">${esc(state.drafts[id]||'')}</textarea>
+    <div class="row"><button class="primary" data-send="${esc(id)}" data-slug="${esc(o.slug)}">Ответить</button>${o.link?`<a class="btn" href="#/p/${encodeURIComponent(o.slug)}">Открыть проект</a>`:`<button data-open="${esc(id)}">Подробности</button>`}</div></div>`}
+function wireAsks(root,after){root.querySelectorAll('textarea[data-reply]').forEach(t=>{t.oninput=()=>{state.drafts[t.dataset.reply]=t.value;t.removeAttribute('aria-invalid')};t.onblur=()=>setTimeout(()=>{if(!typing())after()},500)});
+  root.querySelectorAll('[data-send]').forEach(b=>b.onclick=()=>sendReply({id:b.dataset.send,slug:b.dataset.slug,btn:b,ta:document.getElementById('reply-'+b.dataset.send),after}));
+  root.querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>showTask(b.dataset.open))}
+// the existing message-to-executor action (it unblocks the task); the server resumes the project if it was only waiting for this answer
+async function sendReply({id,slug,btn,ta,after}){const body=(ta?ta.value:'').trim();
+  if(!body){if(ta){ta.setAttribute('aria-invalid','true');ta.focus()}toast('Напишите ответ в поле.',{bad:true,id:'reply'});return}
+  const label=btn.textContent;btn.disabled=true;btn.textContent='Отправляю…';
+  try{const e=encodeURIComponent(slug),r=await post(`/api/projects/${e}/tasks/${encodeURIComponent(id)}/comment`,{body});if(r.error)throw new Error(r.error);
+    delete state.drafts[id];
+    toast('Ответ отправлен. Исполнитель продолжит работу.',{id:'reply'});if(ta)ta.value='';
+  }catch(err){btn.disabled=false;btn.textContent=label;toast('Не удалось отправить ответ: '+(err.message||'ошибка'),{bad:true,id:'reply',action:{label:'Повторить',fn:()=>sendReply({id,slug,btn,ta,after})}});return}
+  dlgEl.open&&dlgEl.close();after()}
+function drawHap(v){const h=(v.happenings||[]).slice().reverse(),ic={ok:'✓',bad:'!',info:'•'};
+  setHTML($('#hap'),h.length?`<ol class="hap-l">${h.map(x=>`<li class="${esc(x.tone)}"><time>${fmtHM(x.ts)}</time><span aria-hidden="true">${ic[x.tone]||'•'}</span><span>${esc(x.text)}</span></li>`).join('')}</ol>`:'<p class="stat" style="padding:12px">Пока ничего не произошло.</p>')}
+// board: four columns for a person (+ «Нужно вам» when something waits for them); the six raw ones in the developer mode
+const UCOLS=[['queue','Очередь',['todo','ready']],['running','Делается',['running']],['review','Проверяется',['review']],['done','Готово',['done']],['need','Нужно вам',['blocked']]];
+function boardHtml(tasks){
+  if(DEV)return `<div class="board">${COLS.map(([s,l])=>{const xs=tasks.filter(t=>t.status===s);return `<div class="col"><h3>${l}<span>${xs.length}</span></h3>${xs.map(card).join('')}</div>`}).join('')}</div>`;
+  const cols=UCOLS.map(([k,l,ss])=>({k,l,xs:tasks.filter(t=>ss.includes(t.status))})).filter(c=>c.k!=='need'||c.xs.length);
+  const act=cols.find(c=>c.k===state.bcol&&c.xs.length)||cols.find(c=>c.k==='need')||cols.find(c=>c.xs.length)||cols[0];
+  return `<div class="btabs" role="tablist" aria-label="Колонки доски">${cols.map(c=>`<button role="tab" id="bc-${c.k}" data-bc="${c.k}" aria-selected="${c===act}" class="${c===act?'on':''}">${c.l} ${c.xs.length}</button>`).join('')}</div>
+   <div class="board tabbed">${cols.map(c=>`<div class="col ${c.xs.length?'':'col0'} ${c.k==='need'?'need':''} ${c===act?'act':''}" data-col="${c.k}"><h3>${c.l}<span>${c.xs.length}</span></h3>${c.xs.map(card).join('')}</div>`).join('')}</div>`}
+function setTab(t,quiet){state.ptab=t;const pm=$('#pm');if(!pm)return;pm.dataset.tab=t;document.querySelectorAll('[data-ptab]').forEach(b=>{const on=b.dataset.ptab===t;b.classList.toggle('on',on);b.setAttribute('aria-selected',on)});
+  if(t==='files'){if(!state.fv)state.fv=ArtelFiles.mount($('#pm-files'),{slug:state.slug,remote:!!(state.v&&state.v.remote),toast});else if(!quiet)state.fv.reload()}}
+function openFiles(){setTab('files');if(state.fv)state.fv.openDefault();const p=$('#pm-files');if(p)p.scrollIntoView({block:'start'})}
+async function stopFlow(kind){const slug=encodeURIComponent(state.slug),pause=kind==='pause';
+  const ok=await ask({title:pause?'Поставить проект на паузу?':'Остановить проект?',danger:true,ok:pause?'Поставить на паузу':'Остановить',
+    text:(pause?'Пауза — это остановка с сохранением состояния: в Artel нет отдельного режима «приостановлено». ':'')+'Исполнители прекратят работу сразу. Всё уже сделанное сохранится и ничего не удалится; задачи, которые шли в эту минуту, вернутся в очередь. Продолжить можно в любой момент кнопкой «Продолжить» — работа пойдёт с того же места.',
+    run:()=>post(`/api/projects/${slug}/stop`)});
+  if(!ok)return;setTimeout(refresh,800);
+  toast('Проект остановлен',{ms:10000,id:'stop',action:{label:'Вернуть',fn:async()=>{try{await post(`/api/projects/${slug}/resume`);toast('Проект продолжен',{id:'stop'})}catch(e){}setTimeout(refresh,800)}}})}
+async function refresh(){const v=await api(MQ(`/api/projects/${encodeURIComponent(state.slug)}`));if(v.error){$('#pm-main').innerHTML=`<div class="empty">${esc(v.error)}</div>`;return}
+  state.v=v;if(typing())return;
+  const m=v.meta,st=v.stats,u=m.usage;$('#h1').textContent=m.name;
   const needsMe=st.attention.length>0&&m.status!=='done';
-  const lv=$('#live'),ltxt=`Статус проекта «${m.name}»: ${chipText(st.stage)}`;if(lv&&state.lastLive!==ltxt){if(state.lastLive!==undefined)lv.textContent=ltxt;state.lastLive=ltxt}const tasks=v.board.tasks.filter(t=>t.kind!=='goal'),root=v.board.tasks.find(t=>t.kind==='goal');
-  const by=s=>tasks.filter(t=>t.status===s);const si=STEPS.indexOf(st.stage);
+  const lv=$('#live'),ltxt=`Статус проекта «${m.name}»: ${summaryLine(v,needsMe)}`;if(lv&&state.lastLive!==ltxt){if(state.lastLive!==undefined)lv.textContent=ltxt;state.lastLive=ltxt}
+  const tasks=v.board.tasks.filter(t=>t.kind!=='goal'),root=v.board.tasks.find(t=>t.kind==='goal');
+  const asks=st.attention.filter(a=>a.reason==='нужен человек'),other=st.attention.filter(a=>a.reason!=='нужен человек');
+  const waiting=needsMe||st.stage==='waiting_human';
+  const fail=m.blocked_reason||(m.status==='error'?'Работа остановилась из-за ошибки.':'');
   const html=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><a class="back" href="#/portfolio">← Проекты</a></div>
-  ${m.blocked_reason?`<div class="alert" role="alert"><b>Проект не может продолжить:</b> ${esc(m.blocked_reason)} <a href="#/providers">Подключения →</a> · после исправления нажмите «Продолжить». <button id="why-proj">Почему?</button>${m.diagnosis?`<div class="stat" style="margin-top:6px"><b>Диагност:</b> ${esc(m.diagnosis.cause||'')}${(m.diagnosis.steps||[]).length?' — '+esc(m.diagnosis.steps[0]):''}</div>`:''}</div>`:''}
-  <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-top:6px"><div style="font-size:20px;font-weight:600;flex:1;min-width:200px">${esc(m.name)}</div>
-    ${chip(st.stage)}
-    ${needsMe?'<button class="primary" id="answer">Ответить</button>':''}${v.live?'<button id="stop">Стоп</button>':m.status==='done'||needsMe?'':'<button id="resume">Продолжить</button>'}<button class="feedbtn" id="openfeed">Лента</button></div>
-  <div class="stepper">${STEPS.map((s,i)=>`<div class="step ${si<0?'':i<si?'past':i===si?'now':''}">${STAGE[s]}</div>`).join('')}</div>
-  <div class="stat">задач выполнено ${st.tasks_done} из ${st.tasks_total}<span class="dev"> · токены ${num(u.input_tokens)} → ${num(u.output_tokens)} · запросов ${u.requests} · ${money(st.cost_usd)} · раундов аудита ${m.audit_rounds||0}</span></div>
-  ${segbar(st.counts,st.tasks_total)}
+  ${fail?`<div class="alert" role="alert"><b>Что-то пошло не так.</b> ${esc(fail)} <button id="why-proj">Объяснить</button> <a href="#/providers">Подключения →</a><span class="stat"> · после исправления нажмите «Продолжить».</span>${m.diagnosis?`<div class="stat" style="margin-top:6px"><b>Диагност:</b> ${esc(m.diagnosis.cause||'')}${(m.diagnosis.steps||[]).length?' — '+esc(m.diagnosis.steps[0]):''}</div>`:''}</div>`:''}
+  <div class="phead"><div class="pname">${esc(m.name)}</div>${chip(st.stage)}
+    <div class="pctl">${needsMe?'<button class="primary" id="answer">Ответить</button>':''}${v.live?'<button id="pause">Пауза</button><button class="danger" id="stop">Остановить</button>':m.status==='done'||needsMe?'':'<button id="resume">Продолжить</button>'}<button class="feedbtn" id="openfeed">${DEV?'Лента':'Что происходит'}</button></div></div>
+  <div class="sumline" id="sum">${esc(summaryLine(v,needsMe))}</div>
+  ${stepperHtml(st,waiting)}
+  <div class="stat dev">токены ${num(u.input_tokens)} → ${num(u.output_tokens)} · запросов ${u.requests} · ${money(st.cost_usd)} · раундов аудита ${m.audit_rounds||0}</div>
+  ${segbar(st.counts,st.tasks_total)}${legend(st.counts)}
+  <div class="tabs ptabs" role="tablist" aria-label="Разделы проекта"><button role="tab" id="tab-over" data-ptab="over" class="${state.ptab==='over'?'on':''}" aria-selected="${state.ptab==='over'}">Обзор</button><button role="tab" id="tab-files" data-ptab="files" class="${state.ptab==='files'?'on':''}" aria-selected="${state.ptab==='files'}">Файлы</button></div>
+  <div class="over">
   <div class="goal"><b>Цель.</b> ${esc(m.goal)}${contractBox(m.contract)}${root&&root.result?`<div style="margin-top:6px;color:var(--ok)">${esc(root.result)}</div>`:''}</div>
-  ${st.attention.length?`<div role="alert" id="attn"><h2>Требует внимания</h2>${st.attention.map(a=>`<div class="alert" data-t="${esc(a.task_id)}"><b>${esc(a.title)}</b> <span class="stat">· ${esc(a.assignee)} · ${esc(a.reason)} — откройте и напишите исполнителю</span></div>`).join('')}</div>`:''}
+  ${st.attention.length?`<div role="alert" id="attn"><h2>Требует внимания</h2>${asks.map(a=>askCard(a,{slug:state.slug})).join('')}${other.map(a=>`<div class="alert" data-t="${esc(a.task_id)}"><b>${esc(a.title)}</b> <span class="stat">· ${esc(a.assignee)} · ${esc(a.reason)} — откройте подробности</span></div>`).join('')}</div>`:''}
   ${activeBox(v,tasks)}
   <h2>Команда</h2><div class="team">${v.workers.map(w=>{const s=st.workers.find(x=>x.name===w.name)||{};return `<div class="worker" data-w="${esc(w.name)}"><b>${esc(w.name)}</b><span class="role">${ri(w.role)}${esc(w.role)}</span>
     <div class="now">${w.current?'▶ '+esc((tasks.find(t=>t.id===w.current)||{}).title||w.current):'<span class="stat">свободен</span>'}</div>
     <div class="stat" style="font-size:12px">готово ${s.done||0}/${s.tasks||0}<span class="dev"> · с 1-й попытки ${s.first_pass||0} · отказов ${s.rejections||0} · ${money(s.cost_usd)}</span></div></div>`}).join('')}</div>
-  <h2>Доска</h2>${tasks.length?'':`<p class="stat">${v.live&&v.stage==='planning'?'Задач пока нет: планировщик составляет план — задачи и исполнители появятся здесь, как только он его сдаст.':v.live?'Задач пока нет.':'Задач нет: проект не запущен. Нажмите «Продолжить».'}</p>`}<div class="board">${COLS.map(([s,l])=>`<div class="col"><h3>${l}<span>${by(s).length}</span></h3>${by(s).map(card).join('')}</div>`).join('')}</div>
+  <h2>Доска</h2>${tasks.length?'':`<p class="stat">${v.live&&v.stage==='planning'?'Задач пока нет: планировщик составляет план — задачи и исполнители появятся здесь, как только он его сдаст.':v.live?'Задач пока нет.':'Задач нет: проект не запущен. Нажмите «Продолжить».'}</p>`}${boardHtml(tasks)}
   ${v.notes?`<div class="dev"><h2>Заметки харнесса (refine)</h2><pre>${esc(v.notes)}</pre></div>`:''}
   ${m.instructions_file?`<h2>Инструкции проекта</h2><div class="stat">${esc(m.instructions_file)}${m.instructions_truncated?' (усечён по лимиту 16 КиБ)':''}</div>`:''}
   <div class="dev"><h2>Доступ к путям</h2><div class="stat">запись: ${v.grants.write.map(esc).join(', ')||'—'}<br>чтение: ${v.grants.read.map(esc).join(', ')}${v.grants.refs.length?`<br>refs (только чтение): ${v.grants.refs.map(esc).join(', ')}`:''}</div></div>
-  <h2>Результат</h2><div id="resbox-ph"></div>
-  <h2>Результаты</h2><div id="filesbox" class="files"></div>`;
-  if(!setHTML($('#pm'),html))return;
+  <h2>Результат</h2><div id="resbox-ph"></div></div>`;
+  drawHap(v);
+  if(!setHTML($('#pm-main'),html))return;
+  $('#pm').dataset.tab=state.ptab;
   document.querySelectorAll('.card,.alert[data-t]').forEach(c=>onAct(c,()=>showTask(c.dataset.t)));
   document.querySelectorAll('.worker[data-w]').forEach(c=>onAct(c,()=>showWorker(c.dataset.w)));
-  const an=$('#answer');if(an)an.onclick=()=>{const a=st.attention[0];const el=$('#attn');if(el)el.scrollIntoView({behavior:'smooth',block:'center'});if(a)showTask(a.task_id)};
-  const wp=$('#why-proj');if(wp)wp.onclick=()=>why(m.blocked_reason,state.slug,'');
-  const sp=$('#stop');if(sp)sp.onclick=()=>post(`/api/projects/${state.slug}/stop`).then(()=>setTimeout(refresh,800));
-  const rs=$('#resume');if(rs)rs.onclick=()=>post(`/api/projects/${state.slug}/resume`).then(()=>setTimeout(refresh,800));
+  wireAsks($('#pm-main'),refresh);
+  document.querySelectorAll('[data-ptab]').forEach(b=>b.onclick=()=>setTab(b.dataset.ptab));
+  document.querySelectorAll('[data-bc]').forEach(b=>b.onclick=()=>{state.bcol=b.dataset.bc;document.querySelectorAll('[data-bc]').forEach(x=>{const on=x===b;x.classList.toggle('on',on);x.setAttribute('aria-selected',on)});
+    document.querySelectorAll('.board .col').forEach(c=>c.classList.toggle('act',c.dataset.col===b.dataset.bc))});
+  const an=$('#answer');if(an)an.onclick=()=>{setTab('over');const t=document.querySelector('.ask textarea');if(t){t.scrollIntoView({behavior:'smooth',block:'center'});t.focus({preventScroll:true})}else if(st.attention[0])showTask(st.attention[0].task_id)};
+  const wp=$('#why-proj');if(wp)wp.onclick=()=>why(fail,state.slug,'');
+  const busy=(b,fn)=>async()=>{b.disabled=true;try{await fn()}finally{b.disabled=false}};
+  const pa=$('#pause');if(pa)pa.onclick=busy(pa,()=>stopFlow('pause'));
+  const sp=$('#stop');if(sp)sp.onclick=busy(sp,()=>stopFlow('stop'));
+  const rs=$('#resume');if(rs)rs.onclick=busy(rs,async()=>{await post(`/api/projects/${encodeURIComponent(state.slug)}/resume`);toast('Проект продолжен',{id:'stop'});setTimeout(refresh,800)});
   const of=$('#openfeed');if(of)of.onclick=()=>$('#feed').classList.add('show');
-  listFiles('shared');mountRes()}
+  setTab(state.ptab,true);mountRes()}
 // «Результат»: run the finished result, get a link; open the folder (local) or download an archive (remote)
 let resPoll=null,resNode=null,resLast=null,resSlug=null;
 // the block's node lives across page refreshes (SSE): it is re-attached and drawn from the cached status at once
@@ -426,7 +551,7 @@ function resultDraw(r,remote){const box=$('#resbox');if(!box)return;resLast=r;co
   box.innerHTML=`<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
     ${r.runnable?(run?'<button id="res-stop">Остановить</button>':`<button id="res-run" title="${esc(tip)}">Запустить</button><span class="stat">${r.sandbox?'в песочнице':'без песочницы'}</span>`):'<span class="stat">Запускать пока нечего: нет index.html или команды запуска.</span>'}
     ${r.url&&run?`<a href="${esc(r.url)}" target="_blank" rel="noopener">Открыть ${esc(r.url)}</a>`:''}
-    ${remote?`<a href="/api/projects/${slug}/archive" download><button>Скачать архив</button></a>`:'<button id="res-open">Открыть папку</button>'}
+    <button id="res-files">Файлы</button>${remote?`<a href="/api/projects/${slug}/archive" download><button>Скачать архив</button></a>`:'<button id="res-open">Открыть папку</button>'}
     <span class="stat" id="res-msg">${r.state==='not_answering'?'запущено, но не отвечает — смотрите журнал':r.state==='exited'?'процесс завершился — смотрите журнал':esc(r.error||'')}</span></div>
   ${r.log?`<details id="res-log" ${state.reslog?'open':''} style="margin-top:6px"><summary class="stat">Журнал запуска</summary><pre>${esc(r.log)}</pre></details>`:''}`;
   const rl=$('#res-log');if(rl)rl.ontoggle=()=>{state.reslog=rl.open};
@@ -434,6 +559,7 @@ function resultDraw(r,remote){const box=$('#resbox');if(!box)return;resLast=r;co
     if(j.busy){$('#res-msg').textContent='Уже запускается';return}
     if(j.confirm){$('#res-msg').textContent='';resConfirm(j.command,slug);return}
     if(j.error){$('#res-msg').textContent=j.error;return}resultBox()};
+  const bf=$('#res-files');if(bf)bf.onclick=()=>openFiles();
   const b1=$('#res-run');if(b1)b1.onclick=()=>act('start');const b2=$('#res-stop');if(b2)b2.onclick=()=>act('stop');
   const b3=$('#res-open');if(b3)b3.onclick=async()=>{const j=await post(`/api/projects/${slug}/open-folder`);$('#res-msg').textContent=j.error?j.error:j.opened?'Папка открыта':'Папка: '+(j.path||'')};
   clearInterval(resPoll);resPoll=null;
@@ -454,23 +580,27 @@ function activeBox(v,tasks){const a=v.active||[];
   return `<h2>Сейчас работают${a.length?` <span class="stat">${a.length}</span>`:''}</h2>${banner}${rows?`<div class="team">${rows}</div>`:v.live&&!banner?'<p class="stat">Никто не работает: менеджер ждёт следующего события.</p>':''}${pr?`<details class="dev" ${a.length?'':'open'}><summary class="stat">Последние сбои и переключения</summary>${pr}</details>`:''}`}
 function card(t){const last=(t.runs||[]).slice(-1)[0];const since=(t.timeline||[]).slice(-1)[0];return `<div class="card ${t.status}" data-t="${t.id}"><div class="t">${esc(t.title)}</div>
   <div class="m"><span>${esc(t.assignee||'—')}</span>${t.attempts?`<span>${cnt(t.attempts,'попытка','попытки','попыток')}</span>`:''}${last&&t.status==='running'?`<span>ход ${last.turns}</span>`:''}${since?`<span>${ago(since.ts)}</span>`:''}${t.needs_human?'<span class="human">нужен человек</span>':''}${t.risk==='high'?`<span class="badge error" title="${esc(t.risk_reason||'')}">риск</span>`:''}</div></div>`}
-async function listFiles(path){const r=await api(`/api/projects/${encodeURIComponent(state.slug)}/files?path=${encodeURIComponent(path)}`);const box=$('#filesbox');if(!box||!r.items)return;
-  box.innerHTML=r.items.length?r.items.map(i=>`<a data-f="${esc(i.path)}" data-d="${i.dir}">${i.dir?'📁 ':''}${esc(i.path.replace(/^shared\//,''))}${i.dir?'':` <span class="stat">${i.size} B</span>`}</a>`).join(''):'<span class="stat">пока пусто</span>';
-  box.querySelectorAll('a').forEach(a=>a.onclick=()=>a.dataset.d==='true'?listFiles(a.dataset.f):showFile(a.dataset.f))}
-async function showFile(p){const r=await api(`/api/projects/${encodeURIComponent(state.slug)}/files?path=${encodeURIComponent(p)}`);dlg(`<h3>${esc(r.file)}</h3><pre>${esc(r.text)}</pre>`)}
 const MOVE={todo:'ожидает',ready:'готова к работе',running:'в работе',review:'на ревью',done:'принята',blocked:'заблокирована',cancelled:'отменена'};
 function showTask(id){const t=state.v.board.tasks.find(x=>x.id===id);if(!t)return;
-  dlg(`<h3>${esc(t.title)} <span class="badge">${esc(MOVE[t.status]||t.status)}</span></h3><div class="stat">${esc(t.assignee||'—')} · ${cnt(t.attempts,'попытка','попытки','попыток')}<span class="dev"> · ${t.id}</span> · зависит от: ${t.depends_on.join(', ')||'—'}${t.risk==='high'?` · <span class="badge error">риск ${t.risk_score}</span> ${esc(t.risk_reason||'')}`:''}</div>
+  const needs=t.status==='blocked'&&t.needs_human,stuck=t.status==='blocked',att=(state.v.stats.attention||[]).find(a=>a.task_id===id);
+  const q=needs?((att&&att.question)||'Исполнитель просит вашего решения. В подробностях видно, что он уже пробовал.'):'';
+  dlg(`<h3>${esc(t.title)} <span class="badge">${esc(MOVE[t.status]||t.status)}</span></h3><div class="stat">${esc(t.assignee||'—')}${t.risk==='high'?` · <span class="badge error">риск ${t.risk_score}</span> ${esc(t.risk_reason||'')}`:''}</div>
+  ${needs?`<div class="ask" role="group" aria-labelledby="ah-d"><div class="ask-h" id="ah-d"><span aria-hidden="true">!</span> Нужен ваш ответ</div><div class="q">${esc(q)}</div>`:'<h2>Сообщение исполнителю</h2>'}
+  <label class="sr" for="cmt">${needs?'Ваш ответ':'Сообщение исполнителю'}</label><textarea id="cmt" rows="3" placeholder="${needs?'Напишите ответ, решение или дайте доступ':'Подсказка, решение или доступ'}">${esc(state.drafts[id]||'')}</textarea>
+  <div class="row" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px"><button class="primary" id="send">${needs?'Ответить':'Отправить'}</button></div>
+  ${needs?'</div>':''}
+  ${stuck?'<p><b>Что-то пошло не так?</b> <button id="why-task">Объяснить</button> <span class="stat">диагност разберёт причину на доступной модели</span></p>':''}
+  <details class="more" ${stuck?'':'open'}><summary>Подробности</summary>
+  <div class="stat">${cnt(t.attempts,'попытка','попытки','попыток')}<span class="dev"> · ${esc(t.id)}</span> · зависит от: ${t.depends_on.map(esc).join(', ')||'—'}</div>
   <h2>Путь задачи</h2><div class="tl">${(t.timeline||[]).map(s=>`<div><span class="ts">${fmtT(s.ts)}</span><span>${esc(MOVE[s.to]||s.to)}</span><span class="stat">${esc(s.actor||'')}</span></div>`).join('')}</div>
   <h2>Задача</h2><pre>${esc(t.body)}</pre><h2>Критерии приёмки</h2><pre>${esc(t.criteria.map(c=>'• '+c).join('\n'))}</pre>
   ${t.checks.length?`<h2>Автоматические проверки</h2><pre>${esc(t.checks.join('\n'))}</pre>`:''}
   ${t.result?`<h2>Результат</h2><pre>${esc(t.result)}</pre>`:''}${t.evidence?`<h2>Доказательства</h2><pre>${esc(t.evidence)}</pre>`:''}
   <h2>Обсуждение</h2>${t.comments.map(c=>`<div class="ev"><span class="a">${esc(c.author)}</span>: ${esc(c.body)}</div>`).join('')||'<div class="stat">нет</div>'}
-  <div class="dev"><h2>Запуски</h2>${t.runs.map(r=>`<div class="ev">#${r.id} ${esc(r.worker)} — ${esc(r.status)} · ходов ${r.turns} · тулов ${r.tool_calls} · ${num(r.tokens_in+r.tokens_out)} ток. · ${esc((r.summary||'').slice(0,300))}</div>`).join('')||'<div class="stat">нет</div>'}</div>
-  ${t.status==='blocked'||t.needs_human?'<p><button id="why-task">Почему не работает?</button> <span class="stat">диагност разберёт причину на доступной модели</span></p>':''}
-  <h2>Сообщение исполнителю</h2><textarea id="cmt" rows="3" aria-label="Сообщение исполнителю" placeholder="Подсказка, решение или доступ. Снимает блок «нужен человек»."></textarea><div style="margin-top:6px"><button class="primary" id="send">Отправить</button></div>`);
+  <div class="dev"><h2>Запуски</h2>${t.runs.map(r=>`<div class="ev">#${r.id} ${esc(r.worker)} — ${esc(r.status)} · ходов ${r.turns} · тулов ${r.tool_calls} · ${num(r.tokens_in+r.tokens_out)} ток. · ${esc((r.summary||'').slice(0,300))}</div>`).join('')||'<div class="stat">нет</div>'}</div></details>`);
   const wt=$('#why-task');if(wt)wt.onclick=()=>why(`Задача «${t.title}» остановлена (${t.status}). ${(t.comments.slice(-1)[0]||{}).body||''}`,state.slug,id);
-  $('#send').onclick=async()=>{const b=$('#cmt').value.trim();if(!b)return;await post(`/api/projects/${state.slug}/tasks/${id}/comment`,{body:b});dlgEl.close();refresh()}}
+  const ta=$('#cmt');ta.oninput=()=>{state.drafts[id]=ta.value};
+  $('#send').onclick=()=>sendReply({id,slug:state.slug,btn:$('#send'),ta,after:refresh});if(needs)ta.focus()}
 function showWorker(name){const w=state.v.workers.find(x=>x.name===name);const f=w.files;let tab='SOUL.md';
   const render=()=>{$('#wtab').innerHTML=`<pre>${esc(f[tab]||'')}</pre>`;document.querySelectorAll('.tabs button').forEach(b=>b.classList.toggle('on',b.dataset.f===tab))};
   dlg(`<h3>${ri(w.role)}${esc(w.name)} <span class="stat">${esc(w.role)}</span></h3><div class="tabs">${Object.keys(f).map(k=>`<button data-f="${k}">${k}</button>`).join('')}</div><div id="wtab"></div>`);
@@ -513,7 +643,7 @@ function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter
   const stick=box.scrollTop+box.clientHeight>=box.scrollHeight-40;box.appendChild(d);if(stick)box.scrollTop=box.scrollHeight}
 
 /* ---------- Провайдеры ---------- */
-async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div class="empty">Загрузка…</div></div>';
+async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
   const RT={auto:'Автоматически — что подключено (рекомендуется)',native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)',none:'ничего не подключено'};
   const rtl=x=>RT[x]||x;
   const draw=async()=>{const [o,tg]=await Promise.all([api('/api/providers'),api('/api/telegram')]);const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
@@ -587,7 +717,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    <p class="stat">Действует для новых запусков.<span class="dev"> Сохраняется в ARTEL_HOME/artel.yaml. Разные подписки на разных ролях разносят нагрузку по лимитам.</span></p>`;
    const on=(id,fn)=>{const el=$('#'+id);if(el)el.onclick=fn};
    document.querySelectorAll('[data-inst]').forEach(b=>b.onclick=async()=>{b.disabled=true;await api('/api/providers/install/'+b.dataset.inst,{method:'POST',headers:{'Content-Type':'application/json'}});state.inst=true;draw()});
-   document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!confirm('Удалить из папки Artel?'))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+   document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!await ask({title:'Удалить из папки Artel?',text:'Установленная программа будет удалена из папки Artel.',ok:'Удалить',danger:true}))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    ['m-cc','m-cx'].forEach(id=>{const el=$('#'+id);if(el&&el.tagName==='SELECT'){let prev=el.value;el.onchange=()=>{if(el.value!=='__other'){prev=el.value;return}
      const v=(prompt('Полное имя модели:')||'').trim();if(!v){el.value=prev;return}const op=document.createElement('option');op.value=v;op.textContent=v+' (своя)';el.insertBefore(op,el.lastElementChild);el.value=prev=v}}});
    document.querySelectorAll('[data-use]').forEach(b=>b.onchange=async()=>{const d=[...document.querySelectorAll('[data-use]')].filter(x=>!x.checked).map(x=>x.dataset.use);
@@ -602,10 +732,10 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    on('cl-login',async()=>{$('#cl-login').disabled=true;await api('/api/providers/claude/login',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('cl-cancel',async()=>{await api('/api/providers/claude/cancel',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('cl-send',async()=>{$('#cl-send').disabled=true;const j=await api('/api/providers/claude/code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:$('#cl-code').value})});
-     if(j.error&&j.phase==='waiting'){alert(j.error);$('#cl-send').disabled=false;return}draw()});
-   on('cl-logout',async()=>{if(!confirm('Выйти из Claude Code? Artel перестанет использовать подписку Claude, пока вы не войдёте снова.'))return;await api('/api/providers/claude/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+     if(j.error&&j.phase==='waiting'){toast(j.error,{bad:true});$('#cl-send').disabled=false;return}draw()});
+   on('cl-logout',async()=>{if(!await ask({title:'Выйти из Claude Code?',text:'Artel перестанет использовать подписку Claude, пока вы не войдёте снова.',ok:'Выйти'}))return;await api('/api/providers/claude/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
-   on('cx-logout',async()=>{if(!confirm('Выйти из Codex?'))return;await api('/api/providers/codex/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+   on('cx-logout',async()=>{if(!await ask({title:'Выйти из Codex?',text:'Artel перестанет использовать подписку ChatGPT через Codex, пока вы не войдёте снова.',ok:'Выйти'}))return;await api('/api/providers/codex/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});
      const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value}};
      const rr=await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -619,7 +749,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
     const L=await api('/api/providers/codex/login');if(['waiting','starting'].includes(L.phase)||state.cxw){state.cxw=['waiting','starting'].includes(L.phase);if(!document.activeElement||document.activeElement.tagName!=='SELECT')draw()}},3000)}
 
 /* ---------- Агенты ---------- */
-async function agents(){$('#view').innerHTML='<div class="wrap" id="ag"><div class="empty">Загрузка…</div></div>';
+async function agents(){$('#view').innerHTML='<div class="wrap" id="ag"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
   const draw=async()=>{const a=await api('/api/analytics');const t=(rows,label)=>`<div class="tablewrap"><table><tr><th>${label}</th><th class="n">воркеров</th><th class="n">проектов</th><th class="n">задач</th><th class="n">принято</th><th class="n">с 1-й попытки</th><th class="n">отказов ревью</th><th class="n">доля срывов</th><th class="n">токенов / задачу</th><th class="n">$ / задачу</th></tr>
     ${rows.map(r=>`<tr><td>${esc(r.key)}</td><td class="n">${r.workers}</td><td class="n">${r.projects}</td><td class="n">${r.tasks}</td><td class="n">${r.done}</td><td class="n">${pct(r.first_pass_rate)}</td><td class="n">${r.rejections}</td><td class="n">${pct(r.stall_rate)}</td><td class="n">${num(r.tokens_per_done)}</td><td class="n">${money(r.cost_per_done)}</td></tr>`).join('')}</table></div>`;
     $('#ag').innerHTML=`<p class="stat">Как разные модели, роли и конкретные воркеры справляются с задачами во всех проектах. «С 1-й попытки» — принято ревьюером без отказов и повторных запусков. «Срывы» — запуски, закончившиеся зависанием, лимитом ходов или ошибкой.</p>
@@ -633,7 +763,7 @@ async function agents(){$('#view').innerHTML='<div class="wrap" id="ag"><div cla
 
 /* ---------- Реестр ---------- */
 const CAT={harness:'харнесс',orchestrator:'оркестратор',framework:'фреймворк','memory-skills':'память/скиллы',protocol:'протокол',eval:'бенчмарк/оценка',sandbox:'песочница',security:'безопасность',observability:'наблюдаемость',list:'awesome-список',closed:'закрытый продукт',devops:'devops',other:'прочее'};
-async function registry(){$('#view').innerHTML='<div class="wrap" id="rg"><div class="empty">Загрузка реестра…</div></div>';
+async function registry(){$('#view').innerHTML='<div class="wrap" id="rg"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
   state.reg=state.reg||await api('/api/registry');state.rc=state.rc||'harness';state.rq='';state.rf='';state.rn=100;renderRegistry()}
 function renderRegistry(){const all=state.reg;const cats=Object.entries(all.reduce((m,e)=>(m[e.category]=(m[e.category]||0)+1,m),{})).sort((a,b)=>b[1]-a[1]);
   const feats=[...new Set(all.flatMap(e=>e.features||[]))].sort();
@@ -659,7 +789,7 @@ const DM={pass_rate:['прохождение',1,v=>(v>0?'+':'')+Math.round(v*100
   rejections:['отказы',-1,v=>(v>0?'+':'')+v],stalls:['срывы',-1,v=>(v>0?'+':'')+v]};
 function deltaChips(d){return Object.entries(DM).filter(([k])=>d&&d[k]!=null&&d[k]!==0).map(([k,[l,dir,f]])=>{const good=d[k]*dir>0;
   return `<span class="ft" style="color:${good?'var(--ok)':'var(--bad)'}">${l} ${f(d[k])}</span>`}).join('')||'<span class="stat">без изменений метрик</span>'}
-async function evolution(){$('#view').innerHTML='<div class="wrap" id="evo"><div class="empty">Загрузка…</div></div>';
+async function evolution(){$('#view').innerHTML='<div class="wrap" id="evo"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
   const draw=async()=>{const evs=await api('/api/evolution');
   if(!evs.length){$('#evo').innerHTML=`<div class="empty">Эволюция ещё не запускалась.<br><br><code>artel evolve --generations 1 --candidates 2</code> · <code>artel absorb owner/repo --run</code></div>`;return}
   $('#evo').innerHTML=evs.map(ev=>{const L=ev.ledger,base=L.filter(e=>e.kind==='baseline'),cands=L.filter(e=>e.kind==='candidate'||e.kind==='absorb_candidate');
@@ -699,7 +829,7 @@ function plgManifest(r,perms){return Object.entries(r.manifests||{}).map(([ep,m]
    <span>requires</span><span>${(m.requires||[]).map(x=>`<span class="ft">${esc(x)}</span>`).join('')||'—'}</span>
    ${m.note?`<span>примечание</span><span class="stat">${esc(m.note)}</span>`:''}</div>`).join('')+
   `<div class="kv" style="margin-top:4px"><span>разрешения</span><span>${(r.permissions||[]).map(x=>`<span class="perm" title="${esc(perms[x]||'своё разрешение')}">${esc(x)}</span>`).join('')||'не просит'}</span></div>`}
-async function plugins(){$('#view').innerHTML='<div class="wrap plg" id="plg"><div class="empty">Загрузка…</div></div>';
+async function plugins(){$('#view').innerHTML='<div class="wrap plg" id="plg"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
   const draw=async()=>{const o=await api('/api/plugins');const box=$('#plg');if(!box)return;const perms=o.permissions||{};state.plg=o.plugins;
    const card=r=>{const st=r.error?'<span class="st err">ошибка</span>':r.enabled?'<span class="st on">включён</span>':'<span class="st off">выключен</span>';
      const acts=r.kind==='config'?'<span class="stat">меняется в artel.yaml</span>':r.core?'<span class="stat">ядро Artel — не выключается</span>':
@@ -725,9 +855,9 @@ async function plugins(){$('#view').innerHTML='<div class="wrap plg" id="plg"><d
      if(a==='enable'){dlg(`<h3>Включить ${esc(id)}?</h3><p class="stat">Плагин запустит свой setup внутри Artel и получит его права. Проверьте, что он просит.</p>${plgManifest(r,perms)}
         <div style="margin-top:12px"><button class="primary" id="plg-yes">Включить</button></div>`);
        $('#plg-yes').onclick=async()=>{$('#plg-yes').disabled=true;const x=await post(`/api/plugins/${encodeURIComponent(id)}/enable`);dlgEl.close();
-         if(x.error)alert((r.kind==='package'?'Не загрузился, оставлен выключенным: ':'')+x.error);await draw()};return}
-     if(a==='remove'&&!confirm(`Удалить ${id}?`))return;
-     b.disabled=true;const x=await post(`/api/plugins/${encodeURIComponent(id)}/${a}`);if(x.error)alert(x.error);await draw()})};
+         if(x.error)toast((r.kind==='package'?'Не загрузился, оставлен выключенным: ':'')+x.error,{bad:true});await draw()};return}
+     if(a==='remove'&&!await ask({title:`Удалить ${id}?`,text:'Плагин будет удалён вместе с его файлами.',ok:'Удалить',danger:true}))return;
+     b.disabled=true;const x=await post(`/api/plugins/${encodeURIComponent(id)}/${a}`);if(x.error)toast(x.error,{bad:true});await draw()})};
   await draw()}
 route();
 
@@ -757,7 +887,7 @@ function updDialog(u){const st=u.state||{};const when=t=>fmtDT(t);
   $('#upd-go').onclick=async()=>{$('#upd-go').disabled=true;$('#upd-go').textContent='Проверка и установка…';
     const r=await api('/api/update/apply',{method:'POST',headers:{'Content-Type':'application/json'}});updDialog(await checkUpdate(false));if(!r.ok)return;waitRestart()};
   $('#upd-check').onclick=async()=>updDialog(await checkUpdate(true));
-  $('#upd-back').onclick=async()=>{if(!confirm('Вернуть предыдущую версию?'))return;const r=await api('/api/update/rollback',{method:'POST',headers:{'Content-Type':'application/json'}});updDialog(await checkUpdate(false));if(r.ok)waitRestart()}}
+  $('#upd-back').onclick=async()=>{if(!await ask({title:'Вернуть предыдущую версию?',text:'Artel откатится на прошлую версию и перезапустится.',ok:'Вернуть'}))return;const r=await api('/api/update/rollback',{method:'POST',headers:{'Content-Type':'application/json'}});updDialog(await checkUpdate(false));if(r.ok)waitRestart()}}
 function waitRestart(){const t0=Date.now();const iv=setInterval(async()=>{try{const u=await api('/api/update');if(u.state.phase!=='restart_pending'&&Date.now()-t0>3000){clearInterval(iv);location.reload()}}catch(e){}},2000)}
 $('#updbtn').onclick=async()=>updDialog(await checkUpdate(false));
 checkUpdate(false);setInterval(()=>checkUpdate(false),60000);

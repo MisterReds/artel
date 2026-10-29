@@ -19,10 +19,12 @@ import time
 from http.server import BaseHTTPRequestHandler
 
 from ..httpd import LocalHTTPServer
+from . import filesview
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .. import analytics, guardian
+from ..humanize import happenings, localize_stats, localize_view, ru
 from ..manager import human_comment, new_kernel, resume, run_goal
 from ..project import Project, list_projects
 
@@ -31,6 +33,7 @@ LOGIN = Path(__file__).parent / "login.html"
 STATIC_DIR = Path(__file__).parent / "static"
 MAX_BODY = 1_000_000
 # Reachable without a session in remote mode: the login page, its assets and the PWA shell files.
+PREVIEW_TOKEN = re.compile(r"@\d{1,12}\.[0-9a-f]{64}$")
 PUBLIC_GET = {"login", "sw.js", "manifest.webmanifest", "favicon.ico", "favicon.svg", "api/auth/status"}
 PUBLIC_POST = {"api/auth/login", "api/auth/logout"}
 REGISTRY = Path(__file__).parent.parent / "data" / "harnesses.json"
@@ -132,6 +135,19 @@ class Runner:
         project.log.append("owner/resume", via=via, **({"after_answer": True} if after_answer else {}))
         self._spawn(slug, stop, lambda: self._drive(project, stop))
 
+    def resume_after_answer(self, project: Project) -> bool:
+        """The owner answered a question. Continue the project only if it went idle waiting for that answer: not
+        running, not finished, no other question open, and the owner did not stop it on purpose."""
+        if project.slug in self.active or project.meta.get("status") == "done":
+            return False
+        if any(t["needs_human"] for t in project.board.list(status=["blocked"])):
+            return False
+        owner = [e for e in project.log.read() if str(e.get("kind", "")).startswith("owner/")]
+        if owner and owner[-1]["kind"] == "owner/stop":
+            return False
+        self.resume(project.slug, after_answer=True)
+        return True
+
     def _spawn(self, slug: str, stop: threading.Event, fn) -> None:
         def wrapped():
             try:
@@ -155,7 +171,8 @@ class Runner:
         return bool(ev)
 
 
-def project_view(project: Project, runner: Runner) -> dict:
+def project_view(project: Project, runner: Runner, user: bool = False) -> dict:
+    """The project page's payload. `user`: system strings in Russian (humanize); the dev mode keeps them raw."""
     snap = project.board.snapshot()
     workers = []
     running = {t["assignee"]: t["id"] for t in snap["tasks"] if t["status"] == "running"}
@@ -179,11 +196,14 @@ def project_view(project: Project, runner: Runner) -> dict:
 
     g = effective_grants(project, "worker")
     grants = {"read": g["read"], "write": g["write"], "refs": [str(r) for r in project.refs]}
-    return {"slug": project.slug, "meta": project.meta, "board": snap, "workers": workers, "stats": stats,
-            "grants": grants,
+    titles = {t["id"]: t for t in snap["tasks"]}
+    view = {"slug": project.slug, "meta": project.meta, "board": snap, "workers": workers, "stats": stats,
+            "grants": grants, "happenings": happenings(events, {k: {**v, "title": ru(v["title"]) if user else v["title"]}
+                                                                for k, v in titles.items()}),
             "active": analytics.active_agents(events, live), "stage": analytics.stage_of(project, snap["tasks"]),
             "recent_problems": errors,
             "notes": project.prompt_notes(), "live": project.slug in runner.active, "seq": project.log.seq}
+    return localize_view(view) if user else view
 
 
 def evolution_view() -> list[dict]:
@@ -358,12 +378,18 @@ def make_handler(runner: Runner, auth=None):
                     return "cross-origin request"
             return None
 
-        def _gate(self, key: str, public: set) -> bool:
+        def _preview_token_ok(self, parts: list[str]) -> bool:
+            """A preview URL `.../preview/@<token>/<path>` with a genuine token for that project and directory."""
+            if auth is None or len(parts) < 6 or parts[0] != "api" or parts[1] != "projects" or parts[3] != "preview":
+                return False
+            return bool(PREVIEW_TOKEN.match(parts[4])) and auth.preview_ok(parts[4][1:], parts[2], "/".join(parts[5:]))
+
+        def _gate(self, key: str, public: set, token_ok: bool = False) -> bool:
             """True when the request may proceed; otherwise the refusal has been sent."""
             if not self._host_ok():
                 self._json({"error": "unknown host"}, 421)
                 return False
-            if auth is None or key in public or key.startswith("static/") or self._authed():
+            if auth is None or token_ok or key in public or key.startswith("static/") or self._authed():
                 return True
             if key.startswith("api/"):
                 self._json({"error": "login required"}, 401)
@@ -408,7 +434,7 @@ def make_handler(runner: Runner, auth=None):
             url = urlparse(self.path)
             parts = [unquote(p) for p in url.path.strip("/").split("/") if p]
             q = parse_qs(url.query)
-            if not self._gate("/".join(parts), PUBLIC_GET):
+            if not self._gate("/".join(parts), PUBLIC_GET, self._preview_token_ok(parts)):
                 return
             try:
                 if not parts:
@@ -428,7 +454,8 @@ def make_handler(runner: Runner, auth=None):
                 elif parts == ["api", "projects"]:
                     self._json([{**p, "live": p["slug"] in runner.active} for p in list_projects()])
                 elif parts == ["api", "portfolio"]:
-                    self._json(analytics.portfolio(runner.config, live=set(runner.active)))
+                    ps = analytics.portfolio(runner.config, live=set(runner.active))
+                    self._json([localize_stats(p) for p in ps] if q.get("mode") == ["user"] else ps)
                 elif parts == ["api", "analytics"]:
                     self._json(analytics.agent_analytics(analytics.portfolio(runner.config, live=set(runner.active))))
                 elif parts == ["api", "registry"]:
@@ -496,7 +523,8 @@ def make_handler(runner: Runner, auth=None):
                     self._json({"name": parts[2], "text": runner.kernel.get("skills").view(parts[2]),
                                 "ledger": runner.kernel.get("skills").ledger(parts[2])})
                 elif len(parts) == 3 and parts[:2] == ["api", "projects"]:
-                    self._json({**project_view(self._project(parts[2]), runner), "remote": auth is not None})
+                    self._json({**project_view(self._project(parts[2]), runner, user=q.get("mode") == ["user"]),
+                                "remote": auth is not None})
                 elif len(parts) == 4 and parts[3] == "run":
                     self._json(runner.results.status(self._project(parts[2])))
                 elif len(parts) == 4 and parts[3] == "archive":
@@ -505,6 +533,15 @@ def make_handler(runner: Runner, auth=None):
                     self._sse(self._project(parts[2]), int(q.get("after", ["0"])[0]))
                 elif len(parts) == 4 and parts[3] == "files":
                     self._files(self._project(parts[2]), q.get("path", [""])[0])
+                # --- file viewer (filesview.py): shared/ only, symlinks out of it refused ---
+                elif len(parts) == 4 and parts[3] in ("tree", "file", "raw"):
+                    self._fv_guard(getattr(self, "_fv_" + parts[3]), self._project(parts[2]),
+                                   q.get("path", [""])[0], q.get("download") == ["1"])
+                elif len(parts) >= 5 and parts[3] == "preview":
+                    rest = parts[4:]
+                    if len(rest) > 1 and auth is not None and PREVIEW_TOKEN.match(rest[0]):  # checked by the gate
+                        rest = rest[1:]
+                    self._fv_guard(self._fv_preview, self._project(parts[2]), "/".join(rest))
                 else:
                     self._json({"error": "not found"}, 404)
             except FileNotFoundError as exc:
@@ -544,6 +581,97 @@ def make_handler(runner: Runner, auth=None):
                 return self._json({"file": target.relative_to(base).as_posix(), "text": text})
             return self._json({"error": "not found"}, 404)
 
+        # --- file viewer ------------------------------------------------------------------------------------
+        def _fv_guard(self, fn, *args) -> None:
+            """Any failure in a file route is an HTTP 500 with a short message, never a dropped connection."""
+            try:
+                fn(*args)
+            except (BrokenPipeError, ConnectionResetError, FileNotFoundError):
+                raise
+            except Exception as exc:  # noqa: BLE001
+                self.log_error("file route failed: %r", exc)
+                try:
+                    self._json({"error": "internal error"}, 500)
+                except OSError:  # headers were already sent: nothing more to say
+                    self.close_connection = True
+
+        def _fv_tree(self, project: Project, _rel: str, _dl: bool) -> None:
+            since = filesview.last_start(project.board.list())
+            root = {} if auth is not None else {"root": str(Path(project.shared).resolve())}  # no server paths remotely
+            self._json({**filesview.tree(Path(project.shared), since), **root})
+
+        def _fv_file(self, project: Project, rel: str, _dl: bool) -> None:
+            out = filesview.preview(Path(project.shared), rel)
+            if out and out["kind"] == "html" and auth is not None:
+                out["preview_token"] = auth.preview_token(project.slug, rel)
+            self._json(out if out else {"error": "not found"}, 200 if out else 404)
+
+        def _fv_send(self, project: Project, rel: str, headers, ctype: str | None = None,
+                     download: bool = False) -> None:
+            """One file's bytes (a single Range honoured, for video). Every response is sandboxed and nosniff."""
+            opened = filesview.open_inside(Path(project.shared), rel)
+            if opened is None:
+                return self._json({"error": "not found"}, 404)
+            fd, real = opened
+            if callable(headers):
+                ctype, headers = headers(real)
+            with os.fdopen(fd, "rb") as f:
+                self._fv_stream(f, real, headers, ctype, download)
+
+        def _fv_stream(self, f, real: Path, headers: dict, ctype: str | None, download: bool) -> None:
+            size = os.fstat(f.fileno()).st_size
+            start, end, code = 0, size - 1, 200
+            m = re.match(r"bytes=(\d*)-(\d*)$", self.headers.get("Range") or "")
+            if m and (m.group(1) or m.group(2)) and size:
+                a, b = m.groups()
+                start, end = (size - int(b), size - 1) if not a else (int(a), int(b) if b else size - 1)
+                start, end = max(0, start), min(end, size - 1)
+                if start > end:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.send_header("Content-Length", "0")
+                    return self.end_headers()
+                code = 206
+            self.send_response(code)
+            self.send_header("Content-Type", ctype or filesview.content_type(real))
+            self.send_header("Content-Length", str(end - start + 1 if size else 0))
+            self.send_header("Accept-Ranges", "bytes")
+            if code == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            self.send_header("Cache-Control", "no-store")
+            for k, v in headers.items():
+                self.send_header(k, v)
+            if download:
+                self.send_header("Content-Disposition", filesview.attachment(real.name))
+            self.end_headers()
+            f.seek(start)
+            left = end - start + 1 if size else 0
+            while left > 0:
+                chunk = f.read(min(64 * 1024, left))
+                if not chunk:
+                    break
+                self.wfile.write(chunk)
+                left -= len(chunk)
+
+        def _fv_raw(self, project: Project, rel: str, download: bool) -> None:
+            """Bytes for <img>/<video>/<embed> and downloads. Page-like types are shown as plain text here: the
+            only place HTML runs is /preview, in a sandbox."""
+            def policy(real: Path) -> tuple[str | None, dict]:  # decided on the file actually opened
+                ext = real.suffix.lower()
+                if ext == ".pdf" and not download:
+                    return None, {}  # the PDF viewer does not run in a sandboxed document; a PDF has no script
+                return ("text/plain; charset=utf-8" if ext in (".html", ".htm", ".xml", ".xhtml") else None,
+                        {"Content-Security-Policy": "sandbox"})
+
+            self._fv_send(project, rel, policy, None, download)
+
+        def _fv_preview(self, project: Project, rel: str) -> None:
+            """The file as a web page would get it (HTML, its CSS and scripts), in an opaque origin: the
+            `sandbox allow-scripts` policy keeps its scripts away from the dashboard's cookies, storage and DOM."""
+            self._fv_send(project, rel, {"Content-Security-Policy": "sandbox allow-scripts",
+                                                    "Referrer-Policy": "no-referrer"})
+
         def _archive(self, project: Project) -> None:
             """shared/ as a zip, streamed to the client; symlinks that point outside shared/ are skipped."""
             import tempfile
@@ -561,10 +689,9 @@ def make_handler(runner: Runner, auth=None):
                                 z.write(real, f.relative_to(base).as_posix())
                 size = tmp.tell()
                 tmp.seek(0)
-                fname = re.sub(r"[^\w.-]", "_", project.slug) + ".zip"
                 self.send_response(200)
                 self.send_header("Content-Type", "application/zip")
-                self.send_header("Content-Disposition", f'attachment; filename="{fname}"')
+                self.send_header("Content-Disposition", filesview.attachment(project.slug + ".zip"))
                 self.send_header("Content-Length", str(size))
                 self.end_headers()
                 shutil.copyfileobj(tmp, self.wfile, 64 * 1024)
@@ -759,7 +886,9 @@ def make_handler(runner: Runner, auth=None):
                     runner.resume(parts[2])
                     return self._json({"resumed": parts[2]})
                 if len(parts) == 6 and parts[3] == "tasks" and parts[5] == "comment":
-                    t = human_comment(self._project(parts[2]), parts[4], data.get("body", ""))
+                    project = self._project(parts[2])
+                    t = human_comment(project, parts[4], data.get("body", ""))
+                    runner.resume_after_answer(project)
                     return self._json(t)
                 return self._json({"error": "not found"}, 404)
             except (KeyError, FileNotFoundError) as exc:

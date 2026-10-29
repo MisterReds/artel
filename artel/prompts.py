@@ -24,6 +24,7 @@ How to plan:
   must exit 0) whenever a criterion is mechanically checkable.
 - Express real dependencies with depends_on; leave independent work parallel.
 - End with an integration task that assembles the final deliverable and proves it works end to end.
+- Write worker role names and task titles in the language of the goal (a Russian goal gets Russian titles).
 - Do not plan work the goal does not need.
 Call submit_plan exactly once. {UNTRUSTED}"""
 
