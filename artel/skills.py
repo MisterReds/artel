@@ -339,7 +339,9 @@ class SkillStore:
             if d is None:
                 raise SkillError(f"skill {name!r} not found")
             self._check_writable(name, actor)
-            target = d / file_path
+            target = (d / file_path).resolve()
+            if d.resolve() not in target.parents:
+                raise SkillError("file_path escapes the skill directory")
             text = target.read_text(encoding="utf-8")
             count = text.count(old)
             if count != 1:

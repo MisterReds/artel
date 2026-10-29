@@ -191,6 +191,31 @@ DEFAULT_RULES = [
 ]
 
 
+def protected_rule(project_dir=None) -> dict:
+    """Forbid commands that write the owner's configuration: ARTEL_HOME/{policy.yaml,artel.yaml,skills}, the same
+    names in the project, via a literal path, $ARTEL_HOME, ~/.artel or ../ (best effort; the OS sandbox is the
+    boundary: the same paths are read-only there). Reading them stays allowed."""
+    homes = [re.escape(str(artel_home())), r"\$\{?ARTEL_HOME\}?", r"~/\.artel", r"\$HOME/\.artel", r"\$\{HOME\}/\.artel"]
+    if project_dir:
+        homes.append(re.escape(str(project_dir)))
+    tgt = rf"(?:(?:{'|'.join(homes)})/(?:policy\.yaml|artel\.yaml|skills\b)|(?:\.\./)+(?:policy|artel)\.yaml)"
+    quote = r"[\"']?"
+    any_arg = (r"(?:tee|mv|rm|truncate|touch|chmod|chown|shred|"
+               r"(?:sed|perl|ruby)\s+(?:-\S+\s+)*-\S*i\S*)")        # these change the path wherever it appears
+    last_arg = r"(?:cp|install|ln|rsync)"                            # these change only their destination
+    end = r"(?=\s*(?:$|[;&|)\n]))"
+    rx = (rf">\|?\s*{quote}{tgt}"                                   # redirection onto the path
+          rf"|\b{any_arg}\b[^;&|\n]*{tgt}"
+          rf"|\b{last_arg}\b[^;&|\n]*\s{quote}{tgt}\S*?{quote}{end}"
+          rf"|\bdd\b[^;&|\n]*\bof={quote}{tgt}"
+          rf"|\w+={quote}{tgt}[^\n]*(?:;|&&|\|\||\n)[^\n]*(?:>>?\s*{quote}\$\{{?\w+|\b(?:{any_arg}|{last_arg})\b[^;&|\n]*\$\{{?\w+)")
+    return {"id": "protected-config", "regex": rx, "decision": "forbidden",
+            "justification": "policy.yaml, artel.yaml and the skills library belong to the owner; agents never write "
+            "them (use skill_manage for your own skills).",
+            "match": ["echo x > ~/.artel/policy.yaml", "cp a $ARTEL_HOME/artel.yaml", "sed -i s/a/b/ ../../policy.yaml"],
+            "not_match": ["cat ~/.artel/policy.yaml", "echo x > notes/policy.yaml.txt", "cp ~/.artel/artel.yaml /tmp/c"]}
+
+
 def _examples(rule_id: str, key: str, raw) -> list[str]:
     if raw is None:
         return []
@@ -266,7 +291,7 @@ class Policy:
 
 def load_policy(project_dir=None) -> Policy:
     """Built-in defaults, then ARTEL_HOME/policy.yaml, then <project_dir>/policy.yaml; same id = override."""
-    raws = [(r, "defaults") for r in DEFAULT_RULES]
+    raws = [(r, "defaults") for r in DEFAULT_RULES] + [(protected_rule(project_dir), "defaults")]
     for base in (artel_home(), Path(project_dir) if project_dir else None):
         if base is not None and (base / "policy.yaml").is_file():
             raws += _read(base / "policy.yaml")
