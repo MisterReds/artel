@@ -32,8 +32,9 @@ Artel installer for Linux and macOS.
   bash install.sh [--dir DIR] [--with-codex] [--with-claude] [--service] [--no-start] [--yes] [--reinstall]
   --reinstall  fresh app clone + fresh venv; config, projects and credentials in ARTEL_HOME are kept
   --yes        do not ask for confirmation
+  --remove-root  remove the root wrapper (/usr/local/sbin/artel-root) and its sudoers rule, then exit
 Piped:  gh api repos/MisterReds/artel/contents/install.sh -H "Accept: application/vnd.github.raw" | bash -s -- --reinstall
-Env:    ARTEL_REPO ARTEL_DIR ARTEL_VENV ARTEL_BIN ARTEL_REINSTALL=1
+Env:    ARTEL_REPO ARTEL_DIR ARTEL_VENV ARTEL_BIN ARTEL_REINSTALL=1 ARTEL_ALLOW_ROOT=1|0 (answer the root-wrapper question)
 USAGE
 }
 
@@ -42,7 +43,8 @@ GH_REPO="MisterReds/artel"
 DIR="${ARTEL_DIR-$HOME/.artel/app}"
 VENV="${ARTEL_VENV-$HOME/.artel/venv}"
 BIN="${ARTEL_BIN:-$HOME/.local/bin}"
-CODEX=0 CLAUDE=0 SERVICE=0 START=1 YES=0 REINSTALL=0
+CODEX=0 CLAUDE=0 SERVICE=0 START=1 YES=0 REINSTALL=0 REMOVE_ROOT=0
+ROOT_WRAPPER=/usr/local/sbin/artel-root ROOT_SUDOERS=/etc/sudoers.d/artel ROOT_CONF=/etc/artel-root.conf
 [ "${ARTEL_REINSTALL:-}" = 1 ] && REINSTALL=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -54,6 +56,7 @@ while [ $# -gt 0 ]; do
     --no-start) START=0 ;;
     --yes|-y) YES=1 ;;
     --reinstall) REINSTALL=1 ;;
+    --remove-root) REMOVE_ROOT=1 ;;
     -h|--help) usage; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
   esac
@@ -197,13 +200,67 @@ reinstall_prepare() {
   if [ "$svc" = systemd ]; then systemctl --user stop artel.service 2>/dev/null || true; SERVICE=1
   elif [ "$svc" = launchd ]; then launchctl unload "$HOME/Library/LaunchAgents/ai.artel.dashboard.plist" 2>/dev/null || true; SERVICE=1
   fi
+  root_remove
   case "$app_action" in delete) rm -rf "$DIR" ;; move) move_aside "$DIR" app ;; esac
   case "$venv_action" in delete) rm -rf "$VENV" ;; move) move_aside "$VENV" "virtual environment" ;; esac
+}
+
+# --- root wrapper (Linux, optional, owner's consent) ---------------------------------------------------------------
+# /usr/local/sbin/artel-root (root:root 0755, POSIX sh) is the ONLY thing Artel may run as root: apt-install of signed
+# packages (validated names, deny list in /etc/artel-root.conf) and the AppArmor profile that lets bwrap use user
+# namespaces. /etc/sudoers.d/artel allows exactly that file, no password, for the installing user.
+root_installed() { [ -e "$ROOT_WRAPPER" ] || [ -e "$ROOT_SUDOERS" ]; }
+
+ask_root() {  # default NO; ARTEL_ALLOW_ROOT=1 answers yes, =0 no; without a terminal the answer is no
+  case "${ARTEL_ALLOW_ROOT:-}" in 1) return 0 ;; 0) return 1 ;; esac
+  local a=""
+  local q="Разрешить Artel ставить системные пакеты (apt) и профиль AppArmor для песочницы?"
+  if [ -t 0 ]; then read -r -p "  $q [y/N] " a
+  elif { : </dev/tty; } 2>/dev/null; then printf '  %s [y/N] ' "$q" >/dev/tty; read -r a </dev/tty || a=""
+  else return 1
+  fi
+  [[ "$a" =~ ^[YyДд] ]]
+}
+
+root_remove() {
+  root_installed || return 0
+  step "Removing the root wrapper"
+  if [ -e /etc/apparmor.d/artel-bwrap ]; then
+    have apparmor_parser && $SUDO apparmor_parser -R /etc/apparmor.d/artel-bwrap 2>/dev/null || true
+    $SUDO rm -f /etc/apparmor.d/artel-bwrap
+  fi
+  $SUDO rm -f "$ROOT_SUDOERS" "$ROOT_WRAPPER"
+  note "removed $ROOT_WRAPPER and $ROOT_SUDOERS (kept: $ROOT_CONF, packages already installed)"
+}
+
+root_setup() {
+  [ "$OS" = Linux ] || return 0
+  local src="$DIR/artel/data/artel-root.sh" tpl="$DIR/artel/data/artel-sudoers.tpl" user tmp
+  [ -f "$src" ] && [ -f "$tpl" ] || { note "root wrapper files missing in $DIR; skipped"; return 0; }
+  ask_root || { note "no root wrapper (system packages and the AppArmor profile stay a manual step)"; return 0; }
+  have sudo || [ "$(id -u)" = 0 ] || { note "sudo is not available; root wrapper skipped"; return 0; }
+  user="$(id -un)"
+  case "$user" in ""|*[!A-Za-z0-9_.-]*|-*) note "unusual user name '$user'; root wrapper skipped"; return 0 ;; esac
+  step "Root wrapper → $ROOT_WRAPPER"
+  tmp="$(mktemp -d)"
+  sed '/TESTHOOK-BEGIN/,/TESTHOOK-END/d' "$src" > "$tmp/artel-root"
+  sed "s/@USER@/$user/g" "$tpl" > "$tmp/sudoers"
+  if ! sh -n "$tmp/artel-root"; then rm -rf "$tmp"; die "root wrapper does not parse; nothing installed"; fi
+  if have visudo && ! $SUDO visudo -cf "$tmp/sudoers" >/dev/null; then rm -rf "$tmp"; die "sudoers rule does not validate; nothing installed"; fi
+  $SUDO install -d -m 0755 -o root -g root /usr/local/sbin
+  $SUDO install -m 0755 -o root -g root "$tmp/artel-root" "$ROOT_WRAPPER"
+  [ -e "$ROOT_CONF" ] || printf '# Artel root wrapper: extra packages it must never install (shell globs), one per line.\n# deny=ffmpeg\n' | $SUDO tee "$ROOT_CONF" >/dev/null
+  $SUDO chown root:root "$ROOT_CONF"; $SUDO chmod 0644 "$ROOT_CONF"
+  $SUDO install -m 0440 -o root -g root "$tmp/sudoers" "$ROOT_SUDOERS"
+  rm -rf "$tmp"
+  note "$user may run $ROOT_WRAPPER (apt-install, apparmor-bwrap) without a password; nothing else"
+  note "remove: bash install.sh --remove-root (also done by artel reinstall)"
 }
 
 main() {
 # ---------------------------------------------------------------------------------------------------------------
 step "Artel installer — $OS"
+if [ "$REMOVE_ROOT" = 1 ]; then root_remove; exit 0; fi
 if [ "$PM" = brew ] && ! have brew; then
   confirm "Homebrew is needed to install dependencies on macOS. Install it?" || die "install Homebrew: https://brew.sh"
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
@@ -269,6 +326,7 @@ else
   "$VENV/bin/python" -m pip install --quiet --upgrade pip
   "$VENV/bin/python" -m pip install --quiet -e "$DIR[dev]"  # [dev] = pytest: the updater checks a new version before installing it
 fi
+root_setup
 mkdir -p "$BIN"
 ln -sf "$VENV/bin/artel" "$BIN/artel"
 case ":$PATH:" in *":$BIN:"*) ;; *)

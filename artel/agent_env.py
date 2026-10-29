@@ -50,7 +50,12 @@ def agent_env(runtime: str, extra: Optional[dict] = None, config: Optional[dict]
         up = {a.upper() for a in allowed}
         env.update({k: v for k, v in src.items() if k.upper() in up})
     env.update(extra or {})
-    return with_python_shim(with_loopback_bypass(env))
+    env = with_python_shim(with_loopback_bypass(env))
+    if env.get("PATH"):  # PATH order: Artel's tools/bin, the python shim, the rest, its conda environment last
+        from .tools import with_tool_dirs
+
+        env["PATH"] = with_tool_dirs(env["PATH"])
+    return env
 
 
 LOOPBACK = ("127.0.0.1", "localhost", "::1")

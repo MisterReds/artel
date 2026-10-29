@@ -373,6 +373,10 @@ class Manager:
                                    "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()},
                         self.cfg)
         sb = sandbox.settings(self.cfg)
+        if (self.cfg.get("provision") or {}).get("auto", True):
+            from . import provision
+
+            provision.prepare_checks(task["checks"], self.cfg, self.project.log.append)  # missing first programs
         for cmd in task["checks"]:
             # a check is a shell command like any other: the command policy applies (nobody to ask: prompt = fail)
             reason = None

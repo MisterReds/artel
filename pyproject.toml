@@ -21,4 +21,4 @@ include = ["artel*"]
 [tool.setuptools.package-data]
 "artel.web" = ["index.html", "login.html", "static/*.svg", "static/*.js", "static/*.webmanifest", "static/icons/*",
                "static/fonts/*"]
-"artel.data" = ["harnesses.json"]
+"artel.data" = ["harnesses.json", "tools.yaml", "artel-root.sh", "artel-sudoers.tpl"]

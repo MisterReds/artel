@@ -184,7 +184,14 @@ def bwrap_status(network: bool = True) -> tuple[bool, str]:
     binary = shutil.which("bwrap")
     if not binary:
         return False, "bubblewrap (bwrap) is not installed — e.g. `apt-get install bubblewrap`"
-    ok, err = _probe(bwrap_args("true", cwd="/", writable=temp_dirs(), network=network, binary=binary))
+    argv = bwrap_args("true", cwd="/", writable=temp_dirs(), network=network, binary=binary)
+    ok, err = _probe(argv)
+    if not ok and "uid map" in err:  # AppArmor restricts user namespaces: the root wrapper (if installed) lifts it
+        from . import provision
+
+        if provision.fix_bwrap(err):
+            _probe_cache.clear()
+            ok, err = _probe(argv)
     return (True, binary) if ok else (False, f"bwrap cannot create a sandbox here: {err or 'unknown error'}")
 
 
