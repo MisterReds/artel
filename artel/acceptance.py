@@ -14,7 +14,8 @@ from .routing import TIERS
 
 ENDED_BY_LIMIT = ("waiting_human", "error", "stopped")
 CLOSED = ("done", "cancelled", "blocked")
-TOKEN_NOTE = "токены — как их сообщает рантайм; кэш у разных рантаймов считается по-разному"
+TOKEN_NOTE = ("токены — как их сообщает рантайм: вход (с записью в кэш) + выход, чтения кэша отдельно (cached_tokens); если у части запусков рантайм "
+              "не сообщил расход (usage_missing_runs), итог занижен")
 ALL = 10 ** 9  # EventLog.read caps at 10k events by default; a long run has more
 NO_INDEPENDENT = "нет независимого рантайма: подключите второй провайдер"
 
@@ -79,7 +80,7 @@ def measure(events: list[dict], tasks: list[dict], meta: dict) -> dict:
 
     # One ask per transition: a task handed to the owner is a board/task_updated(needs_human); an escalation that is
     # tied to a task already produced that update, so only escalations without a task (goal audit, planning) add one.
-    steps = owner_asks = owner_interventions = tokens_total = 0
+    steps = owner_asks = owner_interventions = tokens_total = cached_total = missing_runs = 0
     verified = False
     by_runtime: dict[str, int] = {}
     for e in events:
@@ -102,7 +103,10 @@ def measure(events: list[dict], tasks: list[dict], meta: dict) -> dict:
                 owner_interventions += 1
         elif k == "agent/end":
             u = e.get("usage") or {}
+            cached = int(u.get("cached") or 0)
             n = int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0)
+            cached_total += cached
+            missing_runs += bool(e.get("usage_missing"))  # a run that reported no usage is counted, not taken as 0
             rt = e.get("runtime") or "native"
             by_runtime[rt] = by_runtime.get(rt, 0) + n
             tokens_total += n
@@ -117,6 +121,9 @@ def measure(events: list[dict], tasks: list[dict], meta: dict) -> dict:
         "expensive_token_share": _share(tokens[exp], tokens),
         "expensive_call_share": _share(calls[exp], calls),
         "tokens_total": tokens_total,
+        "cached_tokens": cached_total,
+        "usage_missing_runs": missing_runs,
+        "tokens_incomplete": missing_runs > 0,
         "token_note": TOKEN_NOTE,
         "tasks_done": done,
         "tokens_per_accepted": round(tokens_total / done) if done else None,

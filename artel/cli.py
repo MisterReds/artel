@@ -59,7 +59,7 @@ def print_board(project: Project) -> None:
 
     print(f"{banner()}  {m['name']}  [{status(m['status'])}]  "
           f"{project.slug}")
-    print(f"  tokens in/out {u['input_tokens']}/{u['output_tokens']}  requests {u['requests']}  "
+    print(f"  tokens in/out/cached {u['input_tokens']}/{u['output_tokens']}/{u.get('cached', 0)}  requests {u['requests']}  "
           f"audits {m.get('audit_rounds', 0)}")
     for p in project.personas():
         print(f"  @{p.name} — {p.role}")
@@ -70,24 +70,28 @@ def print_board(project: Project) -> None:
 
 
 def _event_line(e: dict, cfg: dict | None = None) -> str:
-    k = e["kind"]
-    t = fmt_ts(e["ts"], "%H:%M:%S", cfg)
+    """One journal line. Old journals miss fields the contract now requires: those show as «—», never a crash."""
+    k = e.get("kind") or "—"
+    seq = e.get("seq", "—")
+    t = fmt_ts(e["ts"], "%H:%M:%S", cfg) if isinstance(e.get("ts"), (int, float)) else "—"
     who = e.get("actor") or e.get("worker") or ""
+    g = lambda name: e.get(name, "—")  # noqa: E731
     if k == "tool/call":
-        body = f"{e['tool']} {json.dumps(e['input'], ensure_ascii=False)[:160]}"
+        body = f"{g('tool')} {json.dumps(e.get('input', '—'), ensure_ascii=False)[:160]}"
     elif k == "tool/result":
-        body = ("ERR " if e["is_error"] else "") + e["output"][:160].replace("\n", " ⏎ ")
+        body = ("ERR " if e.get("is_error") else "") + str(g("output"))[:160].replace("\n", " ⏎ ")
     elif k == "llm/response":
-        texts = " ".join(b["text"] for b in e["blocks"] if b["type"] == "text")[:160]
-        body = f"turn {e['turn']} {e['stop_reason']} {texts}"
+        texts = " ".join(b.get("text", "") for b in e.get("blocks") or [] if isinstance(b, dict)
+                         and b.get("type") == "text")[:160]
+        body = f"turn {g('turn')} {g('stop_reason')} {texts}"
     elif k == "board/task_moved":
-        body = f"{e['task_id']} {e['frm']} → {e['to']}"
+        body = f"{g('task_id')} {g('frm')} → {g('to')}"
     elif k == "board/comment":
-        body = f"{e['task_id']} [{e['author']}] {e['body'][:160]}"
+        body = f"{g('task_id')} [{g('author')}] {str(g('body'))[:160]}"
     else:
         rest = {x: v for x, v in e.items() if x not in ("seq", "ts", "kind", "system", "user", "blocks")}
         body = json.dumps(rest, ensure_ascii=False)[:200]
-    return f"{e['seq']:>6} {t} {k:<22} {who:<10} {body}"
+    return f"{seq:>6} {t} {k:<22} {who:<10} {body}"
 
 
 def _note_owner_stop(result) -> None:
@@ -242,6 +246,8 @@ METRIC_LINES = (  # (key in measure(), label, threshold key in check(), format)
     ("expensive_token_share", "Доля дорогих токенов", "expensive_token_share_max", "{:.1%}"),
     ("expensive_call_share", "Доля дорогих вызовов", "expensive_call_share_max", "{:.1%}"),
     ("tokens_total", "Токенов всего", None, "{}"),
+    ("cached_tokens", "Чтений кэша (отдельно)", None, "{}"),
+    ("usage_missing_runs", "Запусков без отчёта о расходе", None, "{}"),
     ("tasks_done", "Задач принято", None, "{}"),
     ("tokens_per_accepted", "Токенов на принятую задачу", None, "{}"),
     ("success_rate", "Доля успешных задач", None, "{:.1%}"),
@@ -263,6 +269,8 @@ def format_metrics(m: dict, checks: Optional[dict] = None) -> str:
             c = checks[check_key]
             mark = "  " + ("·" if c["ok"] is None else "✓" if c["ok"] else "✗") + f" (порог {c['limit']})"
         lines.append(f"{label}: {text}{mark}")
+    if m.get("tokens_incomplete"):
+        lines.append("Токены неполные: часть запусков не сообщила расход")
     for rt, n in sorted((m.get("tokens_by_runtime") or {}).items()):
         lines.append(f"Токенов, {rt}: {n}")
     if m.get("verdict"):
