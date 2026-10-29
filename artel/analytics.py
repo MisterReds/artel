@@ -24,7 +24,7 @@ PRICES = {
 }
 
 STAGES = ("planning", "execution", "review", "audit", "done", "waiting_human", "stopped", "paused_budget",
-          "needs_review", "error")
+          "needs_review", "error", "network_wait")
 
 _cache: dict = {}
 
@@ -51,6 +51,8 @@ def _events(project: Project) -> list[dict]:
 
 def stage_of(project: Project, tasks: list[dict]) -> str:
     status = project.meta["status"]
+    if status in ("running", "planning") and project.meta.get("network_wait"):
+        return "network_wait"      # nothing runs until the proxy/provider answers again
     if status != "running":
         return status
     work = [t for t in tasks if t["kind"] == "work"]
@@ -106,7 +108,8 @@ def task_timelines(events: list[dict]) -> dict[str, list]:
 
 # how the last event of a project reads on its card (for people, not for log readers)
 PROJECT_STATUS = {"done": "цель достигнута", "running": "в работе", "waiting_human": "ждёт человека", "stopped": "остановлен",
-                  "error": "ошибка", "paused_budget": "бюджет исчерпан", "needs_review": "нужна проверка"}
+                  "error": "ошибка", "paused_budget": "бюджет исчерпан", "needs_review": "нужна проверка",
+                  "network_wait": "нет сети / прокси недоступен, жду"}
 TASK_STATUS = {"todo": "ожидает", "ready": "готова к работе", "running": "в работе", "review": "на ревью",
                "done": "принята", "blocked": "заблокирована", "cancelled": "отменена"}
 PURPOSE = {"plan": "план", "work": "задача", "review": "ревью", "audit": "аудит цели", "test": "тесты",

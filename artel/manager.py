@@ -26,8 +26,9 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from typing import Any, Optional
 
-from . import prompts
+from . import netprobe, prompts
 from .agent import Outcome
+from .failures import classify
 from . import guardian, policy
 from .runtimes import run_agent
 from .snapshot import Snapshot
@@ -48,6 +49,8 @@ AUDIT_RESULT_CHARS = 1200
 MANAGER_BRIEF_CHARS = 3200
 
 TICK_S = 0.5
+NETWORK_PROBE_S = 30.0         # first probe after a network failure; doubles up to the max
+NETWORK_PROBE_MAX_S = 600.0
 BACKOFF_BASE_S = 10
 BACKOFF_CAP_S = 600
 REFINE_EVERY_FAILURES = 3
@@ -86,6 +89,7 @@ class Manager:
         self.snapshots: dict[str, str] = {}  # task id -> tree hash of shared/ before the pending attempt
         self.snapper = Snapshot(project.root / "snapshot.git", project.shared)
         self.last_refine = 0.0
+        self.net_wait: Optional[dict] = None  # proxy/provider unreachable: nothing new starts until a probe succeeds
         self.audit_backoff_until = 0.0  # a failed goal audit waits (provider limit reset, growing delay) before the next
         self.audit_failures = 0         # consecutive audits that ended without a verdict
         self.audit_blocked: Optional[str] = None  # why the audit cannot run without a person (setup, repeated failures)
@@ -497,6 +501,37 @@ class Manager:
                                 edits=ctx.state.get("harness_edits", []))
 
     # --- outcome handling ----------------------------------------------
+    def _enter_network_wait(self, reason: str) -> None:
+        """The proxy or the provider's network is down: not the work's fault. Stop starting jobs, probe with backoff
+        (``network_probe_s`` doubling up to ``network_probe_max_s``) and carry on by itself when it answers."""
+        if self.net_wait is not None:
+            return
+        base = float(self.cfg.get("network_probe_s", NETWORK_PROBE_S))
+        now = time.time()
+        self.net_wait = {"since": now, "delay": base, "next": now + base, "reason": reason[:300]}
+        self.project.set_meta(network_wait={"since": now, "reason": reason[:300], "next_probe": now + base})
+        self.note("network_wait", reason=reason[:300], next_probe=now + base)
+
+    def _network_tick(self) -> bool:
+        """Probe when due; True while the network is still down."""
+        w = self.net_wait
+        if w is None:
+            return False
+        now = time.time()
+        if now < w["next"]:
+            return True
+        ok, where = netprobe.reachable(self.cfg)
+        if ok:
+            self.net_wait = None
+            self.project.set_meta(network_wait=None)
+            self.note("network_back", probe=where, waited_s=round(now - w["since"], 1))
+            return False
+        w["delay"] = min(float(self.cfg.get("network_probe_max_s", NETWORK_PROBE_MAX_S)), w["delay"] * 2)
+        w["next"] = now + w["delay"]
+        self.project.set_meta(network_wait={"since": w["since"], "reason": w["reason"], "next_probe": w["next"]})
+        self.note("network_probe_failed", probe=where, next_probe=w["next"])
+        return True
+
     def _retry_later(self, task: dict, reason: str, count_attempt: bool = True) -> None:
         attempts = task["attempts"] + (1 if count_attempt else 0)
         no_prog = task["no_progress"] + 1
@@ -544,6 +579,10 @@ class Manager:
         from .failures import classify, retry_at
 
         kind = classify(reason)
+        if kind == "network":  # nobody's attempt: the task goes back as it was and waits for the network with the rest
+            self.board.update(task["id"], status="ready", backoff_until=0, actor="manager")
+            self._enter_network_wait(reason)
+            return
         if kind == "setup":  # missing CLI, no login, bad key: every retry fails the same way
             self.board.update(task["id"], status="blocked", needs_human=1, actor="manager")
             self.board.comment(task["id"], "manager", f"Нужна настройка, повтор не поможет: {reason}")
@@ -578,6 +617,9 @@ class Manager:
             return
         gates_ok = all(g["exit"] == 0 for g in gates)
         if out.name != "review_verdict":
+            if out.status == "error" and classify(out.error) == "network":
+                self._enter_network_wait(out.error)
+                return  # still in review; schedule() re-submits it once the network is back
             n = self.review_retries.get(task_id, 0) + 1
             self.review_retries[task_id] = n
             if out.status in ("stopped", "budget"):
@@ -684,6 +726,9 @@ class Manager:
         if out.name != "replan_decision":
             if out.status in ("stopped", "budget"):
                 return
+            if out.status == "error" and classify(out.error) == "network":
+                self._enter_network_wait(out.error)
+                return  # stays blocked; schedule() re-submits the replan once the network is back
             self.note("decision", task_id=task_id, action="retry", rationale=f"no decision ({out.status}); default retry")
             self.board.update(task_id, status="ready", attempts=0,
                               backoff_until=time.time() + float(self.cfg.get("backoff_base_s", BACKOFF_BASE_S)))
@@ -728,6 +773,9 @@ class Manager:
         from .runtimes import runtime_for
 
         kind = classify(reason)
+        if kind == "network":
+            self._enter_network_wait(reason)
+            return
         self.audit_failures += 1
         if kind == "limit":
             alt = runtime_for(self.cfg, "auditor")
@@ -816,6 +864,8 @@ class Manager:
 
     def schedule(self) -> None:
         now = time.time()
+        if self._network_tick():
+            return
         busy_workers = {self.board.get(k.partition(":")[2])["assignee"] for k in self.jobs if k.startswith("work:")}
         n_work = sum(1 for k in self.jobs if k.startswith("work:"))
         for t in self.board.list(status=["ready"]):
@@ -872,15 +922,24 @@ class Manager:
             self.project.log.append("plugin/failed", plugin=plugin, error=error)
         self.kernel.emit("project_start", project=self.project, resumed=bool(self.root_id))
         if not self.root_id:
-            for _attempt in range(4):  # a provider limit during planning moves planning to the next executor
+            attempt = 0
+            while attempt < 4:  # a provider limit during planning moves planning to the next executor
+                attempt += 1
                 try:
                     self.plan()
                     exc = None
                     break
                 except Exception as e:  # noqa: BLE001
                     exc = e
+                    if classify(str(e)) == "network":  # wait for the network, then plan again; not an attempt
+                        self._enter_network_wait(str(e))
+                        while self._network_tick() and not self.stop.is_set():
+                            self.stop.wait(min(TICK_S, max(0.01, self.net_wait["next"] - time.time())))
+                        attempt -= 1
+                        if self.stop.is_set():
+                            break
+                        continue
                     from . import limits
-                    from .failures import classify
                     from .runtimes import runtime_for
 
                     alt = runtime_for(self.cfg, "planner")
@@ -889,8 +948,6 @@ class Manager:
                         break
                     self.note("provider_switch", to=alt, reason=str(e)[:300])
             if exc is not None:  # a project that cannot start must say why, not crash
-                from .failures import classify
-
                 reason = str(exc)
                 kind = classify(reason)
                 status = "waiting_human" if kind in ("setup", "limit") else "error"
@@ -900,7 +957,7 @@ class Manager:
                 self.project.log.append("project/status", status=status)
                 self.kernel.emit("project_end", project=self.project, status=status, usage=self.project.meta["usage"])
                 return status
-        self.project.set_meta(status="running")
+        self.project.set_meta(status="running", network_wait=None)
         final = "running"
         while True:
             if self.stop.is_set():
