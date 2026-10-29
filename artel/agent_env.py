@@ -8,6 +8,8 @@ from __future__ import annotations
 
 import os
 import re
+import shutil
+import shlex
 from typing import Optional
 
 COMMON = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "TZ", "TMPDIR", "TEMP", "TMP",
@@ -48,7 +50,7 @@ def agent_env(runtime: str, extra: Optional[dict] = None, config: Optional[dict]
         up = {a.upper() for a in allowed}
         env.update({k: v for k, v in src.items() if k.upper() in up})
     env.update(extra or {})
-    return with_loopback_bypass(env)
+    return with_python_shim(with_loopback_bypass(env))
 
 
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
@@ -63,3 +65,87 @@ def with_loopback_bypass(env: dict) -> dict:
         have = [h.strip() for h in (env.get(key) or env.get(key.swapcase()) or "").split(",") if h.strip()]
         env[key] = ",".join(have + [h for h in LOOPBACK if h not in have])
     return env
+
+
+def _path_key(env: dict) -> Optional[str]:
+    return next((k for k in env if k.upper() == "PATH"), None)
+
+
+def python_shim_dir() -> Optional[str]:
+    """ARTEL_HOME/shims with a ``python`` that runs ``python3`` (a machine with only python3: Debian, Ubuntu, macOS).
+    Created once, idempotent; None when it cannot be written."""
+    from .project import artel_home
+
+    d = artel_home() / "shims"
+    name, body = ("python.cmd", "@python3 %*\r\n") if os.name == "nt" else ("python", '#!/bin/sh\nexec python3 "$@"\n')
+    f = d / name
+    try:
+        if not f.exists() or f.read_text() != body:
+            d.mkdir(parents=True, exist_ok=True)
+            tmp = f.with_name(f.name + ".tmp")
+            tmp.write_text(body)
+            tmp.chmod(0o755)
+            os.replace(tmp, f)
+    except OSError:
+        return None
+    return str(d)
+
+
+def with_python_shim(env: dict) -> dict:
+    """Agents' shells, task checks and both CLIs: ``python`` resolves to the user's python3 when the machine has no
+    ``python``. A real ``python`` on PATH is never shadowed."""
+    key = _path_key(env)
+    path = env.get(key) if key else None
+    if path is None or shutil.which("python", path=path) or not shutil.which("python3", path=path):
+        return env
+    shim = python_shim_dir()
+    if shim:
+        env[key] = shim + os.pathsep + path
+    return env
+
+
+TOOLS = ("python3", "python", "node", "npm", "git", "grep", "rg", "jq", "curl", "make", "docker", "sed", "awk",
+         "find", "tar", "unzip", "pip", "pip3", "uv", "cargo", "go", "java", "gcc", "sqlite3")
+_inventory: dict = {}
+
+
+def tool_inventory(config: Optional[dict] = None) -> tuple[list, list]:
+    """(available, missing) among the tools tasks usually need, probed once per PATH on the agents' PATH (shims
+    included) and cached."""
+    env = agent_env("native", config=config)
+    path = env.get(_path_key(env) or "PATH") or ""
+    if path not in _inventory:
+        have = [t for t in TOOLS if shutil.which(t, path=path)]
+        _inventory[path] = (have, [t for t in TOOLS if t not in have])
+    return _inventory[path]
+
+
+_NOT_PROGRAMS = {"if", "then", "else", "elif", "fi", "for", "while", "until", "do", "done", "case", "esac", "in", "!",
+                 "{", "}", "(", ")", "cd", "set", "export", "unset", "source", ".", ":", "[[", "exit", "return", "eval",
+                 "exec", "alias", "type", "ulimit", "umask", "wait", "trap", "read", "shift", "true", "false", "echo",
+                 "printf", "test", "[", "pwd", "command", "builtin", "local", "declare"}
+_SEGMENTS = re.compile(r"&&|\|\||;|\||\n|\(|\)|`|\$\(")
+
+
+def missing_programs(checks: list, config: Optional[dict] = None) -> list:
+    """First program of every command in the checks that cannot be found (``which`` on the agents' PATH). Only
+    plain names count: paths, variables and shell builtins are not looked up."""
+    env = agent_env("native", config=config)
+    path = env.get(_path_key(env) or "PATH") or ""
+    out: list = []
+    for check in checks or []:
+        for seg in _SEGMENTS.split(str(check)):
+            try:
+                words = shlex.split(seg, comments=False, posix=True)
+            except ValueError:
+                words = seg.split()
+            while words and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0]):
+                words = words[1:]
+            if not words:
+                continue
+            prog = words[0]
+            if prog in _NOT_PROGRAMS or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", prog):
+                continue
+            if not shutil.which(prog, path=path) and prog not in out:
+                out.append(prog)
+    return out
