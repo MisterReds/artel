@@ -14,7 +14,7 @@ from .routing import TIERS
 
 ENDED_BY_LIMIT = ("waiting_human", "error", "stopped")
 CLOSED = ("done", "cancelled", "blocked")
-TOKEN_NOTE = ("токены — как их сообщает рантайм: вход без кэша + выход + чтения кэша; если у части запусков рантайм "
+TOKEN_NOTE = ("токены — как их сообщает рантайм: вход (с записью в кэш) + выход, чтения кэша отдельно (cached_tokens); если у части запусков рантайм "
               "не сообщил расход (usage_missing_runs), итог занижен")
 ALL = 10 ** 9  # EventLog.read caps at 10k events by default; a long run has more
 NO_INDEPENDENT = "нет независимого рантайма: подключите второй провайдер"
@@ -104,7 +104,7 @@ def measure(events: list[dict], tasks: list[dict], meta: dict) -> dict:
         elif k == "agent/end":
             u = e.get("usage") or {}
             cached = int(u.get("cached") or 0)
-            n = int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0) + cached
+            n = int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0)
             cached_total += cached
             missing_runs += bool(e.get("usage_missing"))  # a run that reported no usage is counted, not taken as 0
             rt = e.get("runtime") or "native"

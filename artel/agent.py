@@ -441,7 +441,7 @@ def budget_guard(config: dict):
     def check(project) -> Optional[str]:
         meta = project.meta
         u = meta["usage"]
-        if b.get("max_total_tokens") and u["input_tokens"] + u["output_tokens"] + u.get("cached", 0) >= b["max_total_tokens"]:
+        if b.get("max_total_tokens") and u["input_tokens"] + u["output_tokens"] >= b["max_total_tokens"]:
             return f"token budget {b['max_total_tokens']} exhausted"
         if b.get("max_hours") and time.time() - meta["created_at"] >= b["max_hours"] * 3600:
             return f"time budget {b['max_hours']}h exhausted"

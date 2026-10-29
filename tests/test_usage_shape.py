@@ -177,7 +177,7 @@ def test_metrics_count_runs_without_usage_and_mark_tokens_incomplete():
               ev("agent/end", 3, runtime="claude_code", usage={"input_tokens": 1, "output_tokens": 1})]
     m = acceptance.measure(events, [], {})
     assert m["usage_missing_runs"] == 1 and m["tokens_incomplete"] is True
-    assert m["tokens_total"] == 10 + 5 + 20 + 2 and m["cached_tokens"] == 20
+    assert m["tokens_total"] == 10 + 5 + 2 and m["cached_tokens"] == 20
     clean = acceptance.measure(events[:1] + events[2:], [], {})
     assert clean["usage_missing_runs"] == 0 and clean["tokens_incomplete"] is False
 
@@ -188,7 +188,7 @@ def test_routing_record_accepts_cached(project):
     t0 = project.meta.get("tiers") or {}
     record(project, "cheap", {"input_tokens": 5, "output_tokens": 3, "cached": 10})
     t = project.meta["tiers"]
-    assert t["cheap_tokens"] - int(t0.get("cheap_tokens") or 0) == 18
+    assert t["cheap_tokens"] - int(t0.get("cheap_tokens") or 0) == 8  # cache reads are not budget tokens
     assert t["cheap_cached"] - int(t0.get("cheap_cached") or 0) == 10
 
 
@@ -196,3 +196,22 @@ def test_project_add_usage_accepts_cached(project):
     before = project.meta["usage"].get("cached", 0)
     u = project.add_usage(1, 2, cached=9)
     assert u["cached"] == before + 9
+
+
+def test_large_cached_with_small_in_out_does_not_trip_budgets_and_metrics_show_cached_apart(project):
+    from artel.agent import budget_guard
+    from artel.routing import expensive_used, record
+
+    u = project.meta["usage"]
+    guard = budget_guard({"budgets": {"max_total_tokens": u["input_tokens"] + u["output_tokens"] + 1000}})
+    project.add_usage(100, 50, cached=5_000_000)
+    assert guard(project) is None
+    project.add_usage(900, 100)  # real input/output still trips it
+    assert guard(project)
+    t0 = expensive_used(project)
+    record(project, "expensive", {"input_tokens": 10, "output_tokens": 5, "cached": 9_000_000})
+    assert expensive_used(project) - t0 == 15
+    events = [{"seq": 1, "ts": 1.0, "kind": "agent/end", "runtime": "claude_code",
+               "usage": {"input_tokens": 10, "output_tokens": 5, "cached": 9_000_000}}]
+    m = acceptance.measure(events, [], {})
+    assert m["tokens_total"] == 15 and m["cached_tokens"] == 9_000_000 and m["tokens_by_runtime"] == {"claude_code": 15}

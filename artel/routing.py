@@ -41,9 +41,10 @@ def settings(config: dict) -> dict:
 
 
 def _tokens(usage: Optional[dict]) -> int:
-    """Every token a run handled: uncached input + output + cache reads."""
+    """What budgets and shares count: input (cache creation included) + output. Cache reads are billed at a small
+    fraction of input and are reported apart (``cached``); no price table, so no weighted figure."""
     u = usage or {}
-    return int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0) + int(u.get("cached") or 0)
+    return int(u.get("input_tokens") or 0) + int(u.get("output_tokens") or 0)
 
 
 def expensive_used(project) -> int:

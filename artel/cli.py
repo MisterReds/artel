@@ -246,7 +246,7 @@ METRIC_LINES = (  # (key in measure(), label, threshold key in check(), format)
     ("expensive_token_share", "Доля дорогих токенов", "expensive_token_share_max", "{:.1%}"),
     ("expensive_call_share", "Доля дорогих вызовов", "expensive_call_share_max", "{:.1%}"),
     ("tokens_total", "Токенов всего", None, "{}"),
-    ("cached_tokens", "Из них чтений кэша", None, "{}"),
+    ("cached_tokens", "Чтений кэша (отдельно)", None, "{}"),
     ("usage_missing_runs", "Запусков без отчёта о расходе", None, "{}"),
     ("tasks_done", "Задач принято", None, "{}"),
     ("tokens_per_accepted", "Токенов на принятую задачу", None, "{}"),
