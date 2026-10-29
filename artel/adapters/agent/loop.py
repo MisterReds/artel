@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Optional
 
 from ... import policy
-from ...agent import LoopDetector, Outcome, _short, execute_tool
+from ...agent import LoopDetector, Outcome, _short, execute_tool, journal_agent_event
 from ...contracts._base import thaw
 from ...prompts import CONTINUATION
 from ...tooling import ToolContext
@@ -101,10 +101,10 @@ class ToolBridge:
             if self.ctx.terminal:
                 return {"text": "this run is already finished; stop now", "is_error": True}
             self.calls += 1
-            self.project.log.append("tool/call", actor=self.actor, task_id=task_id, tool=name, input=args,
+            journal_agent_event(self.project.log, "tool/call", actor=self.actor, task_id=task_id, tool=name, input=args,
                                     call_id=call_id, runtime=self.runtime)
             text, is_error = execute_tool(self.kernel, self.ctx, name, args)
-            self.project.log.append("tool/result", actor=self.actor, task_id=task_id, tool=name, call_id=call_id,
+            journal_agent_event(self.project.log, "tool/result", actor=self.actor, task_id=task_id, tool=name, call_id=call_id,
                                     is_error=is_error, output=text[:4000], runtime=self.runtime)
         return {"text": text, "is_error": is_error}
 
@@ -155,7 +155,7 @@ class Run:
         self.blocked = ""
 
     def log(self, kind: str, **fields) -> None:
-        self.project.log.append(kind, actor=self.actor, task_id=self.task_id, **fields)
+        journal_agent_event(self.project.log, kind, actor=self.actor, task_id=self.task_id, **fields)
 
     def kill(self) -> None:
         self.stopped = self.stopped or terminate_tree(self.proc)
@@ -211,6 +211,9 @@ class Run:
                   for e in group]
         out.turns += 1
         model = fields.pop("model", "") or self.model
+        # every llm/response names how the turn ended; a CLI that does not say gets the value the blocks imply
+        fields["stop_reason"] = fields.get("stop_reason") or (
+            "tool_use" if any(b["type"] == "tool_use" for b in blocks) else "end_turn")
         self.log("llm/response", **({"role": self.role} if codec.LOG_ROLE else {}), turn=out.turns, model=model,
                  **fields, blocks=blocks, runtime=codec.NAME)
         for e in group:
@@ -305,7 +308,7 @@ def _read(run: Run, proc, grace_s: Optional[float]) -> Optional[threading.Timer]
         try:
             events = codec.parse(line)
         except Exception as exc:  # noqa: BLE001 - a malformed CLI line must not end the read loop with the CLI alive
-            run.project.log.append("llm/error", actor=run.actor, error=f"unparsable {codec.NAME} line: {exc}"[:300])
+            run.log("llm/error", error=f"unparsable {codec.NAME} line: {exc}"[:300])
             events = []
         run.consume(events)
         if grace_s is not None and ctx.terminal and not run.stopped:
@@ -336,7 +339,7 @@ def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str
     if not resolve(cc["binary"]):
         out = Outcome(status="error", error=codec.INSTALL_HINT)
         out.cost_usd = 0.0
-        project.log.append("llm/error", actor=actor, task_id=task_id, error=out.error, runtime=codec.NAME)
+        journal_agent_event(project.log, "llm/error", actor=actor, task_id=task_id, error=out.error, runtime=codec.NAME)
         return out
     run = Run(codec, kernel, project, role=role, system=system, first_user=first_user, ctx=ctx, max_turns=max_turns,
               purpose=purpose, persona=persona, stop_event=stop_event, tool_names=tool_names, cc=cc, actor=actor)
@@ -353,7 +356,7 @@ def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str
     run.prompt = codec.first_prompt(system, note, first_user)
     run.model = codec.model_seen(cc)
     info = codec.start_info(run)
-    project.log.append("agent/start", actor=actor, role=role, purpose=purpose, task_id=task_id, model=info["model"],
+    journal_agent_event(project.log, "agent/start", actor=actor, role=role, purpose=purpose, task_id=task_id, model=info["model"],
                        effort=info["effort"], system=system + note, user=first_user, tools=info["tools"],
                        runtime=codec.NAME)
     budget = kernel.get("budget")
@@ -400,7 +403,7 @@ def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str
                 fix = codec.sandbox_recover(cc, broken)
                 if fix.get("error"):
                     out.status, out.error = "error", fix["error"]
-                    project.log.append("llm/error", actor=actor, task_id=task_id, error=out.error, runtime=codec.NAME)
+                    journal_agent_event(project.log, "llm/error", actor=actor, task_id=task_id, error=out.error, runtime=codec.NAME)
                     break
                 run.log(fix["journal"][0], **fix["journal"][1])
                 run.prompt = fix["prompt"]
@@ -413,7 +416,7 @@ def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str
             if run.failed or (proc.returncode not in codec.OK_EXIT and not (codec.TRACK_STOP and run.stopped)):
                 detail = run.failure or (stderr.strip() if codec.STRIP_STDERR else stderr)[-800:] or f"exit {proc.returncode}"
                 out.status, out.error = "error", f"{codec.LABEL} failed: {detail}"
-                project.log.append("llm/error", actor=actor, task_id=task_id, error=out.error, runtime=codec.NAME)
+                journal_agent_event(project.log, "llm/error", actor=actor, task_id=task_id, error=out.error, runtime=codec.NAME)
                 break
             if not run.session:
                 out.status, out.error = "error", codec.NO_SESSION
@@ -427,7 +430,7 @@ def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str
         for p in plan.get("cleanup", ()):
             p.unlink(missing_ok=True)
     out.tool_calls += bridge.calls
-    project.log.append("agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
+    journal_agent_event(project.log, "agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
                        terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage,
                        cost_usd=round(out.cost_usd, 4), error=out.error, runtime=codec.NAME, model=run.model,
                        **({"usage_missing": True} if usage_missing and codec.TRACK_MISSING_USAGE else {}))
