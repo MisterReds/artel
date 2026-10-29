@@ -42,3 +42,22 @@ def classify(text: str) -> str:
     if SETUP.search(text or ""):
         return "setup"
     return "work"
+
+
+# A gate that cannot run here says nothing about the work: the tool is absent, the sandbox cannot start, the
+# owner's proxy swallows loopback traffic.
+ENVIRONMENT = re.compile(
+    r"command not found|: not found\b|executable file not found|setting up uid map|bwrap: .*(permission denied|"
+    r"operation not permitted|failed)|sandbox-exec: |sandbox_apply|sandbox cannot start commands|"
+    r"proxyerror|tunnel connection failed|proxy.{0,80}(127\.0\.0\.1|localhost|::1)|"
+    r"(127\.0\.0\.1|localhost|::1).{0,80}proxy", re.I)
+
+
+def gate_failure_class(gates: list) -> Optional[str]:
+    """None when every gate passed; 'environment' when every failing gate failed because of the machine (exit
+    126/127, a missing program, a sandbox that cannot start, a proxy in front of loopback); otherwise 'work'."""
+    failing = [g for g in gates if g.get("exit") != 0]
+    if not failing:
+        return None
+    env = all(g.get("exit") in (126, 127) or ENVIRONMENT.search(g.get("output") or "") for g in failing)
+    return "environment" if env else "work"

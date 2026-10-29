@@ -105,7 +105,7 @@ def diagnosis_report(ctx: ToolContext, cause: str, who: str, steps: list, eviden
 
 
 def replan_decision(ctx: ToolContext, action: str, rationale: str, guidance: str = "", assignee: str = "",
-                    new_worker: dict = None, subtasks: list = None) -> str:
+                    new_worker: dict = None, subtasks: list = None, checks: list = None) -> str:
     if action not in ("retry", "reassign", "split", "cancel", "escalate"):
         raise ToolError("action must be retry | reassign | split | cancel | escalate")
     if action == "split" and not subtasks:
@@ -114,7 +114,7 @@ def replan_decision(ctx: ToolContext, action: str, rationale: str, guidance: str
         raise ToolError("reassign needs assignee or new_worker")
     return _terminal(ctx, "replan_decision", {"action": action, "rationale": rationale, "guidance": guidance,
                                               "assignee": assignee, "new_worker": new_worker or {},
-                                              "subtasks": subtasks or []})
+                                              "subtasks": subtasks or [], "checks": [str(c) for c in checks or []]})
 
 
 def validate_plan(workers: list, tasks: list) -> None:
@@ -268,7 +268,10 @@ def setup(kernel) -> None:
         {**S, "properties": {
             "action": {"type": "string", "enum": ["retry", "reassign", "split", "cancel", "escalate"]},
             "rationale": {"type": "string"}, "guidance": {"type": "string"}, "assignee": {"type": "string"},
-            "new_worker": WORKER_ITEM, "subtasks": {"type": "array", "items": TASK_ITEM}},
+            "new_worker": WORKER_ITEM, "subtasks": {"type": "array", "items": TASK_ITEM},
+            "checks": {"type": "array", "items": {"type": "string"},
+                       "description": "New shell checks for the task; honoured only when its gates failed because "
+                                      "of the environment (a missing tool, sandbox or proxy), never for bad work."}},
          "required": ["action", "rationale"]}, replan_decision, roles=("manager",), terminal=True))
     L = {"type": "array", "items": {"type": "string"}}
     kernel.register_tool(ToolSpec(

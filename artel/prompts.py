@@ -21,7 +21,8 @@ How to plan:
 - Write tasks a single worker can finish in one focused session. Each task body states inputs, the exact
   output, and where to put it (deliverables go under shared/). Each task has acceptance criteria that an
   independent reviewer can verify from files and command output. Add shell `checks` (run inside shared/,
-  must exit 0) whenever a criterion is mechanically checkable.
+  must exit 0) whenever a criterion is mechanically checkable. Write checks only with the tools listed in
+  <tools_available>; a check whose first program is missing here is sent back to you.
 - Express real dependencies with depends_on; leave independent work parallel.
 - End with an integration task that assembles the final deliverable and proves it works end to end.
 - Write worker role names and task titles in the language of the goal (a Russian goal gets Russian titles).
@@ -126,6 +127,9 @@ is met. Options: retry with concrete guidance; reassign to a worker better suite
 into smaller tasks; cancel it if the goal does not need it; escalate to a human only for credentials, access or
 decisions no agent can make. Prefer actions that keep the project moving without a human.
 The brief below (task, last runs and comments, board) is what you decide from; do not read logs or files.
+When <failure> says failure_class="environment", the checks could not run on this machine (a missing tool, a sandbox
+that cannot start, a proxy): the work was never judged and the worker is not to blame. Retry with `checks`
+rewritten using only <tools_available>. <premise> names the assumption to test before another attempt.
 Finish with replan_decision. {UNTRUSTED}"""
 
 LIBRARIAN = """You maintain the team's skill library. Review the task trajectory below and update the library so
