@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import itertools
+import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
@@ -24,6 +27,49 @@ def window_text(text: str, limit: int, head_frac: float = 0.3, marker: str = "\n
         cut = len(text) - keep
     mark = marker.format(n=cut)
     return text[:head] + mark + (text[len(text) - (keep - head):] if keep - head else "")
+
+
+TOOL_OUTPUT_CAP = 12_000          # chars a single tool result may occupy in history, fence included
+SPILL_DIR = ".spill"
+_FENCE = ("<tool_output>\n", "\n</tool_output>")
+_CLOSING = re.compile(r"(<\s*)/(\s*tool_output)", re.I)
+_spill_seq = itertools.count(1)
+
+
+def tool_output_cap(config: Any) -> int:
+    return int((config or {}).get("tool_output_cap", TOOL_OUTPUT_CAP))
+
+
+def cap_output(ctx: "ToolContext", text: str, tool: str, limit: Optional[int] = None) -> str:
+    """The one place where tool output is bounded: head + tail within ``limit`` chars, the full text spilled to a file.
+
+    The file lives in <workspace>/.spill/ (hidden, so list_files skips it and it stays out of deliverables); the
+    marker names it. Output within the limit is returned unchanged, so applying it twice is harmless. Idea adapted
+    from OpenCode packages/opencode/src/tool/truncate.ts (MIT License, Copyright (c) 2025 opencode).
+    """
+    if limit is None:
+        limit = tool_output_cap(ctx.kernel.config) - sum(map(len, _FENCE))    # room for the fence
+    if len(text) <= limit:
+        return text
+    d = Path(ctx.workspace) / SPILL_DIR
+    d.mkdir(parents=True, exist_ok=True)
+    f = d / f"{tool}-{os.getpid()}-{next(_spill_seq)}.txt"
+    while f.exists():
+        f = d / f"{tool}-{os.getpid()}-{next(_spill_seq)}.txt"
+    f.write_text(text, encoding="utf-8")
+    rel = f"{SPILL_DIR}/{f.name}"
+    marker = f"\n… {{n}} символов пропущено, полный вывод: {rel} (read_file с offset/limit)\n"
+    return window_text(text, limit, marker=marker)
+
+
+def fence(text: str) -> str:
+    """Wrap untrusted tool output in <tool_output> tags; a closing tag inside it is neutralised (same length)."""
+    return _FENCE[0] + _CLOSING.sub(r"\1\\\2", text) + _FENCE[1]
+
+
+def present_output(ctx: "ToolContext", tool: str, text: str) -> str:
+    """What the model sees of a tool result: capped, spilled to a file when long, and fenced."""
+    return fence(cap_output(ctx, text, tool))
 
 
 class ToolError(Exception):
