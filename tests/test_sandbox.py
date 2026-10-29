@@ -207,6 +207,7 @@ def test_seatbelt_profile_denies_secret_reads_and_protected_writes():
     assert prof.rindex("(allow file-write*") < prof.index('(deny file-write* (subpath "/Users/a/.artel/policy.yaml"))')
 
 
+@pytest.mark.skipif(os.name == "nt", reason="read denial exists for bwrap/Seatbelt only; Windows temp paths alias (8.3 names)")
 def test_denied_reads_cover_every_secret_and_artel_home(tmp_path, monkeypatch):
     home = tmp_path / "h"
     for rel in HOME_SECRETS:
@@ -214,7 +215,6 @@ def test_denied_reads_cover_every_secret_and_artel_home(tmp_path, monkeypatch):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("s") if rel in (".netrc", ".docker/config.json") else p.mkdir()
     monkeypatch.setenv("HOME", str(home))
-    monkeypatch.setenv("USERPROFILE", str(home))  # what expanduser reads on Windows
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "ah"))
     proj = tmp_path / "ah" / "projects" / "p"
     for d in ("shims", "tools"):
