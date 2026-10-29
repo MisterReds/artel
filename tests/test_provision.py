@@ -222,6 +222,7 @@ def test_remove_undoes_artel_installs_only(home, server, monkeypatch):
 
 @posix_only
 def test_system_package_through_wrapper_only_when_it_exists(home, monkeypatch):
+    monkeypatch.setattr(provision.sys, "platform", "linux")  # the apt route, whatever machine runs the suite
     assert provision.ensure("pdftk") is None  # no micromamba, no wrapper
     assert "no system package manager route" in provision.last_reason("pdftk") or "wrapper" in provision.last_reason("pdftk")
     wrapper = home / "artel-root"
@@ -242,6 +243,7 @@ def test_system_package_through_wrapper_only_when_it_exists(home, monkeypatch):
 
 @posix_only
 def test_wrapper_called_via_sudo_n(home, monkeypatch):
+    monkeypatch.setattr(provision.sys, "platform", "linux")
     wrapper = home / "artel-root"
     wrapper.write_text("#!/bin/sh\n")
     wrapper.chmod(0o755)

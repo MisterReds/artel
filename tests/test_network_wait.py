@@ -62,8 +62,11 @@ def test_dead_proxy_waits_and_resumes_without_replanning(tmp_path, monkeypatch):
     proxy = socket.socket()
     stages, up = [], threading.Event()
 
-    def bring_proxy_back():
-        time.sleep(1.0)
+    def bring_proxy_back():  # the outage lasts until the manager has noticed it (a refused connect is slow on Windows)
+        deadline = time.time() + 60
+        while time.time() < deadline and "manager/network_wait" not in [e["kind"] for e in project.log.read()]:
+            time.sleep(0.05)
+        time.sleep(0.3)
         proxy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         proxy.bind(("127.0.0.1", port))
         proxy.listen(50)

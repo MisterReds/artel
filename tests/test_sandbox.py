@@ -1,5 +1,6 @@
 """W2-sandbox: OS sandbox for agents' bash (bubblewrap on Linux, Seatbelt on macOS, clear fallback elsewhere)."""
 
+import os
 import shutil
 import uuid
 from pathlib import Path
@@ -184,6 +185,7 @@ def test_bwrap_args_hide_secrets_and_other_projects(tmp_path):
     assert args.index("--tmpfs") < args.index(str(ah / "tools")) < len(args)
 
 
+@pytest.mark.skipif(os.name == "nt", reason="bubblewrap is Linux-only; the fake backend is a shell script")
 def test_bwrap_args_protected_paths_are_read_only_inside_writable_roots(tmp_path):
     w = tmp_path / "w"
     (w / "skills").mkdir(parents=True)
@@ -212,6 +214,7 @@ def test_denied_reads_cover_every_secret_and_artel_home(tmp_path, monkeypatch):
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("s") if rel in (".netrc", ".docker/config.json") else p.mkdir()
     monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))  # what expanduser reads on Windows
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "ah"))
     proj = tmp_path / "ah" / "projects" / "p"
     for d in ("shims", "tools"):
@@ -225,6 +228,7 @@ def test_denied_reads_cover_every_secret_and_artel_home(tmp_path, monkeypatch):
     assert set(expose) == {real("ah/projects/p"), real("ah/shims"), real("ah/tools")}
 
 
+@pytest.mark.skipif(os.name == "nt", reason="bubblewrap is Linux-only; the fake backend is a shell script")
 def test_cannot_start_is_fail_closed_with_an_environment_error(cfg, tmp_path, monkeypatch):
     """The backend is present but fails to start for a command: the command must NOT run unsandboxed."""
     fake = tmp_path / "bwrap"
@@ -247,6 +251,7 @@ def test_cannot_start_is_fail_closed_with_an_environment_error(cfg, tmp_path, mo
     assert out.startswith("[exit 0]") and "ran-plain" in out and "WITHOUT a sandbox" in out
 
 
+@pytest.mark.skipif(os.name == "nt", reason="bubblewrap is Linux-only; the fake backend is a shell script")
 def test_task_checks_fail_closed_too(cfg, tmp_path, monkeypatch):
     fake = tmp_path / "bwrap"
     fake.write_text("#!/bin/sh\necho 'bwrap: setting up uid map: Permission denied' >&2\nexit 1\n")

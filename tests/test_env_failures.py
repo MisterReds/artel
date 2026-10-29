@@ -81,6 +81,7 @@ def test_gate_failure_classes():
     assert gate_failure_class(mixed) == "work"
 
 
+@pytest.mark.skipif(os.name == "nt", reason="symlink fixture")
 def test_tool_probe_lists_what_exists(only_python3):
     from artel.agent_env import tool_inventory
 

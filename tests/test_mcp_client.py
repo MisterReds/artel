@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -158,7 +159,8 @@ def test_external_servers_do_not_inherit_artels_secrets(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
     monkeypatch.setenv("PATH", "/usr/bin")
     env = mcp_client.server_environ()
-    assert "ANTHROPIC_API_KEY" not in env and env["PATH"] == "/usr/bin"
+    assert "ANTHROPIC_API_KEY" not in env
+    assert env["PATH"].split(os.pathsep)[-1] == "/usr/bin"  # only the python shim may be put in front
 
 
 def test_stdio_server_gets_allowlisted_env_only(env, monkeypatch):
