@@ -29,6 +29,8 @@ from typing import Any, Optional
 from . import prompts
 from .agent import Outcome
 from . import guardian, policy
+from .agent_env import agent_env, missing_programs, tool_inventory
+from .failures import gate_failure_class
 from .runtimes import run_agent
 from .snapshot import Snapshot
 from .tools import shell_env, shell_run
@@ -203,7 +205,7 @@ class Manager:
                 "differ. Plan so every success criterion is covered by a task's criteria or checks; nothing out of "
                 "scope is planned; assumptions stand unless the goal says otherwise.\n" if contract else "")
         user = (f"<goal>\n{self.project.goal}\n</goal>\n{spec}\nSkill library index:\n{skills.index(query=self.project.goal, config=self.cfg) or '(empty)'}\n\n"
-                "Plan the project now.")
+                f"{self.tools_brief()}\n\nPlan the project now.")
         ctx = ToolContext(self.kernel, self.project, role="planner", workspace=self.project.shared)
         from .runtimes import runtime_for
 
@@ -212,7 +214,30 @@ class Manager:
                        max_turns=12, purpose="plan", stop_event=self.stop)
         if out.name != "submit_plan":
             raise RuntimeError(f"planning failed: {out.status} {out.error}")
-        self.apply_plan(out.payload)
+        plan = out.payload
+        missing = self.plan_missing_tools(plan)
+        if missing:  # a check nobody can run is the planner's mistake: back to the planner once, the owner is not asked
+            self.note("plan_checks_unavailable", tools=missing)
+            again = run_agent(self.kernel, self.project, role="planner",
+                              system=self._with_instructions(prompts.PLANNER, "planner"), ctx=ctx, max_turns=12,
+                              purpose="plan", stop_event=self.stop, first_user=(
+                                  f"{user}\n\n<missing_tools>{', '.join(missing)}</missing_tools>\nYour previous plan has "
+                                  "checks whose first program is not installed on this machine. Plan again; write checks "
+                                  "only with the tools listed as available."))
+            if again.name == "submit_plan":
+                plan = again.payload
+                missing = self.plan_missing_tools(plan)
+            if missing:  # still unavailable: the gate will fail as an environment failure and the replanner rewrites it
+                self.note("plan_checks_unresolved", tools=missing)
+        self.apply_plan(plan)
+
+    def tools_brief(self) -> str:
+        have, missing = tool_inventory(self.cfg)
+        return (f"<tools_available>{' '.join(have)}</tools_available>\n<tools_missing>{' '.join(missing)}</tools_missing>\n"
+                "Write checks only with available tools.")
+
+    def plan_missing_tools(self, plan: dict) -> list:
+        return missing_programs([c for t in plan.get("tasks", []) for c in t.get("checks", [])], self.cfg)
 
     def apply_plan(self, plan: dict) -> None:
         for w in plan["workers"]:
@@ -340,8 +365,6 @@ class Manager:
         cwd = cwd or self.project.shared
         # gates observe, they must not change the deliverable (bytecode / pytest caches made reviewers reject
         # work that had been cleaned up before the gate ran)
-        from .agent_env import agent_env
-
         env = agent_env("native", {"PYTHONDONTWRITEBYTECODE": "1", "ARTEL_SHARED": str(cwd),
                                    "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()},
                         self.cfg)
@@ -391,6 +414,8 @@ class Manager:
             files = self.iso.changed_files(task["id"])
             changed = f"<changed_files vs shared>\n{_fmt_list(files[:200])}\n</changed_files>\n\n"
         gates = self.run_gates(task, cwd=wt)
+        if gate_failure_class(gates) == "environment":  # the gates cannot judge the work: no reviewer tokens spent
+            return gates, Outcome(status="environment")
         gate_text = window_text("\n".join(f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], GATE_OUTPUT_CHARS)}"
                                          for g in gates) or "(no automated gates)", REVIEW_GATES_CHARS)
         user = (f"{self.task_card(task)}\n\n<submission by=\"{task['assignee']}\">\n<summary>\n{window_text(task['result'] or '', REVIEW_SUMMARY_CHARS)}\n"
@@ -424,10 +449,27 @@ class Manager:
         near = [*self.board.deps_of(task["id"]), *self.board.dependents_of(task["id"])][:7]
         runs = self.board.runs(task["id"])[-2:]
         comments = self.board.comments(task["id"])[-3:]
+        history = self._failure_history(task["id"])
+        env = bool(history) and self._env_failure(task["id"])
+        failure = premise = tools = ""
+        if history:
+            cls, evidence = history[-1]
+            failure = f"<failure failure_class=\"{cls}\">\n{window_text(evidence, 700)}\n</failure>"
+        if len(history) >= 2 and history[-1][0] == history[-2][0]:  # attack the premise: same class twice
+            cls, evidence = history[-1]
+            claim = ("the ENVIRONMENT is broken (the checks cannot run on this machine); the worker is not at fault. "
+                     "Rewrite the check with an available tool, or fix the environment" if cls == "environment" else
+                     "the WORK is bad. Two attempts failed alike: check that premise directly (is the check itself right, "
+                     "is the task possible?) before sending the worker back")
+            premise = (f"<premise>The last two failures of this task are both \"{cls}\" failures. The premise to test "
+                       f"first: {claim}.\nEvidence: {window_text(evidence, 400)}</premise>")
+        if env:
+            tools = self.tools_brief()
         return self._brief([
             f"<goal>{window_text(self.project.goal, 500)}</goal>",
             f"<task id=\"{task['id']}\" status=\"{task['status']}\" attempts=\"{task['attempts']}\" "
             f"assignee=\"{task['assignee']}\">{task['title']}\ncriteria:\n{_fmt_list(task['criteria'][:5])}</task>",
+            f"<checks>\n{_fmt_list(task['checks'][:8])}\n</checks>", failure, premise, tools,
             "<last_runs>\n" + "\n".join(f"- {r['worker']}: {r['status']} after {r['turns']} turns — "
                                          f"{window_text(r['summary'] or '', 300)}" for r in runs) + "\n</last_runs>",
             "<last_comments>\n" + "\n".join(f"[{c['author']}] {window_text(c['body'], 300)}" for c in comments)
@@ -577,6 +619,11 @@ class Manager:
             self._merge_conflict(task, out.payload.get("conflicts") or [], out.error, stage="before review")
             return
         gates_ok = all(g["exit"] == 0 for g in gates)
+        if gate_failure_class(gates) == "environment":
+            self.review_retries.pop(task_id, None)
+            self.snapshots.pop(task_id, None)
+            self._environment_failure(task, gates)
+            return
         if out.name != "review_verdict":
             n = self.review_retries.get(task_id, 0) + 1
             self.review_retries[task_id] = n
@@ -638,6 +685,31 @@ class Manager:
             else:
                 self.board.update(task_id, status="ready", attempts=attempts, actor="reviewer")
 
+    def _environment_failure(self, task: dict, gates: list) -> None:
+        """The gates failed because of this machine (missing tool, sandbox, proxy), not because of the work: the
+        attempt is not counted against the worker; the replanner gets the classification and may rewrite the check."""
+        task_id = task["id"]
+        evidence = "\n".join(f"$ {g['command']} -> exit {g['exit']}\n{window_text(g['output'], 400)}"
+                             for g in gates if g["exit"] != 0)
+        self.project.log.append("review/verdict", task_id=task_id, passed=False, failure_class="environment",
+                                feedback="Environment failure, not the work:\n" + evidence,
+                                gates=[{"command": g["command"], "exit": g["exit"]} for g in gates])
+        self.board.comment(task_id, "manager", "ENVIRONMENT failure (not the worker's fault, the attempt is not "
+                                               "counted): the checks cannot run on this machine.\n" + evidence)
+        self.note("environment_failure", task_id=task_id)
+        self.board.update(task_id, status="blocked", actor="manager")
+
+    def _failure_history(self, task_id: str) -> list:
+        """(failure class, feedback) of the task's rejected reviews, oldest first."""
+        return [(e.get("failure_class") or "work", e.get("feedback") or "")
+                for e in self.project.log.read(kinds={"review/verdict"})
+                if e.get("task_id") == task_id and not e.get("passed")]
+
+    def _env_failure(self, task_id: str) -> bool:
+        """The task's latest verdict was an environment failure."""
+        verdicts = [e for e in self.project.log.read(kinds={"review/verdict"}) if e.get("task_id") == task_id]
+        return bool(verdicts) and verdicts[-1].get("failure_class") == "environment"
+
     def _merge_conflict(self, task: dict, conflicts: list, error: str, stage: str) -> None:
         """Surface a merge conflict as a task comment and send the task back for a retry on the updated base."""
         task_id = task["id"]
@@ -666,16 +738,19 @@ class Manager:
             except IsolationError as exc:
                 self.note("worktree_error", task_id=task_id, error=str(exc))
 
-    def _replans(self, task_id: str) -> int:
-        return sum(1 for e in self.project.log.read() if e["kind"] == "manager/decision" and e.get("task_id") == task_id)
+    def _replans(self, task_id: str, env: bool = False) -> int:
+        """Replans of a task; environment ones are counted apart from replans of bad work."""
+        return sum(1 for e in self.project.log.read() if e["kind"] == "manager/decision" and e.get("task_id") == task_id
+                   and bool(e.get("env")) == env)
 
     def on_replan(self, task_id: str, out: Outcome) -> None:
         task = self.board.get(task_id)
-        limit = int(self.b.get("max_replans", 3))
-        if out.status not in ("stopped", "budget") and self._replans(task_id) >= limit:
+        env = self._env_failure(task_id)
+        limit = int(self.b.get("max_env_replans" if env else "max_replans", 3))
+        if out.status not in ("stopped", "budget") and self._replans(task_id, env) >= limit:
             # the same task keeps failing after re-planning: stop circling, hand it to a person with the history
             self.board.update(task_id, status="blocked", needs_human=1, actor="manager")
-            self.board.comment(task_id, "manager", f"Перепланирование {limit} раз не помогло — нужна помощь человека. "
+            self.board.comment(task_id, "manager", f"Перепланирование {limit} раз не помогло{' (среда не чинится правкой проверок)' if env else ''} — нужна помощь человека. "
                                                     f"Последняя причина: {window_text(task.get('result') or '', 300)}")
             self.note("escalated", task_id=task_id, rationale=f"{limit} replans without progress")
             self.ask_doctor(task_id, f"Задача не сдвинулась после {limit} перепланирований: "
@@ -685,15 +760,24 @@ class Manager:
             if out.status in ("stopped", "budget"):
                 return
             self.note("decision", task_id=task_id, action="retry", rationale=f"no decision ({out.status}); default retry")
-            self.board.update(task_id, status="ready", attempts=0,
+            self.board.update(task_id, status="review" if env else "ready", attempts=0,
                               backoff_until=time.time() + float(self.cfg.get("backoff_base_s", BACKOFF_BASE_S)))
             return
         d = out.payload
-        self.note("decision", task_id=task_id, **d)
+        self.note("decision", task_id=task_id, env=env, **d)
         action = d["action"]
         if d.get("guidance"):
             self.board.comment(task_id, "manager", f"Guidance: {d['guidance']}")
-        if action == "retry":
+        if d.get("checks"):  # only an environment failure lets the manager rewrite the checks
+            if env:
+                self.board.update(task_id, checks=[str(c) for c in d["checks"]])
+                self.board.comment(task_id, "manager", "Checks rewritten after an environment failure:\n"
+                                   + _fmt_list(d["checks"]))
+            else:
+                self.board.comment(task_id, "manager", "Checks are not changed: the failure was not an environment one.")
+        if action == "retry" and env:  # the work was never judged: straight back to the review, no rework
+            self.board.update(task_id, status="review", attempts=0, no_progress=0, backoff_until=0, needs_human=0)
+        elif action == "retry":
             self.board.update(task_id, status="ready", attempts=0, no_progress=0, backoff_until=0, needs_human=0)
         elif action == "reassign":
             name = d.get("assignee")
