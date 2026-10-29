@@ -33,7 +33,7 @@ from ... import policy
 from ...agent import LoopDetector, Outcome, _short, execute_tool, journal_agent_event
 from ...contracts._base import thaw
 from ...prompts import CONTINUATION
-from ...tooling import ToolContext
+from ...tooling import ToolContext, present_output
 from ...tools import StderrTail, group_popen_kwargs, terminate_tree
 
 # The CLIs ship better versions of these; do not expose Artel's duplicates.
@@ -106,7 +106,7 @@ class ToolBridge:
             text, is_error = execute_tool(self.kernel, self.ctx, name, args)
             journal_agent_event(self.project.log, "tool/result", actor=self.actor, task_id=task_id, tool=name, call_id=call_id,
                                     is_error=is_error, output=text[:4000], runtime=self.runtime)
-        return {"text": text, "is_error": is_error}
+        return {"text": present_output(self.ctx, name, text), "is_error": is_error}
 
     def close(self) -> None:
         self.httpd.shutdown()

@@ -55,7 +55,7 @@ h2{font-size:12px;text-transform:uppercase;letter-spacing:.06em;color:var(--mute
 .badge{font-size:12px;padding:2px 8px;border-radius:99px;background:var(--chip);border:1px solid var(--line);white-space:nowrap}
 .badge .ic{margin-right:4px;font-weight:700}
 .badge.execution,.badge.running{color:var(--run);border-color:var(--run)}.badge.review{color:var(--rev);border-color:var(--rev)}
-.badge.done{color:var(--ok);border-color:var(--ok)}.badge.waiting_human,.badge.error,.badge.paused_budget{color:var(--bad);border-color:var(--bad)}
+.badge.done{color:var(--ok);border-color:var(--ok)}.badge.waiting_human,.badge.error,.badge.paused_budget,.badge.network_wait{color:var(--bad);border-color:var(--bad)}
 .badge.audit,.badge.planning{color:var(--warn);border-color:var(--warn)}
 .badge.review,.badge.audit,.badge.needs_review{color:var(--rev);border-color:var(--rev)}.badge.stopped{color:var(--muted)}
 .badge.waiting_human{background:color-mix(in srgb,var(--bad) 12%,var(--panel));font-weight:600}
@@ -271,7 +271,7 @@ fetch('/api/auth/status').then(r=>r.json()).then(s=>{
 if('serviceWorker' in navigator)window.addEventListener('load',()=>navigator.serviceWorker.register('/sw.js').catch(()=>{}));
 const post=(p,b)=>api(p,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(b||{})});
 const COLS=[['todo','Ожидают'],['ready','Готовы'],['running','В работе'],['review','Ревью'],['done','Готово'],['blocked','Блок']];
-const STAGE={planning:'планирование',execution:'исполнение',review:'ревью',audit:'аудит цели',done:'цель достигнута',waiting_human:'ждёт человека',stopped:'остановлен',paused_budget:'бюджет исчерпан',needs_review:'нужна проверка',error:'ошибка',running:'в работе'};
+const STAGE={planning:'планирование',execution:'исполнение',review:'ревью',audit:'аудит цели',done:'цель достигнута',waiting_human:'ждёт человека',stopped:'остановлен',paused_budget:'бюджет исчерпан',network_wait:'нет сети / прокси недоступен, жду',needs_review:'нужна проверка',error:'ошибка',running:'в работе'};
 const STEPS=['planning','execution','review','audit','done'];
 const ago=ts=>{const s=Math.max(0,Date.now()/1000-ts);return s<60?`${s|0} с назад`:s<3600?`${s/60|0} мин назад`:s<86400?`${s/3600|0} ч назад`:`${s/86400|0} дн назад`};
 const money=v=>v==null?'—':'$'+(v<1?v.toFixed(3):v.toFixed(2));
@@ -444,7 +444,7 @@ function summaryLine(v,needsMe){const st=v.stats,m=v.meta,prog=`${st.tasks_done}
   if(m.status==='done'||st.stage==='done')return `Готово · ${prog}`;
   if(needsMe||st.stage==='waiting_human')return `Ждёт вашего ответа · ${prog}`;
   if(st.stage==='stopped')return `Пауза · ${prog}`;
-  if(['paused_budget','error','needs_review'].includes(st.stage))return `${(STAGE[st.stage]||st.stage).replace(/^./,c=>c.toUpperCase())} · ${prog}`;
+  if(['paused_budget','error','needs_review','network_wait'].includes(st.stage))return `${(STAGE[st.stage]||st.stage).replace(/^./,c=>c.toUpperCase())} · ${prog}`;
   return `${v.live?'Идёт':'Не запущен'}: ${STAGE[st.stage]||st.stage} · ${prog}`}
 function stepperHtml(st,waiting){let si=STEPS.indexOf(st.stage);if(st.stage==='done')si=STEPS.length;else if(si<0&&waiting)si=1;
   return `<ol class="stepper" aria-label="Этапы проекта">${STEPS.map((s,i)=>`<li class="step ${i<si?'past':i===si?'now'+(waiting?' bad':''):''}"${i===si?' aria-current="step"':''}><span class="sd" aria-hidden="true"></span><span class="sr">${STAGE[s]}</span></li>`).join('')}</ol>

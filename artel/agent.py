@@ -23,7 +23,7 @@ from .contracts import REQUIRED_FIELDS, Event
 from .contracts._base import ContractError
 from .plugins.llm_providers import LLMError
 from .prompts import CONTINUATION
-from .tooling import ToolContext, ToolError
+from .tooling import ToolContext, ToolError, present_output
 
 NO_PROGRESS_CAP = 3
 TOOL_LOOP_THRESHOLD = 5      # identical consecutive tool calls that count as a loop
@@ -265,6 +265,9 @@ def execute_tool(kernel, ctx: ToolContext, name: str, args: dict) -> tuple[str, 
     spec = kernel.tools.get(name)
     if spec is None or ctx.role not in spec.roles:
         return f"unknown tool {name!r} for role {ctx.role}", True
+    if "_invalid_json" in args:   # the provider could not parse the model's arguments: the tool never sees them
+        return (f"tool-call arguments were not valid JSON ({_short(str(args['_invalid_json']), 200)}); "
+                f"the call was NOT run. Send it again with valid JSON arguments."), True
     missing = [k for k in spec.input_schema.get("required", []) if k not in args]
     if missing:
         return f"missing required arguments: {missing}", True
@@ -380,6 +383,19 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
             break
 
         uses = [b for b in resp.blocks if b["type"] == "tool_use"]
+        if uses and resp.stop_reason == "max_tokens":
+            # cut mid-response: the call's arguments may be incomplete, so none of them runs. Each tool_use still
+            # gets its tool_result (the API rejects an unanswered one), then the model is asked to finish.
+            project.log.append("agent/truncated_tools", actor=actor, task_id=task_id, turn=turn,
+                               tools=[b["name"] for b in uses])
+            messages.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": b["id"], "is_error": True,
+                 "content": "NOT run: your response was truncated at the token limit, so this call may be "
+                            "incomplete."} for b in uses] + [
+                {"type": "text", "text": "\n\n".join(
+                    ["Your output was cut off at the token limit and the tool calls in it were not run. Continue "
+                     "and repeat the call(s); put large content into files in smaller pieces."] + notes)}]})
+            continue
         if uses:
             idle_turns = 0
             results = []
@@ -398,7 +414,8 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
                                    is_error=is_error, output=text[:4000])
                 out.digest.append(f"TOOL {b['name']}({_short(b['input'])}) -> {'ERROR ' if is_error else ''}"
                                   f"{_short(text, 300)}")
-                results.append({"type": "tool_result", "tool_use_id": b["id"], "content": text, "is_error": is_error})
+                results.append({"type": "tool_result", "tool_use_id": b["id"],
+                                "content": present_output(ctx, b["name"], text), "is_error": is_error})
             if out.error:
                 break
             content: list[dict] = results

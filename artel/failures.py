@@ -17,6 +17,10 @@ SETUP = re.compile(r"не установлен|not installed|command not found|n
                    r"invalid api key|authentication_error|authentication failed|unauthorized|\b401\b|"
                    r"api key .*not set|missing api key|no api key|MISSING_CREDENTIAL|INVALID_CREDENTIAL|"
                    r"sandbox cannot start commands|bwrap: .*Operation not permitted", re.I)
+NETWORK = re.compile(r"connection refused|connection reset|connect ?error|connect ?timeout|read ?timeout|timed out|"
+                     r"proxy ?error|cannot connect to proxy|api ?connection ?error|connection error|"
+                     r"name or service not known|temporary failure in name resolution|getaddrinfo failed|"
+                     r"network is unreachable|no route to host|remote ?protocol ?error|server disconnected", re.I)
 
 
 def retry_at(text: str) -> Optional[float]:
@@ -36,9 +40,12 @@ def retry_at(text: str) -> Optional[float]:
 
 
 def classify(text: str) -> str:
-    """'limit' (wait for the provider), 'setup' (a person must fix the environment) or 'work' (retry may help)."""
+    """'limit' (wait for the provider), 'network' (proxy/provider unreachable: wait and probe), 'setup' (a person
+    must fix the environment) or 'work' (retry may help)."""
     if LIMIT.search(text or ""):
         return "limit"
+    if NETWORK.search(text or ""):
+        return "network"
     if SETUP.search(text or ""):
         return "setup"
     return "work"

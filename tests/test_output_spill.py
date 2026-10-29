@@ -3,7 +3,10 @@
 import pytest
 
 from artel.manager import new_kernel, run_goal
-from artel.plugins.builtin_tools import MAX_BYTES, MAX_LINES, spill_output
+from artel.plugins.builtin_tools import spill_output
+from artel.tooling import TOOL_OUTPUT_CAP
+
+MAX_LINES = 2000      # a long output (many lines) and a long single line are both capped by characters now
 from artel.project import DEFAULT_CONFIG, deep_merge
 from artel.tooling import ToolContext
 
@@ -38,24 +41,24 @@ def test_over_lines_spills(env):
 
 def test_over_bytes_spills_single_line(env):
     _, ctx, ws = env
-    text = "H" + "x" * (MAX_BYTES + 10) + "T"
+    text = "H" + "x" * (TOOL_OUTPUT_CAP * 4) + "T"
     out = spill_output(ctx, text, "read_file")
     (f,) = (ws / ".spill").iterdir()
     assert f.read_text(encoding="utf-8") == text
-    assert out.startswith("H") and "T\n" in out and f.name in out
+    assert out.startswith("H") and out.endswith("T") and f.name in out
 
 
 def test_bash_spills_and_is_readable_via_path(env):
     t, ctx, ws = env
     out = t["bash"].fn(ctx, command="seq 1 3000")
     assert "[exit 0]" in out and "\n3000" in out and ".spill/bash-" in out
-    path = out.split("saved to ")[1].split(".txt")[0] + ".txt"
+    path = out.split("полный вывод: ")[1].split(".txt")[0] + ".txt"
     assert "3000" in t["read_file"].fn(ctx, path=path, offset=2999, limit=1)
     assert ".spill" not in t["list_files"].fn(ctx)
 
 
-def test_exact_limits_not_spilled(env):
+def test_within_the_cap_is_not_spilled(env):
     _, ctx, ws = env
     text = "\n".join("x" for _ in range(MAX_LINES))
     assert spill_output(ctx, text, "bash") == text
-    assert spill_output(ctx, "y" * MAX_BYTES, "bash") == "y" * MAX_BYTES
+    assert spill_output(ctx, "y" * 11_000, "bash") == "y" * 11_000
