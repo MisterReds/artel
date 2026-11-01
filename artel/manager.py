@@ -409,6 +409,8 @@ class Manager:
                 failed = failed if sb["require"] else ""
                 res = {"command": cmd, "exit": p.returncode if not failed else -1,
                        "output": window_text(p.stdout + p.stderr, 3000) if not failed else f"command NOT run: {failed}"}
+                if run.line and not failed:
+                    res["output"] += f"\n{run.line}"
                 cause = "sandbox" if failed else self._gate_env_cause(cmd, p.returncode, genv)
                 if cause:
                     res["env"] = cause

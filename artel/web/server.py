@@ -475,8 +475,10 @@ def make_handler(runner: Runner, auth=None):
                     self._json(tg_status(runner.config))
                 elif parts == ["api", "ready"]:
                     from ..runtimes import detect_runtime
+                    from ..sandbox import status as sandbox_status
 
-                    self._json({"runtime": detect_runtime(runner.config)})
+                    self._json({"runtime": detect_runtime(runner.config),
+                                "unisolated": sandbox_status(runner.config)["unisolated"]})
                 elif parts == ["api", "providers"]:
                     from ..providers import overview
 

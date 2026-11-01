@@ -381,3 +381,57 @@ def test_no_rerun_of_a_command_that_started(cfg, tmp_path, monkeypatch):
     log = tmp_path / "count"
     k.tools["bash"].fn(ctx, command=f"echo x >> {log}; echo 'bwrap: boom' >&2; exit 1")
     assert log.read_text().count("x") == 1
+
+
+def _no_backend(monkeypatch):
+    monkeypatch.setattr(sandbox, "bwrap_status", lambda network=True: (False, "bubblewrap (bwrap) is not installed"))
+    monkeypatch.setattr(sandbox, "seatbelt_status", lambda: (False, "macOS-only"))
+
+
+def test_every_result_says_when_the_command_ran_without_isolation(cfg, tmp_path, monkeypatch):
+    _no_backend(monkeypatch)
+    cfg = deep_merge(cfg, {"sandbox": {"mode": "auto"}})
+    k, project, ctx = _ctx(cfg, tmp_path)
+    for _ in range(2):                                   # every result, not just the first
+        out = k.tools["bash"].fn(ctx, command="echo hi")
+        assert "\nбез изоляции: " in out and "bubblewrap" in out
+    m = Manager(new_kernel(cfg), project)
+    res = m.run_gates({"id": "x", "checks": ["echo hi"]})
+    assert "без изоляции: " in res[0]["output"] and "bubblewrap" in res[0]["output"] and res[0]["exit"] == 0
+    off = deep_merge(cfg, {"sandbox": {"mode": "off"}})  # the owner switched it off: not a fallback state, no nagging
+    k2, _, ctx2 = _ctx(off, tmp_path / "off")
+    assert "без изоляции" not in k2.tools["bash"].fn(ctx2, command="echo hi")
+
+
+def test_status_and_ready_payload_carry_the_unisolated_reason(cfg, tmp_path, monkeypatch):
+    import json
+    import threading
+    import urllib.request
+
+    from artel.httpd import LocalHTTPServer
+    from artel.web.server import Runner, make_handler
+
+    _no_backend(monkeypatch)
+    auto = deep_merge(cfg, {"sandbox": {"mode": "auto"}})
+    assert "bubblewrap" in sandbox.status(auto)["unisolated"]
+    assert sandbox.status(deep_merge(cfg, {"sandbox": {"mode": "off"}}))["unisolated"] == ""
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "ah"))
+    runner = Runner(auto)
+    httpd = LocalHTTPServer(("127.0.0.1", 0), make_handler(runner))
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        ready = json.load(urllib.request.urlopen(f"http://127.0.0.1:{httpd.server_address[1]}/api/ready", timeout=5))
+        assert "bubblewrap" in ready["unisolated"]
+    finally:
+        httpd.shutdown()
+    html = (Path(__file__).resolve().parents[1] / "artel" / "web" / "index.html").read_text(encoding="utf-8")
+    assert 'id="unisolated"' in html and "без изоляции" in html
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the fake backend is a shell script")
+def test_no_unisolated_note_when_the_sandbox_works(cfg, tmp_path, monkeypatch):
+    monkeypatch.setattr(sandbox, "bwrap_status", lambda network=True: (True, str(_fake_bwrap_that_runs_the_command(tmp_path))))
+    cfg = deep_merge(cfg, {"sandbox": {"mode": "auto"}})
+    k, project, ctx = _ctx(cfg, tmp_path)
+    assert "без изоляции" not in k.tools["bash"].fn(ctx, command="echo hi")
+    assert sandbox.status(cfg)["unisolated"] == ""

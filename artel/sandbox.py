@@ -83,6 +83,12 @@ class Plan:
     note: str = ""                   # set when a sandbox was asked for but is not in effect
     writable: list = field(default_factory=list)
     error: str = ""                  # the sandbox was demanded (mode / require) but cannot be had: do NOT run
+    unisolated: str = ""             # why the command runs WITHOUT isolation although the mode did not switch it off
+
+    @property
+    def line(self) -> str:
+        """The one line every result carries in that state ('' when isolated or switched off)."""
+        return f"без изоляции: {self.unisolated}" if self.unisolated else ""
 
     @property
     def sandboxed(self) -> bool:
@@ -271,6 +277,7 @@ def plan(config: dict, command: str, *, cwd, writable, mode: Optional[str] = Non
                                            expose=expose, protected=protected, sentinel=sentinel),
                         backend="seatbelt", writable=allowed)
         reasons.append(why)
+    plain.unisolated = "; ".join(reasons)
     plain.note = f"sandbox `{mode}` unavailable ({'; '.join(reasons)}); the command ran WITHOUT a sandbox"
     if mode != "auto" and s["require"]:  # the owner asked for this backend by name: no silent downgrade
         plain.error = f"sandbox cannot start commands: {'; '.join(reasons)}"
@@ -318,7 +325,7 @@ def status(config: dict) -> dict:
     s = settings(config)
     failure = next(iter(_failures.values()), "")
     if s["mode"] == "off":
-        return {"mode": "off", "active": False, "backend": "none", "failure": failure,
+        return {"mode": "off", "active": False, "backend": "none", "failure": failure, "unisolated": "",
                 "message": "Сейчас команды агентов выполняются без изоляции: она выключена в настройках (sandbox.mode: off). "
                            "Включить: sandbox.mode: auto в artel.yaml."}
     run = plan(config, "true", cwd=os.getcwd(), writable=[], mode=s["mode"])
@@ -327,11 +334,13 @@ def status(config: dict) -> dict:
                "(~/.ssh, ~/.aws, ~/.gnupg, ~/.config/gh) и чужих проектов закрыто.")
         if failure:
             msg += f" Последний сбой запуска изоляции: {failure}. Команды в этом случае не выполняются."
-        return {"mode": s["mode"], "active": True, "backend": run.backend, "message": msg, "failure": failure}
+        return {"mode": s["mode"], "active": True, "backend": run.backend, "message": msg, "failure": failure,
+                "unisolated": ""}
     how = ("Linux: установите bubblewrap (apt-get install bubblewrap) и разрешите непривилегированные "
            "user namespaces; macOS: нужен /usr/bin/sandbox-exec; Windows: используйте WSL2")
     why = run.note.split("(", 1)[-1].rsplit(")", 1)[0] if "(" in run.note else ""
     return {"mode": s["mode"], "active": False, "backend": "none", "failure": failure,
+            "unisolated": run.unisolated or why or "нет бэкенда",
             "message": f"Сейчас команды агентов выполняются без изоляции: на этой машине её нечем обеспечить ({why}). "
                        f"Как включить: {how}."}
 

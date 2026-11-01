@@ -195,6 +195,7 @@ body:not(.devmode) .dev{display:none!important}
     <a class="dev" href="#/evolution" data-v="evolution">Эволюция</a>
     <a class="dev" href="#/registry" data-v="registry">Реестр харнессов</a>
   </nav>
+  <a id="unisolated" class="alert" href="#/providers" role="alert" hidden></a>
   <button id="updbtn" style="display:none" title="Доступно обновление Artel"></button>
   <button class="primary" id="newbtn">+ Новый проект</button>
   <button id="theme" title="Тема" aria-label="Тема: как в системе">◐</button>
@@ -303,6 +304,9 @@ try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>app
 // tab title shows how many projects wait for an answer
 let ATTN=0;function setAttn(n){ATTN=n;document.title=n>0?`Artel — ${cnt(n,'вопрос','вопроса','вопросов')} к вам`:'Artel'}
 async function pollAttn(){if(document.hidden)return;try{const ps=await api(MQ('/api/portfolio'));if(Array.isArray(ps))setAttn(ps.reduce((s,p)=>s+(p.attention||[]).length,0))}catch(e){}}
+// persistent banner while agent commands run without isolation (sandbox auto-fallback), until it is fixed
+async function pollIso(){if(document.hidden)return;try{const r=await api('/api/ready'),b=$('#unisolated');if(r&&b){b.hidden=!r.unisolated;b.innerHTML=r.unisolated?`<b>Команды агентов выполняются без изоляции:</b> ${esc(r.unisolated)}. Как исправить — «Подключения» →`:''}}catch(e){}}
+pollIso();setInterval(pollIso,30000);
 pollAttn();setInterval(pollAttn,20000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollAttn()});
 const dlgEl=$('#dlg');dlgEl.addEventListener('click',e=>{if(e.target===dlgEl)dlgEl.close()});
 /* Диагност: «Почему?» — объяснение сбоя на доступной модели */
