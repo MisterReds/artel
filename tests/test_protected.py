@@ -30,7 +30,8 @@ def env(tmp_path, monkeypatch):
     ctx = ToolContext(k, project, role="worker", workspace=ws)
     targets = {"home policy.yaml": artel_home() / "policy.yaml", "home artel.yaml": artel_home() / "artel.yaml",
                "skills library": artel_home() / "skills" / "mine" / "SKILL.md",
-               "project policy.yaml": project.root / "policy.yaml", "project artel.yaml": project.root / "artel.yaml"}
+               "project policy.yaml": project.root / "policy.yaml", "project artel.yaml": project.root / "artel.yaml",
+               "project journal": project.root / "events.jsonl"}
     for p in targets.values():
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text("rules: []\n")
@@ -38,7 +39,7 @@ def env(tmp_path, monkeypatch):
 
 
 @pytest.mark.parametrize("name", ["home policy.yaml", "home artel.yaml", "skills library", "project policy.yaml",
-                                  "project artel.yaml"])
+                                  "project artel.yaml", "project journal"])
 def test_file_tools_refuse_protected_paths_even_with_a_grant(env, name):
     k, project, ctx, targets = env
     path = targets[name]
@@ -117,7 +118,7 @@ def test_policy_allows_reading_protected_paths(env, cmd):
 
 @needs_bwrap
 @pytest.mark.parametrize("name", ["home policy.yaml", "home artel.yaml", "skills library", "project policy.yaml",
-                                  "project artel.yaml"])
+                                  "project artel.yaml", "project journal"])
 def test_sandbox_makes_protected_paths_read_only_even_when_writable_ancestors(env, name):
     """The writable list contains the parent of the protected file; the file itself stays read-only."""
     k, project, ctx, targets = env

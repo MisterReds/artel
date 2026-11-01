@@ -145,8 +145,8 @@ def read_policy(project_root=None) -> tuple[list[str], list[str]]:
 
 
 def protected_paths(project_root=None) -> list[str]:
-    """Owner configuration agents may never write: policy.yaml, artel.yaml and the skills library, in ARTEL_HOME
-    and in the project. One list for the file tools, the command policy and both sandboxes."""
+    """Owner configuration and records agents may never write: policy.yaml, artel.yaml and the skills library, in
+    ARTEL_HOME and in the project, and the project's journal and board database. One list for the file tools, the command policy and both sandboxes."""
     from .project import artel_home
 
     bases = [artel_home()] + ([Path(project_root)] if project_root else [])
@@ -154,6 +154,8 @@ def protected_paths(project_root=None) -> list[str]:
     for base in bases:
         for name in ("policy.yaml", "artel.yaml") + (("skills",) if base == bases[0] else ()):
             out.append(os.path.realpath(str(base / name)))
+    if project_root:
+        out += [os.path.realpath(str(Path(project_root) / n)) for n in ("events.jsonl", "board.db", "board.db-wal", "board.db-shm")]
     return list(dict.fromkeys(out))
 
 

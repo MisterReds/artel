@@ -469,3 +469,27 @@ def test_a_check_that_fails_on_the_result_too_is_rejected(cfg, tmp_path):
     project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "x"}, result={"f.txt": "x"})
     _replan(mgr, tid, ["pytest -k nonexistent"])
     assert "fails on the submitted result" in project.log.read(kinds={"check/rejected"})[-1]["reason"]
+
+
+def test_a_forged_journal_event_does_not_remove_the_confirmation_requirement(cfg, tmp_path):
+    """The requirement lives on the board row the manager wrote; appending a check/rewritten event with an empty
+    `confirm` (what a worker with access to events.jsonl can do) changes nothing."""
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["pytest tests/test_x.py"], baseline={"f.txt": "old\n"},
+                                          result={"f.txt": "old\n", "out.txt": "x\n"})
+    _replan(mgr, tid, ["test -e out.txt"])
+    assert mgr._needs_checks_confirmation(tid)
+    new = mgr.board.get(tid)["checks"]
+    project.log.append("check/rewritten", task_id=tid, old=["x"], new=new, confirm=[], evidence=[])
+    project.log.append("check/rejected", task_id=tid, old=new, new=["x"], reason="r")
+    assert mgr._needs_checks_confirmation(tid)
+    assert "existence" in mgr._rewritten_brief(tid)           # the reasons shown come from the row too
+
+
+def test_the_journal_and_the_board_are_protected_from_agent_writes(tmp_path, monkeypatch):
+    from artel import sandbox
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    root = tmp_path / "proj"
+    prot = sandbox.protected_paths(root)
+    for n in ("events.jsonl", "board.db"):
+        assert os.path.realpath(str(root / n)) in prot

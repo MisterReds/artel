@@ -201,9 +201,9 @@ class ToolContext:
             from .sandbox import protected_paths
 
             if any(inside(Path(pp)) for pp in protected_paths(self.project.root)):
-                raise ToolError(f"{path!r} is protected configuration (policy.yaml, artel.yaml or the skills "
-                                "library): agents never write it; ask the owner")
-            protected = {"events.jsonl", "board.db", "project.json"}
+                raise ToolError(f"{path!r} is protected configuration or record (policy.yaml, artel.yaml, the skills "
+                                "library, events.jsonl, board.db): agents never write it; ask the owner")
+            protected = {"project.json"}
             if target.parent == root and target.name in protected:
                 raise ToolError(f"{target.name} is managed by the harness")
         return target

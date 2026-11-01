@@ -985,7 +985,7 @@ class Manager:
             self.project.log.append("check/rejected", task_id=task_id, old=old, new=new, reason=problem)
             self.board.comment(task_id, "manager", f"Checks are not changed: the rewrite was refused ({problem}).")
             return
-        self.board.update(task_id, checks=new)
+        self.board.update(task_id, checks=new, checks_confirm=list(vet["confirm"]))  # the requirement lives on the row
         self.project.log.append("check/rewritten", task_id=task_id, old=old, new=new, confirm=vet["confirm"],
                                 evidence=vet["evidence"])
         self.board.comment(task_id, "manager", "Checks rewritten after an environment failure:\n" + _fmt_list(new)
@@ -1034,8 +1034,7 @@ class Manager:
         return bool(self.iso is not None and base and self.iso.exists(task_id) and not self.iso.base_intact(task_id, base))
 
     def _needs_checks_confirmation(self, task_id: str) -> bool:
-        ev = [e for e in self.project.log.read(kinds={"check/rewritten"}) if e.get("task_id") == task_id]
-        return bool(ev and ev[-1].get("confirm") and list(self.board.get(task_id)["checks"]) == list(ev[-1]["new"]))
+        return bool(self.board.get(task_id)["checks_confirm"])  # the board, not the journal: a worker can append to that
 
     def _rewritten_brief(self, task_id: str) -> str:
         ev = [e for e in self.project.log.read(kinds={"check/rewritten"}) if e.get("task_id") == task_id]
@@ -1046,7 +1045,7 @@ class Manager:
             f"$ {e['command']}\n  baseline: " + (f"exit {e['baseline']['exit']}  {e['baseline']['tail'][-150:]!r}" if e["baseline"] else "not run")
             + "\n  result: " + (f"exit {e['result']['exit']}  {e['result']['tail'][-150:]!r}" if e["result"] else "not run")
             for e in last.get("evidence") or [])
-        why = "\n".join(f"- {r}" for r in last.get("confirm") or [])
+        why = "\n".join(f"- {r}" for r in self.board.get(task_id)["checks_confirm"])
         ask = (f"These need your explicit confirmation:\n{why}\nPass only if the new checks verify the criteria, "
                "and then set checks_cover_criteria=true in review_verdict; otherwise the review fails.\n" if why else "")
         return (f"<checks_rewritten>\n<old>\n{_fmt_list(ev[0]['old'])}\n</old>\n<new>\n{_fmt_list(last['new'])}\n</new>\n"
