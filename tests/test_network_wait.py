@@ -167,3 +167,49 @@ def test_short_network_wait_does_not_escalate(tmp_path, monkeypatch):
         mgr._network_tick()
         time.sleep(0.03)
     assert not project.log.read(kinds={"manager/network_wait_escalated"})
+
+
+# --- a dead loopback proxy holds the gate; it is never judged ---------------------------------------------------
+
+def _dead_port():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def test_gate_is_held_while_the_loopback_proxy_is_down_and_rerun_when_it_is_back(tmp_path, monkeypatch):
+    from artel import manager as manager_mod
+    from artel.agent import Outcome
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    port = _dead_port()
+    monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{port}")
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "network_probe_s": 0.01, "network_probe_max_s": 0.05})
+    project = Project.create("g", cfg, name="held", workdir=str(tmp_path / "wd"))
+    mgr = Manager(new_kernel(cfg), project)
+    tid = mgr.board.add_task("T", "b", assignee="x", criteria=["c"], checks=["exit 1"], created_by="planner")
+    mgr.board.update(tid, status="review")
+    reviewed = []
+    monkeypatch.setattr(manager_mod, "run_agent", lambda *a, **k: reviewed.append(1) or Outcome(status="error"))
+
+    result = mgr.job_review(mgr.board.get(tid))
+    mgr.on_review(tid, result)
+    assert not reviewed                                        # nothing was judged, no reviewer tokens spent
+    assert mgr.net_wait is not None                            # the existing network wait took over
+    assert mgr.board.get(tid)["status"] == "review" and mgr.board.get(tid)["attempts"] == 0
+    assert not project.log.read(kinds={"review/verdict"})      # no verdict of any class
+
+    proxy = socket.socket()                                    # the proxy is back: the gate runs again, for real
+    proxy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    proxy.bind(("127.0.0.1", port))
+    proxy.listen(5)
+    try:
+        time.sleep(0.05)
+        assert mgr._network_tick() is False and mgr.net_wait is None
+        gates, _ = mgr.job_review(mgr.board.get(tid))
+        assert gates and gates[0]["exit"] == 1 and "env" not in gates[0]
+        assert reviewed                                        # now the reviewer sees the real failure
+    finally:
+        proxy.close()

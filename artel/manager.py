@@ -451,6 +451,9 @@ class Manager:
             files = self.iso.changed_files(task["id"])
             changed = f"<changed_files vs shared>\n{_fmt_list(files[:200])}\n</changed_files>\n\n"
         gates = self.run_gates(task, cwd=wt)
+        if any(g["exit"] != 0 for g in gates) and (down := netprobe.loopback_proxy_down(self._gate_env(wt or self.project.shared))):
+            # a failing check next to a dead loopback proxy is not judged: hold it, wait for the network probe, re-run
+            return [], Outcome(status="error", error=f"network: cannot connect to proxy: {down}")
         if gate_failure_class(gates) == "environment":  # the gates cannot judge the work: no reviewer tokens spent
             return gates, Outcome(status="environment")
         gate_text = window_text("\n".join(f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], GATE_OUTPUT_CHARS)}"
