@@ -183,8 +183,12 @@ def test_unavailable_check_tool_sends_plan_back_once(cfg, tmp_path, monkeypatch)
 
 def test_broken_check_is_not_the_workers_fault(cfg):
     """Incident (b): the planner keeps a check with a tool the machine lacks; the work is done; the project must
-    finish without the owner and the worker must not be blamed."""
-    cfg = deep_merge(cfg, {"scripted": {"bad_check_tool": "nonexistent_tool_xyz", "bad_check_persists": True}})
+    finish without the owner and the worker must not be blamed. (Vetting the rewrite needs a real sandbox.)"""
+    from artel import sandbox
+
+    if not sandbox.bwrap_status(False)[0]:
+        pytest.skip("vetting needs a working sandbox backend")
+    cfg = deep_merge(cfg, {"sandbox": {"mode": "auto"}, "scripted": {"bad_check_tool": "nonexistent_tool_xyz", "bad_check_persists": True}})
     project, status = run_goal("Write a guide", cfg)
     assert status == "done"
     events = project.log.read()
@@ -242,6 +246,10 @@ def test_replan_can_change_checks_only_for_environment_failures(cfg, tmp_path):
 def _blocked_env_task(cfg, tmp_path, checks, baseline=None, result=None, isolated=False, claimed=True):
     """A task whose checks hit an environment failure. ``baseline`` files exist when the task is claimed (a snapshot
     of shared/, or the worktree's base commit under isolation), ``result`` files are the worker's submission."""
+    from artel import sandbox
+
+    # vetting executes unreviewed checks only inside a working sandbox: use the real one where the host has it
+    cfg = deep_merge(cfg, {"sandbox": {"mode": "auto" if sandbox.bwrap_status(False)[0] else "off"}})
     if isolated:
         cfg = deep_merge(cfg, {"isolation": {"worktrees": True}})
     project = Project.create("g", cfg, name="vet", workdir=str(tmp_path / "wd"))
@@ -263,12 +271,17 @@ def _blocked_env_task(cfg, tmp_path, checks, baseline=None, result=None, isolate
     return project, mgr, tid
 
 
+_NO_BACKEND = []   # filled by the no_backend fixture: those tests expect that there is none
+
+
 def _replan(mgr, tid, checks):
     """The replanner decides to rewrite the checks: vetted in the job (pool) the way the manager schedules it."""
     from unittest import mock
 
     from artel import manager as manager_mod
 
+    if not mgr._can_vet() and not _NO_BACKEND:
+        pytest.skip("vetting needs a working sandbox backend")
     with mock.patch.object(manager_mod, "run_agent", lambda *a, **k: _decision(checks)):
         out = mgr.job_replan(mgr.board.get(tid))
     mgr.on_replan(tid, out)
@@ -519,3 +532,69 @@ def test_untrusted_text_stays_inside_its_frame_in_the_reviewer_brief(cfg, tmp_pa
     from artel import prompts
 
     assert "data" in prompts.REVIEWER and "<vetting>" in prompts.UNTRUSTED
+
+
+@pytest.fixture
+def no_backend(monkeypatch):
+    from artel import sandbox
+
+    monkeypatch.setattr(sandbox, "bwrap_status", lambda network=True: (False, "no user namespaces"))
+    monkeypatch.setattr(sandbox, "seatbelt_status", lambda: (False, "no sandbox-exec"))
+    _NO_BACKEND.append(1)
+    yield
+    _NO_BACKEND.clear()
+
+
+def _no_vetting_runs(mgr, monkeypatch):
+    ran = []
+    orig = mgr.run_gates
+    monkeypatch.setattr(mgr, "run_gates", lambda task, **kw: ran.append(kw) or orig(task, **kw))
+    return ran
+
+
+def test_without_a_backend_a_weak_rewrite_waits_for_the_owner_and_nothing_is_executed(cfg, tmp_path, monkeypatch, no_backend):
+    from artel.humanize import block_question
+    from artel.manager import human_comment
+
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["pytest tests/test_x.py"], baseline={"f.txt": "old\n"},
+                                          result={"f.txt": "old\n", "out.txt": "x\n"})
+    ran = _no_vetting_runs(mgr, monkeypatch)
+    _replan(mgr, tid, ["test -e out.txt"])
+    t = mgr.board.get(tid)
+    assert not ran                                                          # vetting executed nothing
+    assert t["status"] == "blocked" and t["needs_human"] and t["checks"] == ["pytest tests/test_x.py"]
+    assert not project.log.read(kinds={"check/rewritten"})
+    q = block_question(mgr.board.comments(tid))                             # what the dashboard shows the owner
+    assert "подтвердите замену проверки" in q.lower() and "pytest tests/test_x.py" in q and "test -e out.txt" in q
+    human_comment(project, tid, "да")                                       # the existing answer path
+    t = mgr.board.get(tid)
+    assert t["checks"] == ["test -e out.txt"] and t["status"] == "review" and not t["needs_human"]
+    assert not mgr._needs_checks_confirmation(tid)                          # the owner already confirmed
+
+
+def test_the_owner_can_decline_a_replacement(cfg, tmp_path, no_backend):
+    from artel.manager import human_comment
+
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["pytest tests/test_x.py"], baseline={"f.txt": "old\n"})
+    _replan(mgr, tid, ["test -e out.txt"])
+    human_comment(project, tid, "нет, оставьте")
+    t = mgr.board.get(tid)
+    assert t["checks"] == ["pytest tests/test_x.py"] and t["status"] == "ready" and not t["checks_pending"]
+
+
+def test_without_a_backend_a_plain_rewrite_still_passes_on_the_reviewer(cfg, tmp_path, monkeypatch, no_backend):
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "old\n"},
+                                          result={"f.txt": "old\n", "foo.txt": "foo\n"})
+    ran = _no_vetting_runs(mgr, monkeypatch)
+    _replan(mgr, tid, ["grep -rq foo ."])
+    assert not ran and mgr.board.get(tid)["checks"] == ["grep -rq foo ."] and mgr.board.get(tid)["status"] == "review"
+    assert project.log.read(kinds={"check/rewritten"})[-1]["confirm"] == [] and not mgr._needs_checks_confirmation(tid)
+
+
+def test_a_vetting_run_never_executes_without_a_sandbox_even_if_the_config_says_require_false(cfg, tmp_path, no_backend):
+    cfg = deep_merge(cfg, {"sandbox": {"require": False, "mode": "off"}})
+    project = Project.create("g", cfg, name="vr", workdir=str(tmp_path / "wd"))
+    mgr = Manager(new_kernel(cfg), project)
+    marker = project.shared / "ran"
+    res = mgr.run_gates({"id": "t", "checks": [f"touch {marker}"]}, cwd=project.shared, record=False, vet=True)
+    assert res[0]["exit"] != 0 and "NOT run" in res[0]["output"] and not marker.exists()

@@ -45,7 +45,7 @@ FRAGMENTS = [
 
 
 # manager comments that hand a task to the owner
-ASKS = re.compile(r"Нужна настройка|Перепланирование|Менеджер передал")
+ASKS = re.compile(r"Нужна настройка|Перепланирование|Менеджер передал|Подтвердите замену проверки")
 
 
 def role_ru(role: Optional[str]) -> Optional[str]:

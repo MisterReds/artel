@@ -410,8 +410,7 @@ class Manager:
 
         cfg = self.cfg
         if vet:
-            cfg = {**cfg, "sandbox": {**(cfg.get("sandbox") or {}), "mode": "auto", "network": False,
-                                      "gates": True, "writable": []}}
+            cfg = self._vet_cfg()
         sb = sandbox.settings(cfg)
         if not vet and (self.cfg.get("provision") or {}).get("auto", True):
             from . import provision
@@ -438,6 +437,8 @@ class Manager:
             # gates run unsandboxed unless `sandbox.gates` asks for it (then writable: the gate cwd + temp)
             run = sandbox.plan(cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off",
                                project_root=self.project.root)
+            if vet and not run.sandboxed:  # vetting never executes unreviewed checks without isolation
+                run.error = run.error or run.note or "sandbox is off"
             if sandbox.refusal(run, cfg):  # demanded backend missing: the check does not run unsandboxed
                 res = {"command": cmd, "exit": -1, "output": f"command NOT run: {run.error}", "env": "sandbox"}
                 results.append(res)
@@ -929,7 +930,8 @@ class Manager:
             self.board.comment(task_id, "manager", f"Guidance: {d['guidance']}")
         if d.get("checks"):  # only an environment failure lets the manager rewrite the checks
             if env:
-                self._rewrite_checks(task, [str(c) for c in d["checks"]], vet)
+                if self._rewrite_checks(task, [str(c) for c in d["checks"]], vet):
+                    return  # waits for the owner
             else:
                 self.board.comment(task_id, "manager", "Checks are not changed: the failure was not an environment one.")
         if action == "retry" and env:  # the work was never judged: straight back to the review, no rework
@@ -976,21 +978,31 @@ class Manager:
                 ok = bool(trees) and self.snapper.export(trees[0], tmp)
             yield Path(tmp) if ok else None
 
-    def _rewrite_checks(self, task: dict, new: list, vet: Optional[dict]) -> None:
+    def _rewrite_checks(self, task: dict, new: list, vet: Optional[dict]) -> bool:
         """Accept a rewrite of the checks that was vetted by ``_vet_rewrite`` (in the job pool): a problem refuses
         it; reasons for confirmation are journaled with the evidence and the reviewer must confirm them. The task
-        goes through review, whose brief carries the old and the new checks."""
+        goes through review, whose brief carries the old and the new checks. Without a sandbox a weak rewrite was not
+        vetted: it waits for the owner (True) and the checks stay as they are."""
         task_id, old = task["id"], list(task["checks"])
         problem = "the rewrite was not vetted" if vet is None else vet["problem"]
         if problem:
             self.project.log.append("check/rejected", task_id=task_id, old=old, new=new, reason=problem)
             self.board.comment(task_id, "manager", f"Checks are not changed: the rewrite was refused ({problem}).")
-            return
+            return False
+        if vet.get("owner"):
+            self.board.update(task_id, status="blocked", needs_human=1, checks_pending=new, actor="manager")
+            self.project.log.append("check/pending", task_id=task_id, old=old, new=new, confirm=vet["confirm"])
+            self.board.comment(task_id, "manager", (
+                "Подтвердите замену проверки: изоляции нет, поэтому новые проверки не запускались, а замена слабее прежней.\n"
+                f"Было:\n{_fmt_list(old)}\nСтало:\n{_fmt_list(new)}\nПочему нужно ваше решение:\n"
+                + "\n".join(f"- {r}" for r in vet["confirm"]) + "\nОтветьте «да», чтобы заменить; иначе проверки останутся прежними."))
+            return True
         self.board.update(task_id, checks=new, checks_confirm=list(vet["confirm"]))  # the requirement lives on the row
         self.project.log.append("check/rewritten", task_id=task_id, old=old, new=new, confirm=vet["confirm"],
                                 evidence=vet["evidence"])
         self.board.comment(task_id, "manager", "Checks rewritten after an environment failure:\n" + _fmt_list(new)
                            + ("\nThe reviewer must confirm that they cover the criteria." if vet["confirm"] else ""))
+        return False
 
     def _vet_rewrite(self, task: dict, new: list) -> dict:
         """Judge a rewrite of the checks: ``{problem, confirm, evidence}``. Cheap syntactic refusals first, then the
@@ -1003,6 +1015,11 @@ class Manager:
         res = {"problem": checks.rewrite_problem(old, new, provision.absent_programs(new, path)), "confirm": [],
                "evidence": []}
         if res["problem"]:
+            return res
+        if not self._can_vet():  # no isolation: nothing of the worker's is executed by vetting
+            res["confirm"] = checks.confirmation_reasons(old, new, {p for p in (provision.leading_program(c) for c in old)
+                                                                  if p and not shutil.which(p, path=path)})
+            res["owner"] = bool(res["confirm"])  # a weak rewrite is the owner's call; a plain one passes on the reviewer
             return res
         with self._baseline(task["id"]) as base:
             if base is None:
@@ -1029,6 +1046,18 @@ class Manager:
         tail = lambda r: None if r is None else {"exit": r["exit"], "tail": str(r.get("output", ""))[-300:]}  # noqa: E731
         res["evidence"] = [{"command": c, "baseline": tail(b), "result": tail(r)} for c, b, r in zip(new, on_base, on_result)]
         return res
+
+    def _vet_cfg(self) -> dict:
+        """The settings for vetting: the owner's sandbox mode, never required away, offline, the temporary tree only."""
+        return {**self.cfg, "sandbox": {**(self.cfg.get("sandbox") or {}), "network": False, "require": True,
+                                        "gates": True, "writable": []}}
+
+    def _can_vet(self) -> bool:
+        """Vetting executes unreviewed checks: only inside a working sandbox."""
+        from . import sandbox
+
+        cfg = self._vet_cfg()
+        return sandbox.plan(cfg, "true", cwd=str(self.project.root), writable=[], mode=None).sandboxed
 
     def _base_moved(self, task_id: str) -> bool:
         base = self._task_base(task_id)
@@ -1312,12 +1341,33 @@ class Manager:
         return final
 
 
+_YES = re.compile(r"\s*(да|ок|окей|подтвержда\w*|согласен|согласна|yes|y|ok|okay|confirm\w*)\b", re.I)
+
+
+def _answer_checks(project: Project, task: dict, body: str) -> dict:
+    """The owner's answer to «подтвердите замену проверки»: a yes puts the pending checks in place and the task goes
+    back to review (the work was never judged); anything else keeps the old checks and the task goes on."""
+    tid, new, old = task["id"], task["checks_pending"], task["checks"]
+    yes = bool(_YES.match(body))
+    if yes:
+        project.board.update(tid, checks=new, checks_pending=[], checks_confirm=[], status="review", needs_human=0,
+                             attempts=0, no_progress=0, backoff_until=0, actor="human")
+        project.log.append("check/rewritten", task_id=tid, old=old, new=new, confirm=[], evidence=[], owner_confirmed=True)
+    else:
+        project.board.update(tid, checks_pending=[], status="ready", needs_human=0, attempts=0, no_progress=0,
+                             backoff_until=0, actor="human")
+        project.log.append("check/rejected", task_id=tid, old=old, new=new, reason="the owner did not confirm")
+    return project.board.get(tid)
+
+
 def human_comment(project: Project, task_id: str, body: str) -> dict:
     """A human message on a task. Unblocks tasks waiting on a human."""
     task = project.board.get(task_id)
     if task is None:
         raise KeyError(task_id)
     project.board.comment(task_id, "human", body)
+    if task["status"] == "blocked" and task["needs_human"] and task["checks_pending"]:
+        return _answer_checks(project, task, body)
     if task["status"] == "blocked" and task["needs_human"]:
         project.board.update(task_id, status="ready", needs_human=0, attempts=0, no_progress=0, backoff_until=0,
                              actor="human")
@@ -1357,7 +1407,7 @@ def continue_after_human(project: Project) -> list:
     reopened = []
     for t in project.board.list(status=["blocked"]):
         if t["needs_human"]:
-            project.board.update(t["id"], status="ready", needs_human=0, attempts=0, no_progress=0, backoff_until=0,
+            project.board.update(t["id"], status="ready", needs_human=0, checks_pending=[], attempts=0, no_progress=0, backoff_until=0,
                                  actor="human")
             project.board.comment(t["id"], "human", "Продолжено человеком.")
             reopened.append(t["id"])
