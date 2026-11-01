@@ -452,7 +452,7 @@ class Manager:
                                          for g in gates) or "(no automated gates)", REVIEW_GATES_CHARS)
         user = (f"{self.task_card(task)}\n\n<submission by=\"{task['assignee']}\">\n<summary>\n{window_text(task['result'] or '', REVIEW_SUMMARY_CHARS)}\n"
                 f"</summary>\n<evidence>\n{window_text(task['evidence'] or '', REVIEW_EVIDENCE_CHARS)}\n</evidence>\n</submission>\n\n"
-                f"{changed}<gate_results>\n{gate_text}\n</gate_results>\n\nReview it now.")
+                f"{changed}{self._rewritten_brief(task['id'])}<gate_results>\n{gate_text}\n</gate_results>\n\nReview it now.")
         ctx = ToolContext(self.kernel, self.project, role="reviewer", workspace=wt or self.project.shared, task=task,
                           deliverables=wt)
         out = run_agent(self.kernel, self.project, role="reviewer", system=self._with_instructions(prompts.REVIEWER, "reviewer"), first_user=user, ctx=ctx,
@@ -843,9 +843,7 @@ class Manager:
             self.board.comment(task_id, "manager", f"Guidance: {d['guidance']}")
         if d.get("checks"):  # only an environment failure lets the manager rewrite the checks
             if env:
-                self.board.update(task_id, checks=[str(c) for c in d["checks"]])
-                self.board.comment(task_id, "manager", "Checks rewritten after an environment failure:\n"
-                                   + _fmt_list(d["checks"]))
+                self._rewrite_checks(task, [str(c) for c in d["checks"]])
             else:
                 self.board.comment(task_id, "manager", "Checks are not changed: the failure was not an environment one.")
         if action == "retry" and env:  # the work was never judged: straight back to the review, no rework
@@ -875,6 +873,32 @@ class Manager:
             self.board.update(task_id, status="blocked", needs_human=1)
             self.note("escalated", task_id=task_id, rationale=d["rationale"])
             self.ask_doctor(task_id, f"Менеджер передал задачу человеку: {d['rationale']}")
+
+    def _rewrite_checks(self, task: dict, new: list) -> None:
+        """Accept a rewrite of the checks only when it keeps them meaningful (see ``checks.rewrite_problem``); the
+        task goes through review, whose brief carries the old and the new checks."""
+        from . import checks, provision
+
+        task_id, old = task["id"], list(task["checks"])
+        path = agent_env("native", None, self.cfg).get("PATH") or os.defpath
+        if (self.cfg.get("provision") or {}).get("auto", True):
+            provision.prepare_checks(new, self.cfg, self.project.log.append)
+        problem = checks.rewrite_problem(old, new, provision.absent_programs(new, path))
+        if problem:
+            self.project.log.append("check/rejected", task_id=task_id, old=old, new=new, reason=problem)
+            self.board.comment(task_id, "manager", f"Checks are not changed: the rewrite was refused ({problem}).")
+            return
+        self.board.update(task_id, checks=new)
+        self.project.log.append("check/rewritten", task_id=task_id, old=old, new=new)
+        self.board.comment(task_id, "manager", "Checks rewritten after an environment failure:\n" + _fmt_list(new))
+
+    def _rewritten_brief(self, task_id: str) -> str:
+        ev = [e for e in self.project.log.read(kinds={"check/rewritten"}) if e.get("task_id") == task_id]
+        if not ev:
+            return ""
+        return (f"<checks_rewritten>\n<old>\n{_fmt_list(ev[0]['old'])}\n</old>\n<new>\n{_fmt_list(ev[-1]['new'])}\n</new>\n"
+                "These checks were rewritten after an environment failure. Confirm that the new checks verify the "
+                "same criteria as the old ones; if they verify less, the review fails.\n</checks_rewritten>\n\n")
 
     def _audit_failed(self, reason: str) -> None:
         """An audit that ended without a verdict is retried the way a task is: after the provider's limit resets

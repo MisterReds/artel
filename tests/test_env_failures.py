@@ -204,3 +204,56 @@ def test_replan_can_change_checks_only_for_environment_failures(cfg, tmp_path):
                        gates=[{"command": "rg foo", "exit": 127}])
     mgr.on_replan(tid, out)
     assert mgr.board.get(tid)["checks"] == ["grep foo ."]
+
+
+# --- rewritten checks are vetted ----------------------------------------------
+
+def _blocked_env_task(cfg, tmp_path, checks):
+    project = Project.create("g", cfg, name="vet", workdir=str(tmp_path / "wd"))
+    mgr = Manager(new_kernel(cfg), project)
+    tid = mgr.board.add_task("T", "b", assignee="x", criteria=["c"], checks=checks, created_by="planner")
+    mgr.board.update(tid, status="blocked")
+    project.log.append("review/verdict", task_id=tid, passed=False, feedback="f", failure_class="environment",
+                       gates=[{"command": checks[0], "exit": 127}])
+    return project, mgr, tid
+
+
+def _decision(checks):
+    from artel.agent import Outcome
+
+    return Outcome(status="terminal", terminal=("replan_decision", {
+        "action": "retry", "rationale": "r", "guidance": "", "assignee": "", "new_worker": {}, "subtasks": [],
+        "checks": checks}))
+
+
+@pytest.mark.parametrize("bad", [["true"], [":"], ["exit 0"], ["echo ok"], ["test 1"], ["pytest || true"],
+                                 ["nonexistent_tool_xyz foo"], ["printf done"], ["exit 0"]])
+def test_trivial_or_unrunnable_rewrites_are_rejected(cfg, tmp_path, bad):
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"])
+    mgr.on_replan(tid, _decision(bad))
+    assert mgr.board.get(tid)["checks"] == ["rg foo"]
+    assert project.log.read(kinds={"check/rejected"}) and not project.log.read(kinds={"check/rewritten"})
+
+
+def test_rewrite_must_not_drop_checks(cfg, tmp_path):
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo", "rg bar"])
+    mgr.on_replan(tid, _decision(["grep foo ."]))
+    assert mgr.board.get(tid)["checks"] == ["rg foo", "rg bar"]
+
+
+def test_rg_to_grep_is_accepted_journaled_and_reviewed_against_the_old_checks(cfg, tmp_path, monkeypatch):
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"])
+    mgr.on_replan(tid, _decision(["grep foo ."]))
+    assert mgr.board.get(tid)["checks"] == ["grep foo ."]
+    ev = project.log.read(kinds={"check/rewritten"})
+    assert ev and ev[-1]["old"] == ["rg foo"] and ev[-1]["new"] == ["grep foo ."]
+    assert mgr.board.get(tid)["status"] == "review"
+    seen = []
+    from artel import manager as manager_mod
+    from artel.agent import Outcome
+
+    monkeypatch.setattr(manager_mod, "run_agent", lambda *a, **k: seen.append(k["first_user"]) or Outcome(status="error"))
+    mgr.job_review(mgr.board.get(tid))
+    brief = seen[0]
+    assert "<checks_rewritten>" in brief and "rg foo" in brief and "grep foo ." in brief
+    assert "same criteria" in brief
