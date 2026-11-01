@@ -319,6 +319,20 @@ class Manager:
             goal=self.project.goal, attempt=task["attempts"] + 1)
 
     # --- jobs -----------------------------------------------------------
+    def _ensure_worktree(self, task_id: str) -> Path:
+        """The task's worktree; the commit its branch started from is journaled once, when the task is first
+        claimed. That record (the project log, which no worker writes) is the baseline for vetting rewritten checks."""
+        wt = self.iso.ensure(task_id)
+        if not self._task_base(task_id):
+            sha = self.iso.claim_base(task_id)
+            if sha:
+                self.note("task_base", task_id=task_id, sha=sha)
+        return wt
+
+    def _task_base(self, task_id: str) -> str:
+        return next((e.get("sha", "") for e in self.project.log.read(kinds={"manager/task_base"})
+                     if e.get("task_id") == task_id), "")
+
     def job_work(self, task: dict) -> tuple[Outcome, ToolContext]:
         persona = self.project.persona(task["assignee"])
         run_id = self.board.start_run(task["id"], persona.name)
@@ -330,7 +344,7 @@ class Manager:
         seq0 = self.project.log.seq
         if self.iso is not None:  # the worker writes into its own worktree; shared/ changes only on acceptance
             try:
-                ctx.deliverables = self.iso.ensure(task["id"])
+                ctx.deliverables = self._ensure_worktree(task["id"])
             except IsolationError as exc:
                 out = Outcome(status="error", error=f"isolation: {exc}")
                 self.board.finish_run(run_id, "error", out.error)
@@ -938,7 +952,8 @@ class Manager:
         with tempfile.TemporaryDirectory(prefix="artel-baseline-") as tmp:
             ok = False
             if self.iso is not None:
-                ok = self.iso.exists(task_id) and self.iso.export_base(task_id, tmp)
+                base = self._task_base(task_id)
+                ok = bool(base) and self.iso.exists(task_id) and self.iso.export_base(task_id, tmp, base)
             else:
                 trees = [e.get("tree") for e in self.project.log.read(kinds={"manager/snapshot"})
                          if e.get("task_id") == task_id and e.get("tree")]
@@ -971,6 +986,9 @@ class Manager:
         from . import checks
 
         with self._baseline(task["id"]) as base:
+            if base is None and self.iso is not None and self._task_base(task["id"]) and self.iso.exists(task["id"]) \
+                    and not self.iso.base_intact(task["id"], self._task_base(task["id"])):
+                return "база задачи изменена"
             if base is None:
                 return "the task has no baseline (no worktree base commit or claim-time snapshot) to compare the checks against"
             on_base = self.run_gates(task, cwd=base, checks=new, record=False)

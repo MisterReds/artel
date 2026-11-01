@@ -246,7 +246,7 @@ def _blocked_env_task(cfg, tmp_path, checks, baseline=None, result=None, isolate
     for name, text in (baseline or {}).items():
         (project.shared / name).write_text(text)
     if isolated:
-        where = mgr.iso.ensure(tid)
+        where = mgr._ensure_worktree(tid)       # records the base commit, as job_work does at claim time
     else:
         if claimed:
             mgr.note("snapshot", task_id=tid, tree=mgr.snapper.track())      # what job_work records at claim time
@@ -336,3 +336,30 @@ def test_rg_to_grep_is_accepted_journaled_and_reviewed_against_the_old_checks(cf
     brief = seen[0]
     assert "<checks_rewritten>" in brief and "rg foo" in brief and "grep -rq foo ." in brief
     assert "same criteria" in brief
+
+
+def test_a_worker_moving_main_does_not_move_the_baseline(cfg, tmp_path, monkeypatch):
+    """The baseline is the commit recorded at claim time. The old merge-base(main, branch) followed `git branch -f`."""
+    import subprocess
+
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "old\n"}, isolated=True)
+    wt = mgr.iso.path(tid)
+    (wt / "foo.txt").write_text("foo\n")
+    mgr.iso.commit(tid, "work")
+    subprocess.run(["git", f"--git-dir={mgr.iso.git_dir}", "branch", "-f", "main", mgr.iso.branch(tid)], check=True)
+    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    assert mgr.board.get(tid)["checks"] == ["grep -rq foo ."]
+
+
+def test_a_branch_that_lost_the_recorded_base_rejects_the_rewrite(cfg, tmp_path):
+    import subprocess
+
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "old\n"}, isolated=True)
+    wt = mgr.iso.path(tid)
+    subprocess.run(["git", "-C", str(wt), "checkout", "-q", "--orphan", "x"], check=True)
+    subprocess.run(["git", "-C", str(wt), "-c", "user.name=a", "-c", "user.email=a@a", "commit", "-q", "-m", "r", "--allow-empty"],
+                   check=True)
+    subprocess.run(["git", f"--git-dir={mgr.iso.git_dir}", "branch", "-f", mgr.iso.branch(tid), "x"], check=True)
+    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    assert mgr.board.get(tid)["checks"] == ["rg foo"]
+    assert "база задачи изменена" in project.log.read(kinds={"check/rejected"})[-1]["reason"]

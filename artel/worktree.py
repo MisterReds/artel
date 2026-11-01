@@ -203,15 +203,28 @@ class Isolation:
                 raise IsolationError(f"merging the updated base failed: {(p.stderr or p.stdout).strip()[:800]}")
             return sorted(conflicts)
 
-    def export_base(self, task_id: str, dest) -> bool:
-        """Write the task's baseline (the shared deliverables as its branch started from them, before any of its own
-        work) into the empty directory ``dest``."""
+    def claim_base(self, task_id: str) -> str:
+        """The commit the task's branch started from, read right after the worktree was created for the first
+        claim (before any worker ran): the merge base of main and the branch."""
         with self.lock:
-            base = self._repo("merge-base", MAIN, self.branch(task_id), check=False)
-            if base.returncode != 0 or not base.stdout.strip():
+            p = self._repo("merge-base", MAIN, self.branch(task_id), check=False)
+            return p.stdout.strip() if p.returncode == 0 else ""
+
+    def base_intact(self, task_id: str, base: str) -> bool:
+        """``base`` (recorded by the manager when the task was claimed) is still an ancestor of the task's branch.
+        What a worker does to main or to the branch in the shared git dir cannot move the recorded commit."""
+        with self.lock:
+            return bool(base) and self._repo("merge-base", "--is-ancestor", base, self.branch(task_id),
+                                             check=False).returncode == 0
+
+    def export_base(self, task_id: str, dest, base: str) -> bool:
+        """Write the task's baseline (the commit ``base`` recorded at claim time: the shared deliverables before any
+        of its own work) into the empty directory ``dest``. False when the base is not an ancestor of the branch."""
+        with self.lock:
+            if not self.base_intact(task_id, base):
                 return False
             try:
-                p = subprocess.run(["git", f"--git-dir={self.git_dir}", "archive", "--format=tar", base.stdout.strip()],
+                p = subprocess.run(["git", f"--git-dir={self.git_dir}", "archive", "--format=tar", base],
                                    capture_output=True, timeout=300, env=_clean_git_env())
             except (OSError, subprocess.SubprocessError):
                 return False
