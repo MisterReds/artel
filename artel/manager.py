@@ -53,6 +53,7 @@ MANAGER_BRIEF_CHARS = 3200
 TICK_S = 0.5
 NETWORK_PROBE_S = 30.0         # first probe after a network failure; doubles up to the max
 NETWORK_PROBE_MAX_S = 600.0
+NETWORK_ESCALATE_S = 3600.0     # a wait this long also raises a needs-human notice
 BACKOFF_BASE_S = 10
 BACKOFF_CAP_S = 600
 REFINE_EVERY_FAILURES = 3
@@ -580,9 +581,20 @@ class Manager:
             return
         base = float(self.cfg.get("network_probe_s", NETWORK_PROBE_S))
         now = time.time()
-        self.net_wait = {"since": now, "delay": base, "next": now + base, "reason": reason[:300]}
+        self.net_wait = {"since": now, "delay": base, "next": now + base, "reason": reason[:300], "escalated": False}
         self.project.set_meta(network_wait={"since": now, "reason": reason[:300], "next_probe": now + base})
         self.note("network_wait", reason=reason[:300], next_probe=now + base)
+
+    def _escalate_network_wait(self, w: dict, now: float) -> None:
+        """A wait longer than ``network_wait_escalate_s`` also tells the owner (an attention item for the dashboard
+        and a Telegram message, both derived from the project meta); probing carries on and the notice goes away
+        with the wait."""
+        if w["escalated"] or now - w["since"] < float(self.cfg.get("network_wait_escalate_s", NETWORK_ESCALATE_S)):
+            return
+        w["escalated"] = True
+        self.project.set_meta(network_wait={"since": w["since"], "reason": w["reason"], "next_probe": w["next"],
+                                            "escalated": True})
+        self.note("network_wait_escalated", waited_s=round(now - w["since"], 1), reason=w["reason"])
 
     def _network_tick(self) -> bool:
         """Probe when due; True while the network is still down."""
@@ -590,6 +602,7 @@ class Manager:
         if w is None:
             return False
         now = time.time()
+        self._escalate_network_wait(w, now)
         if now < w["next"]:
             return True
         ok, where = netprobe.reachable(self.cfg)
@@ -600,7 +613,8 @@ class Manager:
             return False
         w["delay"] = min(float(self.cfg.get("network_probe_max_s", NETWORK_PROBE_MAX_S)), w["delay"] * 2)
         w["next"] = now + w["delay"]
-        self.project.set_meta(network_wait={"since": w["since"], "reason": w["reason"], "next_probe": w["next"]})
+        self.project.set_meta(network_wait={"since": w["since"], "reason": w["reason"], "next_probe": w["next"],
+                                            "escalated": w["escalated"]})
         self.note("network_probe_failed", probe=where, next_probe=w["next"])
         return True
 

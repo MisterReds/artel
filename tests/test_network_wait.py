@@ -119,3 +119,51 @@ def test_stop_during_planning_network_wait_ends_stopped(tmp_path, monkeypatch):
     threading.Timer(0.6, m.stop.set).start()
     assert m.run() == "stopped"
     assert project.meta["status"] == "stopped"
+
+
+def _waiting_manager(tmp_path, monkeypatch, escalate_s):
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "network_probe_s": 0.01, "network_probe_max_s": 0.02,
+                                      "network_wait_escalate_s": escalate_s})
+    project = Project.create("g", cfg, name="long", workdir=str(tmp_path / "wd"))
+    mgr = Manager(new_kernel(cfg), project)
+    from artel import netprobe
+
+    state = {"up": False}
+    monkeypatch.setattr(netprobe, "reachable", lambda config, timeout=5.0: (state["up"], "proxy:1"))
+    mgr._enter_network_wait("ConnectError: refused")
+    return project, mgr, state
+
+
+def test_long_network_wait_raises_a_needs_human_notice_and_keeps_probing(tmp_path, monkeypatch):
+    from artel.analytics import project_stats
+
+    project, mgr, state = _waiting_manager(tmp_path, monkeypatch, escalate_s=0.15)
+    deadline = time.time() + 5
+    while time.time() < deadline and not project.log.read(kinds={"manager/network_wait_escalated"}):
+        mgr._network_tick()
+        time.sleep(0.02)
+    ev = project.log.read(kinds={"manager/network_wait_escalated"})
+    assert len(ev) == 1                                   # once, however long the wait lasts
+    for _ in range(5):
+        mgr._network_tick()
+        time.sleep(0.03)
+    assert len(project.log.read(kinds={"manager/network_wait_escalated"})) == 1
+    assert len(project.log.read(kinds={"manager/network_probe_failed"})) >= 2 and mgr.net_wait is not None  # still probing
+    stats = project_stats(Project.open(project.slug, mgr.cfg), live=True)
+    notice = [a for a in stats["attention"] if a.get("kind") == "network_wait"]
+    assert notice and "сет" in notice[0]["question"].lower() and stats["stage"] == "network_wait"
+    state["up"] = True                                    # the network is back: the notice goes away by itself
+    time.sleep(0.05)
+    mgr._network_tick()
+    assert mgr.net_wait is None
+    assert not [a for a in project_stats(Project.open(project.slug, mgr.cfg), live=True)["attention"]
+                if a.get("kind") == "network_wait"]
+
+
+def test_short_network_wait_does_not_escalate(tmp_path, monkeypatch):
+    project, mgr, state = _waiting_manager(tmp_path, monkeypatch, escalate_s=3600)
+    for _ in range(5):
+        mgr._network_tick()
+        time.sleep(0.03)
+    assert not project.log.read(kinds={"manager/network_wait_escalated"})

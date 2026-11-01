@@ -204,6 +204,13 @@ def project_stats(project: Project, live: bool = False) -> dict:
                   "заблокирована", "assignee": t["assignee"],
                   "question": block_question(project.board.comments(t["id"])) if t["needs_human"] else ""}
                  for t in work if t["status"] == "blocked"]
+    nw = meta.get("network_wait") or {}
+    if nw.get("escalated"):  # a long outage the owner may be able to fix (proxy, VPN); the project resumes by itself
+        hours = max(1, round((time.time() - nw.get("since", time.time())) / 3600))
+        attention.append({"kind": "network_wait", "task_id": "", "title": "Нет сети", "reason": "нужно внимание владельца",
+                          "assignee": "", "since": nw.get("since"),
+                          "question": f"Нет сети или недоступен прокси уже около {hours} ч ({nw.get('reason', '')[:120]}). "
+                                      "Проверьте подключение; проект продолжится сам, когда сеть появится."})
     return {
         "slug": project.slug, "name": meta["name"], "goal": meta["goal"], "status": meta["status"],
         "stage": stage_of(project, tasks), "live": live, "created_at": meta["created_at"],

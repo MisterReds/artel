@@ -123,3 +123,18 @@ def test_waiting_project_is_announced_and_answered_from_the_phone(bot, monkeypat
     assert any("Нужен человек" in t and "Подключения" in t for t in tg.texts(9))
     b.notify_once()  # no duplicate notification
     assert sum("Нужен человек" in t for t in tg.texts(9)) == 1
+
+
+def test_long_network_wait_is_announced_once_in_telegram(bot, tmp_path):
+    b, tg, runner = bot
+    b.store.data["paired"] = [5]
+    from artel.project import Project
+
+    p = Project.create("g", runner.config, name="Отчёт", workdir=str(tmp_path / "wd"))
+    p.set_meta(status="running", network_wait={"since": time.time() - 4000, "reason": "refused", "next_probe": 0,
+                                                "escalated": True})
+    b.notify_once()
+    assert any("нет сети" in t.lower() and "Отчёт" in t for t in tg.texts(5))
+    n = len(tg.texts(5))
+    b.notify_once()
+    assert len(tg.texts(5)) == n                          # no duplicates while the same wait lasts
