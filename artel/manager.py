@@ -362,17 +362,20 @@ class Manager:
         except Exception as exc:  # noqa: BLE001 - the guardian must never break a run
             self.note("guardian_error", task_id=task["id"], error=repr(exc))
 
+    def _gate_env(self, cwd) -> dict:
+        # gates observe, they must not change the deliverable (bytecode / pytest caches made reviewers reject
+        # work that had been cleaned up before the gate ran)
+        return agent_env("native", {"PYTHONDONTWRITEBYTECODE": "1", "ARTEL_SHARED": str(cwd),
+                                    "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()},
+                         self.cfg)
+
     def run_gates(self, task: dict, cwd=None) -> list[dict]:
         """Run the task's shell checks in ``cwd`` (the task worktree under isolation, else shared/)."""
         from . import sandbox
 
         results = []
         cwd = cwd or self.project.shared
-        # gates observe, they must not change the deliverable (bytecode / pytest caches made reviewers reject
-        # work that had been cleaned up before the gate ran)
-        env = agent_env("native", {"PYTHONDONTWRITEBYTECODE": "1", "ARTEL_SHARED": str(cwd),
-                                   "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()},
-                        self.cfg)
+        env = self._gate_env(cwd)
         sb = sandbox.settings(self.cfg)
         if (self.cfg.get("provision") or {}).get("auto", True):
             from . import provision
@@ -423,15 +426,14 @@ class Manager:
 
     @staticmethod
     def _gate_env_cause(cmd: str, returncode: int, genv: dict) -> str:
-        """Why a failed check says nothing about the work, from the machine alone ('' = it does): a program it
-        starts is absent from the gate's PATH, or the loopback proxy refuses the runner's connection."""
-        from . import netprobe, provision
+        """Why a failed check says nothing about the work, from the machine alone ('' = it does): the shell could not
+        find or run the check's first program (exit 126/127) and that program is absent from the gate's PATH. Nothing
+        else is an environment failure; the sandbox sentinel is decided by the caller."""
+        from . import provision
 
-        if returncode == 0:
-            return ""
-        if provision.absent_programs([cmd], genv.get("PATH") or os.defpath):
+        if returncode in (126, 127) and provision.leading_absent(cmd, genv.get("PATH") or os.defpath):
             return "missing_tool"
-        return "proxy" if netprobe.loopback_proxy_down(genv) else ""
+        return ""
 
     def job_review(self, task: dict) -> tuple[list, Outcome]:
         wt, changed = None, ""

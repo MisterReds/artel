@@ -93,7 +93,35 @@ def test_gates_classify_by_what_the_machine_lacks(cfg, tmp_path):
     assert cls("echo done") is None
 
 
-def test_dead_loopback_proxy_is_environmental_only_when_the_runner_cannot_reach_it(cfg, tmp_path, monkeypatch):
+def test_environment_only_when_the_first_program_of_the_first_segment_is_absent(cfg, tmp_path):
+    from artel.failures import gate_failure_class
+
+    def cls(*checks):
+        return gate_failure_class(_gates(cfg, tmp_path, list(checks)))
+
+    assert cls("pytest -q --no-such-option-xyz && ruff check .") == "work"       # pytest fails; ruff never matters
+    assert cls("for f in tests/*.py; do python3 $f; done") == "work"             # `for`, `f` are not programs
+    assert cls("for f in a; do nonexistent_tool_xyz $f; done") == "work"          # not the first segment's program
+    assert cls("python3 -c 'exit(1)' && nonexistent_tool_xyz") == "work"
+    assert cls("ok=1; nonexistent_tool_xyz") == "work"                            # first segment is not a program
+    assert cls("nonexistent_tool_xyz") == "environment"
+    assert cls("X=1 nonexistent_tool_xyz --version && echo hi") == "environment"
+
+
+def test_first_programs_skips_loop_headers_and_variables():
+    from artel.provision import first_programs, leading_program
+
+    assert first_programs(["for f in tests/*.py; do python3 $f; done"]) == {"python3"}
+    assert first_programs(["while read l; do grep x $l; done < f"]) == {"grep"}   # `read` is a builtin
+    assert first_programs(["case $x in a) ;; esac"]) == set()
+    assert leading_program("for f in a; do python3 $f; done") is None
+    assert leading_program("FOO=1 BAR=2 rg x") == "rg"
+    assert leading_program("cd d && rg x") is None
+
+
+def test_a_dead_loopback_proxy_is_never_an_environment_verdict(cfg, tmp_path, monkeypatch):
+    """The proxy is not consulted when classifying: an ordinary failing check stays 'work' (the gate is held
+    elsewhere, see test_network_wait)."""
     import socket
 
     from artel.failures import gate_failure_class
@@ -101,12 +129,9 @@ def test_dead_loopback_proxy_is_environmental_only_when_the_runner_cannot_reach_
     s = socket.socket()
     s.bind(("127.0.0.1", 0))
     port = s.getsockname()[1]
-    s.listen(1)
-    monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{port}")
-    up = gate_failure_class(_gates(cfg, tmp_path, ["echo ProxyError 127.0.0.1 >&2; exit 1"]))
     s.close()
-    down = gate_failure_class(_gates(cfg, tmp_path, ["exit 1"]))
-    assert up == "work" and down == "environment"
+    monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{port}")
+    assert gate_failure_class(_gates(cfg, tmp_path, ["exit 1"])) == "work"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlink fixture")

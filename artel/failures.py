@@ -53,8 +53,8 @@ def classify(text: str) -> str:
 
 # A gate that cannot run here says nothing about the work. That is decided from the machine, never from text the
 # checked command printed (it can print anything): the manager marks a failed gate ``env`` when its first program
-# is absent from the gate's PATH, the sandbox launcher reported that the command never started, or the loopback
-# proxy refuses the runner's own connection.
+# is absent from the gate's PATH and the shell exited 126/127, or the sandbox launcher reported that the command
+# never started. Everything else is a work failure (a dead proxy holds the gate instead, see Manager.job_review).
 
 
 def gate_failure_class(gates: list) -> Optional[str]:

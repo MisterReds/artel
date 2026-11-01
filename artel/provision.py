@@ -349,21 +349,38 @@ _BUILTINS = {"cd", "echo", "test", "export", "set", "unset", "true", "false", "e
              "bash", ":"}
 
 
+_HEADERS = {"for", "case", "select"}  # `for X in ...` / `case X in`: the line names a variable, not a program
+
+
+def _segments(cmd) -> list:
+    cmd = re.sub(r"\d*[<>]&\d*|&>>?", " ", str(cmd))  # 2>&1 is a redirect, not a command separator
+    return re.split(r"&&|\|\||[;|\n&]", cmd)
+
+
+def _segment_program(seg: str) -> Optional[str]:
+    """The program a shell segment starts with; None when it starts with nothing that is one (a loop header, a
+    builtin, only assignments)."""
+    try:
+        words = shlex.split(seg.strip().lstrip("({!"), posix=True)
+    except ValueError:
+        return None
+    while words and (words[0] in _KEYWORDS or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])):
+        if words[0] in _HEADERS:
+            return None
+        words.pop(0)
+    if words and NAME_RE.match(words[0]) and not words[0].isdigit() and words[0] not in _BUILTINS:
+        return words[0]
+    return None
+
+
 def first_programs(checks) -> set:
     """The program each shell segment of the checks starts with (words that are not obviously a program are skipped)."""
-    out = set()
-    for cmd in checks or []:
-        cmd = re.sub(r"\d*[<>]&\d*|&>>?", " ", str(cmd))  # 2>&1 is a redirect, not a command separator
-        for seg in re.split(r"&&|\|\||[;|\n&]", cmd):
-            try:
-                words = shlex.split(seg.strip().lstrip("({!"), posix=True)
-            except ValueError:
-                continue
-            while words and (words[0] in _KEYWORDS or re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0])):
-                words.pop(0)
-            if words and NAME_RE.match(words[0]) and not words[0].isdigit() and words[0] not in _BUILTINS:
-                out.add(words[0])
-    return out
+    return {p for cmd in checks or [] for seg in _segments(cmd) if (p := _segment_program(seg))}
+
+
+def leading_program(cmd) -> Optional[str]:
+    """The program the FIRST segment of ``cmd`` starts with (None when it starts with none)."""
+    return _segment_program(_segments(cmd)[0])
 
 
 def known_tools() -> set:
@@ -378,6 +395,12 @@ def known_tools() -> set:
 def absent_programs(checks, path: str) -> list:
     """The first programs of the checks that do not resolve on ``path`` (the PATH the gate itself runs with)."""
     return sorted(p for p in first_programs(checks) if not shutil.which(p, path=path))
+
+
+def leading_absent(cmd, path: str) -> bool:
+    """The first program of the first segment of ``cmd`` does not resolve on ``path``."""
+    prog = leading_program(cmd)
+    return bool(prog) and not shutil.which(prog, path=path)
 
 
 def prepare_checks(checks, cfg: Optional[dict] = None, log: Log = None) -> list:
