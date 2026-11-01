@@ -58,7 +58,8 @@ check_conf() {
   [ -f "$CONF" ] || return 1
   if [ "$CHECK_CONF" = 1 ]; then
     # owner uid 0 AND group gid 0, mode exactly 0644 or 0600 (stat does not follow a symlink: a link has mode 777)
-    case "$(stat -c %u:%g:%a "$CONF")" in
+    st=$(stat -c %u:%g:%a "$CONF" 2>/dev/null || stat -f %u:%g:%Lp "$CONF") || die "cannot stat $CONF"
+    case "$st" in
       "$CONF_OWNER":644|"$CONF_OWNER":600) ;;
       *) die "$CONF must be owned by root:root (uid 0, gid 0) with mode 0644 or 0600" ;;
     esac
