@@ -508,10 +508,11 @@ class Manager:
                 self.project.set_meta(proxy_down=None)
         if gate_failure_class(gates) == "environment":  # the gates cannot judge the work: no reviewer tokens spent
             return gates, Outcome(status="environment")
-        gate_text = window_text("\n".join(f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], GATE_OUTPUT_CHARS)}"
-                                         for g in gates) or "(no automated gates)", REVIEW_GATES_CHARS)
-        user = (f"{self.task_card(task)}\n\n<submission by=\"{task['assignee']}\">\n<summary>\n{window_text(task['result'] or '', REVIEW_SUMMARY_CHARS)}\n"
-                f"</summary>\n<evidence>\n{window_text(task['evidence'] or '', REVIEW_EVIDENCE_CHARS)}\n</evidence>\n</submission>\n\n"
+        gate_text = prompts.neutralise(window_text("\n".join(
+            f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], GATE_OUTPUT_CHARS)}"
+            for g in gates) or "(no automated gates)", REVIEW_GATES_CHARS))
+        user = (f"{self.task_card(task)}\n\n<submission by=\"{task['assignee']}\">\n<summary>\n{prompts.neutralise(window_text(task['result'] or '', REVIEW_SUMMARY_CHARS))}\n"
+                f"</summary>\n<evidence>\n{prompts.neutralise(window_text(task['evidence'] or '', REVIEW_EVIDENCE_CHARS))}\n</evidence>\n</submission>\n\n"
                 f"{changed}{self._rewritten_brief(task['id'])}<gate_results>\n{gate_text}\n</gate_results>\n\nReview it now.")
         ctx = ToolContext(self.kernel, self.project, role="reviewer", workspace=wt or self.project.shared, task=task,
                           deliverables=wt)
@@ -1045,11 +1046,12 @@ class Manager:
             f"$ {e['command']}\n  baseline: " + (f"exit {e['baseline']['exit']}  {e['baseline']['tail'][-150:]!r}" if e["baseline"] else "not run")
             + "\n  result: " + (f"exit {e['result']['exit']}  {e['result']['tail'][-150:]!r}" if e["result"] else "not run")
             for e in last.get("evidence") or [])
-        why = "\n".join(f"- {r}" for r in self.board.get(task_id)["checks_confirm"])
+        why = prompts.neutralise("\n".join(f"- {r}" for r in self.board.get(task_id)["checks_confirm"]))
         ask = (f"These need your explicit confirmation:\n{why}\nPass only if the new checks verify the criteria, "
                "and then set checks_cover_criteria=true in review_verdict; otherwise the review fails.\n" if why else "")
-        return (f"<checks_rewritten>\n<old>\n{_fmt_list(ev[0]['old'])}\n</old>\n<new>\n{_fmt_list(last['new'])}\n</new>\n"
-                f"<vetting>\n{shown}\n</vetting>\n"
+        n = prompts.neutralise
+        return (f"<checks_rewritten>\n<old>\n{n(_fmt_list(ev[0]['old']))}\n</old>\n<new>\n{n(_fmt_list(last['new']))}\n</new>\n"
+                f"<vetting>\n{n(shown)}\n</vetting>\n"
                 "These checks were rewritten after an environment failure. Confirm that the new checks verify the "
                 f"same criteria as the old ones; if they verify less, the review fails.\n{ask}</checks_rewritten>\n\n")
 
