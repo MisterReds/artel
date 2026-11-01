@@ -19,10 +19,12 @@ ABI=/etc/apparmor.d/abi/4.0
 BWRAP=/usr/bin/bwrap
 CHECK_CONF=1
 NEED_ROOT=1
+CONF_OWNER=0:0
 # TESTHOOK-BEGIN (removed from the installed copy)
 if [ -n "${ARTEL_ROOT_TEST_BIN:-}" ]; then
   PATH="$ARTEL_ROOT_TEST_BIN:$PATH"; CONF="$ARTEL_ROOT_TEST_CONF"; PROFILE="$ARTEL_ROOT_TEST_PROFILE"
   ABI="$ARTEL_ROOT_TEST_ABI"; BWRAP="$ARTEL_ROOT_TEST_BWRAP"; CHECK_CONF=0; NEED_ROOT=0
+  if [ -n "${ARTEL_ROOT_TEST_CONF_OWNER:-}" ]; then CHECK_CONF=1; CONF_OWNER="$ARTEL_ROOT_TEST_CONF_OWNER"; fi
 fi
 # TESTHOOK-END
 cd /
@@ -55,12 +57,15 @@ service_like() {
 check_conf() {
   [ -f "$CONF" ] || return 1
   if [ "$CHECK_CONF" = 1 ]; then
-    [ "$(stat -c %u "$CONF")" = 0 ] || die "$CONF is not owned by root"
-    case "$(stat -c %a "$CONF")" in *[2367]?|*[2367]) die "$CONF is writable by others" ;; esac
+    # owner uid 0 AND group gid 0, mode exactly 0644 or 0600 (stat does not follow a symlink: a link has mode 777)
+    case "$(stat -c %u:%g:%a "$CONF")" in
+      "$CONF_OWNER":644|"$CONF_OWNER":600) ;;
+      *) die "$CONF must be owned by root:root (uid 0, gid 0) with mode 0644 or 0600" ;;
+    esac
   fi
 }
 
-# /etc/artel-root.conf (root-owned, not group/other writable). `allow=<name>` lines (exact package names, written by
+# /etc/artel-root.conf (uid 0, gid 0, mode 0644 or 0600). `allow=<name>` lines (exact package names, written by
 # the installer from the package map the owner consented to) are the only packages ever installed; no file, no
 # allowlist: nothing is installed.
 conf_allowed() {

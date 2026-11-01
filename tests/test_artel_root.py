@@ -225,3 +225,40 @@ def test_simulated_install_pulling_in_a_denied_package_is_refused(box, pulled):
     assert r.returncode != 0 and "would pull in" in r.stderr
     assert not any(c.startswith("apt-get install") for c in box.calls())    # only the simulation ran
     assert box("apt-install", "ripgrep", FAKE_APT_SIM="ripgrep libpcre2-8-0").returncode == 0
+
+
+@posix_only
+@pytest.mark.parametrize("mode,ok", [(0o644, True), (0o600, True), (0o640, False), (0o664, False), (0o666, False),
+                                     (0o620, False), (0o444, False), (0o755, False), (0o660, False)])
+def test_conf_mode_must_be_exactly_0644_or_0600(box, mode, ok):
+    conf = box.tmp / "artel-root.conf"
+    conf.write_text("allow=ripgrep\n")
+    conf.chmod(mode)
+    mine = f"{os.getuid()}:{os.getgid()}"
+    r = box("apt-install", "ripgrep", ARTEL_ROOT_TEST_CONF_OWNER=mine)
+    assert (r.returncode == 0) is ok, r.stderr
+    if not ok:
+        assert "0644 or 0600" in r.stderr and box.calls() == []
+
+
+@posix_only
+@pytest.mark.parametrize("owner", [lambda u, g: f"{u + 1}:{g}", lambda u, g: f"{u}:{g + 1}", lambda u, g: f"{u + 1}:{g + 1}"])
+def test_conf_must_belong_to_uid_0_and_gid_0_both(box, owner):
+    """Stand-in for root:root is this user's uid:gid; owner uid OR group gid different from it is refused."""
+    conf = box.tmp / "artel-root.conf"
+    conf.write_text("allow=ripgrep\n")
+    conf.chmod(0o644)
+    r = box("apt-install", "ripgrep", ARTEL_ROOT_TEST_CONF_OWNER=owner(os.getuid(), os.getgid()))
+    assert r.returncode != 0 and "root:root" in r.stderr and box.calls() == []
+    assert box("apt-install", "ripgrep", ARTEL_ROOT_TEST_CONF_OWNER=f"{os.getuid()}:{os.getgid()}").returncode == 0
+
+
+@posix_only
+def test_conf_symlink_is_refused(box):
+    real = box.tmp / "real.conf"
+    real.write_text("allow=ripgrep\n")
+    real.chmod(0o644)
+    (box.tmp / "artel-root.conf").unlink()
+    (box.tmp / "artel-root.conf").symlink_to(real)
+    r = box("apt-install", "ripgrep", ARTEL_ROOT_TEST_CONF_OWNER=f"{os.getuid()}:{os.getgid()}")
+    assert r.returncode != 0 and box.calls() == []

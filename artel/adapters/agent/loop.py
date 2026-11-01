@@ -122,6 +122,7 @@ def _policy_gate(project, ctx, actor: str, task_id, tool_input: dict, proc) -> b
         return False
     project.log.append("policy/blocked", actor=actor, task_id=task_id, command=command, decision=verdict.decision,
                        rule=verdict.rule.id, justification=verdict.justification)
+    policy.note_sudo(project.log, verdict, command, "hook", actor=actor, task_id=task_id)
     if verdict.decision == "prompt" and not ctx.terminal:
         ctx.terminal = policy.prompt_terminal(verdict, command)
         terminate_tree(proc)
@@ -290,6 +291,7 @@ class Run:
             return
         self.log("policy/blocked", command=cmd, decision=verdict.decision, rule=verdict.rule.id,
                  justification=verdict.justification, runtime=self.codec.NAME)
+        policy.note_sudo(self.project.log, verdict, cmd, "gateway", runtime=self.codec.NAME)
         if verdict.decision == "prompt":
             self.ctx.terminal = policy.prompt_terminal(verdict, cmd)
         else:

@@ -397,6 +397,7 @@ class Manager:
             if str((self.cfg.get("gates") or {}).get("policy", "enforce")).lower() != "off":
                 try:
                     verdict = policy.evaluate(cmd, self.project.root)
+                    policy.note_sudo(self.project.log, verdict, cmd, "gate", task_id=task["id"])
                     if verdict.decision != "allow":
                         reason = (f"blocked by policy ({verdict.decision}): "
                                   f"{verdict.rule.id}: {verdict.justification or verdict.decision}")

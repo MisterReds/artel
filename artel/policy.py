@@ -329,6 +329,16 @@ def _stamp(path: Path):
         return (str(path), None, None)
 
 
+SUDO_RULES = ("privilege-escalation", "root-wrapper")
+
+
+def note_sudo(log, verdict: Decision, command: str, where: str, **ctx) -> None:
+    """Journal an attempt at ``sudo`` / the root wrapper as ``policy/sudo``. These rules are a lint that catches
+    honest mistakes, not the security boundary (that is the wrapper's allowlist); the trace shows who tried."""
+    if verdict.decision != "allow" and verdict.rule is not None and verdict.rule.id in SUDO_RULES:
+        log.append("policy/sudo", rule=verdict.rule.id, where=where, command=command[:500], **ctx)
+
+
 def evaluate(command: str, project_dir=None) -> Decision:
     """Evaluate with a policy cached per (policy file paths, mtimes); edits reload it."""
     files = [artel_home() / "policy.yaml"] + ([Path(project_dir) / "policy.yaml"] if project_dir else [])

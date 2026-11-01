@@ -45,6 +45,7 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
         verdict = policy.evaluate(command, ctx.project.root)
     except policy.PolicyError as exc:
         raise ToolError(f"command policy is invalid, bash disabled until fixed: {exc}")
+    policy.note_sudo(ctx.project.log, verdict, command, "bash", actor=ctx.actor, task_id=(ctx.task or {}).get("id"))
     if verdict.decision == "forbidden":
         raise ToolError(f"command blocked by policy ({verdict.rule.id}): {verdict.justification or 'forbidden'}; command: {command}")
     if verdict.decision == "prompt":
