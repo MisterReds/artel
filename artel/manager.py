@@ -56,6 +56,9 @@ MANAGER_BRIEF_CHARS = 3200
 TICK_S = 0.5
 NETWORK_PROBE_S = 30.0         # first probe after a network failure; doubles up to the max
 NETWORK_PROBE_MAX_S = 600.0
+PROXY_HOLDS_MAX = 3            # a failing gate next to a dead loopback proxy is held this many times (or this long)
+PROXY_HOLD_S = 1800.0
+PROXY_HOLD = "network: cannot connect to proxy: "
 NETWORK_ESCALATE_S = 3600.0     # a wait this long also raises a needs-human notice
 BACKOFF_BASE_S = 10
 BACKOFF_CAP_S = 600
@@ -95,6 +98,7 @@ class Manager:
         self.snapshots: dict[str, str] = {}  # task id -> tree hash of shared/ before the pending attempt
         self.snapper = Snapshot(project.root / "snapshot.git", project.shared)
         self.last_refine = 0.0
+        self.proxy_holds: dict[str, dict] = {}  # task id -> {"n", "since"}: gate results held for a dead loopback proxy
         self.net_wait: Optional[dict] = None  # proxy/provider unreachable: nothing new starts until a probe succeeds
         self.audit_backoff_until = 0.0  # a failed goal audit waits (provider limit reset, growing delay) before the next
         self.audit_failures = 0         # consecutive audits that ended without a verdict
@@ -462,9 +466,24 @@ class Manager:
             files = self.iso.changed_files(task["id"])
             changed = f"<changed_files vs shared>\n{_fmt_list(files[:200])}\n</changed_files>\n\n"
         gates = self.run_gates(task, cwd=wt)
-        if any(g["exit"] != 0 for g in gates) and (down := netprobe.loopback_proxy_down(self._gate_env(wt or self.project.shared))):
-            # a failing check next to a dead loopback proxy is not judged: hold it, wait for the network probe, re-run
-            return [], Outcome(status="error", error=f"network: cannot connect to proxy: {down}")
+        down = (netprobe.loopback_proxy_down(self._gate_env(wt or self.project.shared))
+                if any(g["exit"] != 0 for g in gates) else "")
+        if down:
+            # a failing check next to a dead loopback proxy is not judged at first: hold it, wait until the proxy
+            # itself answers, re-run; a proxy that stays dead (3 holds or 30 min) is told to the owner and judged
+            now = time.time()
+            h = self.proxy_holds.setdefault(task["id"], {"n": 0, "since": now})
+            if h["n"] < PROXY_HOLDS_MAX and now - h["since"] < PROXY_HOLD_S:
+                h["n"] += 1
+                return [], Outcome(status="error", error=PROXY_HOLD + down)
+            gates = [{**g, "output": g["output"] + "\nпрокси недоступен: " + down} if g["exit"] != 0 else g for g in gates]
+            if not self.project.meta.get("proxy_down"):
+                self.project.set_meta(proxy_down={"since": now, "reason": down[:300]})
+                self.note("proxy_unavailable", task_id=task["id"], holds=h["n"], reason=down[:300])
+        else:
+            self.proxy_holds.pop(task["id"], None)
+            if self.project.meta.get("proxy_down"):
+                self.project.set_meta(proxy_down=None)
         if gate_failure_class(gates) == "environment":  # the gates cannot judge the work: no reviewer tokens spent
             return gates, Outcome(status="environment")
         gate_text = window_text("\n".join(f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], GATE_OUTPUT_CHARS)}"
@@ -590,14 +609,15 @@ class Manager:
                                 edits=ctx.state.get("harness_edits", []))
 
     # --- outcome handling ----------------------------------------------
-    def _enter_network_wait(self, reason: str) -> None:
+    def _enter_network_wait(self, reason: str, cause: str = "provider") -> None:
         """The proxy or the provider's network is down: not the work's fault. Stop starting jobs, probe with backoff
         (``network_probe_s`` doubling up to ``network_probe_max_s``) and carry on by itself when it answers."""
         if self.net_wait is not None:
             return
         base = float(self.cfg.get("network_probe_s", NETWORK_PROBE_S))
         now = time.time()
-        self.net_wait = {"since": now, "delay": base, "next": now + base, "reason": reason[:300], "escalated": False}
+        self.net_wait = {"since": now, "delay": base, "next": now + base, "reason": reason[:300], "escalated": False,
+                         "cause": cause}  # "proxy": only the loopback proxy answering ends it, not the provider
         self.project.set_meta(network_wait={"since": now, "reason": reason[:300], "next_probe": now + base})
         self.note("network_wait", reason=reason[:300], next_probe=now + base)
 
@@ -621,7 +641,11 @@ class Manager:
         self._escalate_network_wait(w, now)
         if now < w["next"]:
             return True
-        ok, where = netprobe.reachable(self.cfg)
+        if w.get("cause") == "proxy":
+            where = netprobe.loopback_proxy_down(self._gate_env(self.project.shared))
+            ok, where = not where, where or "loopback proxy"
+        else:
+            ok, where = netprobe.reachable(self.cfg)
         if ok:
             self.net_wait = None
             self.project.set_meta(network_wait=None)
@@ -725,7 +749,7 @@ class Manager:
             return
         if out.name != "review_verdict":
             if out.status == "error" and classify(out.error) == "network":
-                self._enter_network_wait(out.error)
+                self._enter_network_wait(out.error, "proxy" if out.error.startswith(PROXY_HOLD) else "provider")
                 return  # still in review; schedule() re-submits it once the network is back
             n = self.review_retries.get(task_id, 0) + 1
             self.review_retries[task_id] = n

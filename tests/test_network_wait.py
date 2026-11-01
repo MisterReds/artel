@@ -213,3 +213,33 @@ def test_gate_is_held_while_the_loopback_proxy_is_down_and_rerun_when_it_is_back
         assert reviewed                                        # now the reviewer sees the real failure
     finally:
         proxy.close()
+
+
+def test_dead_loopback_proxy_with_a_local_provider_holds_a_bounded_number_of_times(tmp_path, monkeypatch):
+    """A provider that answers (local) must not clear a wait caused by the dead proxy: the wait ends when the
+    proxy answers; after three holds the gates are judged with a note and the owner is told."""
+    from artel import manager as manager_mod, netprobe
+    from artel.agent import Outcome
+    from artel.analytics import project_stats
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{_dead_port()}")
+    monkeypatch.setattr(netprobe, "reachable", lambda config, timeout=5.0: (True, "local provider"))
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "network_probe_s": 0.0, "network_probe_max_s": 0.0})
+    project = Project.create("g", cfg, name="bounded", workdir=str(tmp_path / "wd"))
+    mgr = Manager(new_kernel(cfg), project)
+    tid = mgr.board.add_task("T", "b", assignee="x", criteria=["c"], checks=["exit 1"], created_by="planner")
+    mgr.board.update(tid, status="review")
+    reviewed = []
+    monkeypatch.setattr(manager_mod, "run_agent", lambda *a, **k: reviewed.append(1) or Outcome(status="error"))
+
+    for _ in range(3):
+        result = mgr.job_review(mgr.board.get(tid))
+        mgr.on_review(tid, result)
+        assert mgr.net_wait is not None and not reviewed
+        assert mgr._network_tick() is True and mgr.net_wait is not None   # the local provider answering is not enough
+    gates, _ = mgr.job_review(mgr.board.get(tid))                         # the fourth time it is judged
+    assert reviewed and gates[0]["exit"] == 1 and "прокси недоступен" in gates[0]["output"]
+    notice = [a for a in project_stats(Project.open(project.slug, mgr.cfg), live=True)["attention"]
+              if a.get("kind") == "network_wait"]
+    assert notice and "прокси" in notice[0]["question"].lower()

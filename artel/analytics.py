@@ -211,6 +211,12 @@ def project_stats(project: Project, live: bool = False) -> dict:
                           "assignee": "", "since": nw.get("since"),
                           "question": f"Нет сети или недоступен прокси уже около {hours} ч ({nw.get('reason', '')[:120]}). "
                                       "Проверьте подключение; проект продолжится сам, когда сеть появится."})
+    if meta.get("proxy_down"):  # gates were judged although the loopback proxy stayed dead: only the owner can fix it
+        pd = meta["proxy_down"]
+        attention.append({"kind": "network_wait", "task_id": "", "title": "Прокси недоступен",
+                          "reason": "нужно внимание владельца", "assignee": "", "since": pd.get("since"),
+                          "question": f"Локальный прокси не отвечает ({pd.get('reason', '')[:120]}); проверки задач "
+                                      "оценены с этой пометкой. Запустите прокси или уберите его из окружения."})
     return {
         "slug": project.slug, "name": meta["name"], "goal": meta["goal"], "status": meta["status"],
         "stage": stage_of(project, tasks), "live": live, "created_at": meta["created_at"],
