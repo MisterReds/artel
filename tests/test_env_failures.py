@@ -249,7 +249,7 @@ def _blocked_env_task(cfg, tmp_path, checks, baseline=None, result=None, isolate
     from artel import sandbox
 
     # vetting executes unreviewed checks only inside a working sandbox: use the real one where the host has it
-    cfg = deep_merge(cfg, {"sandbox": {"mode": "auto" if sandbox.bwrap_status(False)[0] else "off"}})
+    cfg = deep_merge(cfg, {"sandbox": {"mode": "auto" if (sandbox.bwrap_status(False)[0] or sandbox.seatbelt_status()[0]) else "off"}})
     if isolated:
         cfg = deep_merge(cfg, {"isolation": {"worktrees": True}})
     project = Project.create("g", cfg, name="vet", workdir=str(tmp_path / "wd"))
@@ -442,6 +442,8 @@ def test_vetting_runs_in_the_job_pool_baseline_first_and_without_provisioning(cf
 
     from artel import manager as manager_mod
 
+    if not mgr._can_vet():
+        pytest.skip("vetting needs a working sandbox backend")
     with mock.patch.object(manager_mod, "run_agent", lambda *a, **k: _decision(["test -e f.txt"])):
         fut = mgr.pool.submit(mgr.job_replan, mgr.board.get(tid))
         fut.result(timeout=60)
