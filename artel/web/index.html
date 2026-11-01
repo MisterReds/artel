@@ -305,7 +305,7 @@ try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>app
 let ATTN=0;function setAttn(n){ATTN=n;document.title=n>0?`Artel — ${cnt(n,'вопрос','вопроса','вопросов')} к вам`:'Artel'}
 async function pollAttn(){if(document.hidden)return;try{const ps=await api(MQ('/api/portfolio'));if(Array.isArray(ps))setAttn(ps.reduce((s,p)=>s+(p.attention||[]).length,0))}catch(e){}}
 // persistent banner while agent commands run without isolation (sandbox auto-fallback), until it is fixed
-async function pollIso(){if(document.hidden)return;try{const r=await api('/api/ready'),b=$('#unisolated');if(r&&b){b.hidden=!r.unisolated;b.innerHTML=r.unisolated?`<b>Команды агентов выполняются без изоляции:</b> ${esc(r.unisolated)}. Как исправить — «Подключения» →`:''}}catch(e){}}
+async function pollIso(){if(document.hidden)return;try{const r=await api('/api/ready'),b=$('#unisolated');if(r&&b){b.hidden=!r.unisolated;b.innerHTML=r.unisolated?`<b>Команды агентов выполняются без изоляции:</b> ${esc(r.unisolated)}. Как исправить — «Подключения» →<br>Без изоляции Artel защищает от честных ошибок и подсунутого в данные текста, но не от намеренно враждебного исполнителя: он может менять журнал, проверки и рабочие папки с правами владельца. Замену проверок в таком режиме подтверждаете вы.`:''}}catch(e){}}
 pollIso();setInterval(pollIso,30000);
 pollAttn();setInterval(pollAttn,20000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollAttn()});
 const dlgEl=$('#dlg');dlgEl.addEventListener('click',e=>{if(e.target===dlgEl)dlgEl.close()});
