@@ -403,9 +403,9 @@ class Manager:
                 self.project.log.append("gate/result", task_id=task["id"], **res)
                 continue
             try:
-                p = subprocess.run(run.argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                   timeout=int(self.cfg.get("gate_timeout_s", 900)), env=shell_env(env))
-                failed = sandbox.start_failure(run, p.returncode, p.stderr) if sb["require"] else ""
+                p, failed = sandbox.execute(run, cwd=cwd, env=shell_env(env),
+                                            timeout=int(self.cfg.get("gate_timeout_s", 900)))
+                failed = failed if sb["require"] else ""
                 res = {"command": cmd, "exit": p.returncode if not failed else -1,
                        "output": window_text(p.stdout + p.stderr, 3000) if not failed else f"command NOT run: {failed}"}
             except subprocess.TimeoutExpired:

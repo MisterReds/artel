@@ -56,7 +56,7 @@ def test_mode_off_keeps_the_old_behaviour(cfg, tmp_path):
 
 def test_bwrap_args_shape():
     args = sandbox.bwrap_args("echo x", cwd="/w", writable=["/w", "/tmp"], network=False)
-    assert args[:1] == ["bwrap"] and args[-3:] == ["/bin/sh", "-c", "echo x"]
+    assert args[:1] == ["bwrap"] and args[-2:] == ["sh", "echo x"] and args[-5:-2][:2] == ["/bin/sh", "-c"]
     assert args.index("--ro-bind") < args.index("--bind")  # writable re-binds come after the read-only root
     assert "--unshare-net" in args
     assert "--unshare-net" not in sandbox.bwrap_args("x", cwd="/", writable=[], network=True)
@@ -347,3 +347,37 @@ def test_providers_overview_and_cli_show_the_sandbox_state(cfg, monkeypatch, cap
     monkeypatch.setattr(cli, "load_config", lambda *a, **k: cfg, raising=False)
     cli.cmd_providers(argparse.Namespace(action=None, name=None, config=None, args=[], rest=[]))
     assert "без изоляции" in capsys.readouterr().out
+
+
+def _fake_bwrap_that_runs_the_command(tmp_path):
+    """A backend that starts fine: drops its own flags and execs the command after `--`."""
+    fake = tmp_path / "bwrap-ok"
+    fake.write_text('#!/bin/sh\nwhile [ "$1" != "--" ]; do shift; done\nshift\nexec "$@"\n')
+    fake.chmod(0o755)
+    return fake
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the fake backend is a shell script")
+def test_child_printing_a_bwrap_error_is_a_normal_failure(cfg, tmp_path, monkeypatch):
+    """Forgery: a started command that prints `bwrap: x` and exits 1 is a work failure, never a start failure."""
+    monkeypatch.setattr(sandbox, "bwrap_status", lambda network=True: (True, str(_fake_bwrap_that_runs_the_command(tmp_path))))
+    cfg = deep_merge(cfg, {"sandbox": {"mode": "auto"}})
+    sandbox._failures.clear()
+    k, project, ctx = _ctx(cfg, tmp_path)
+    out = k.tools["bash"].fn(ctx, command="echo 'bwrap: setting up uid map: Permission denied' >&2; exit 1")
+    assert out.startswith("[exit 1]") and "uid map" in out
+    assert sandbox.status(cfg)["failure"] == ""
+    m = Manager(new_kernel(cfg), Project.create("g", cfg, name="forge", workdir=str(tmp_path / "deliv")))
+    res = m.run_gates({"id": "x", "checks": ["echo 'bwrap: x' >&2; exit 1"]})
+    assert res[0]["exit"] == 1 and "NOT run" not in res[0]["output"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the fake backend is a shell script")
+def test_no_rerun_of_a_command_that_started(cfg, tmp_path, monkeypatch):
+    """require:false re-runs only when the sentinel proves the child never started."""
+    monkeypatch.setattr(sandbox, "bwrap_status", lambda network=True: (True, str(_fake_bwrap_that_runs_the_command(tmp_path))))
+    cfg = deep_merge(cfg, {"sandbox": {"mode": "auto", "require": False}})
+    k, project, ctx = _ctx(cfg, tmp_path)
+    log = tmp_path / "count"
+    k.tools["bash"].fn(ctx, command=f"echo x >> {log}; echo 'bwrap: boom' >&2; exit 1")
+    assert log.read_text().count("x") == 1

@@ -52,8 +52,19 @@ _probe_cache: dict[tuple, tuple[bool, str]] = {}
 
 DEFAULTS = {"mode": "auto", "network": True, "writable": [], "temp": True, "require": True, "gates": True}
 HOME_SECRETS = (".ssh", ".aws", ".gnupg", ".config/gh", ".netrc", ".docker/config.json", ".kube")
-# what a failed sandbox start looks like on stderr (bwrap setup errors; Seatbelt refusing to apply the profile)
-_START_FAILURE = re.compile(r"^(?:bwrap: (?!execvp)|sandbox-exec: sandbox_apply)", re.M)
+# Start detection never reads what the command printed (a command can print anything). Inside the sandbox a tiny
+# launcher writes one byte to a pipe Artel owns and only then execs the command: no byte, no start. The byte is
+# written before the command exists, so the command cannot unsend it, and a started command is never re-run.
+_FD = "@@ARTEL_FD@@"
+_LAUNCHER = f'printf s > /dev/fd/{_FD}; exec /bin/sh -c "$1"'
+# stderr is used only to word the explanation of a start failure (these lines come from the sandbox backends)
+_START_REASON = re.compile(r"^(?:bwrap: |sandbox-exec: ).*$", re.M)
+
+
+def launcher_args(command: str, sentinel: bool = True) -> list:
+    """The tail of every sandbox argv: the sentinel launcher, then the user's command as a plain argument (without
+    the launcher for a command nobody waits on, e.g. a long-running result process)."""
+    return ["/bin/sh", "-c", _LAUNCHER, "sh", command] if sentinel else ["/bin/sh", "-c", command]
 
 
 def settings(config: dict) -> dict:
@@ -141,7 +152,7 @@ def protected_paths(project_root=None) -> list[str]:
 
 
 def bwrap_args(command: str, *, cwd: str, writable: list[str], network: bool, binary: str = "bwrap",
-               deny=(), expose=(), protected=()) -> list:
+               deny=(), expose=(), protected=(), sentinel=True) -> list:
     args = [binary, "--die-with-parent", "--new-session", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc",
             "--unshare-pid", "--unshare-ipc"]
     # network on: the host network is shared on purpose, so a proxy on 127.0.0.1 (HTTP(S)_PROXY) stays reachable
@@ -158,7 +169,7 @@ def bwrap_args(command: str, *, cwd: str, writable: list[str], network: bool, bi
     for p in protected:  # read-only even under a writable ancestor; only paths that exist and are visible
         if os.path.exists(p) and _within(p, writable) and (not _within(p, deny) or _within(p, expose)):
             args += ["--ro-bind", p, p]
-    args += ["--chdir", cwd, "--", "/bin/sh", "-c", command]
+    args += ["--chdir", cwd, "--", *launcher_args(command, sentinel)]
     return args
 
 
@@ -213,8 +224,9 @@ def seatbelt_profile(writable: list[str], network: bool, deny=(), expose=(), pro
     return "\n".join(lines) + "\n"
 
 
-def seatbelt_args(command: str, *, writable: list[str], network: bool, deny=(), expose=(), protected=()) -> list:
-    return [SEATBELT, "-p", seatbelt_profile(writable, network, deny, expose, protected), "/bin/sh", "-c", command]
+def seatbelt_args(command: str, *, writable: list[str], network: bool, deny=(), expose=(), protected=(),
+                  sentinel=True) -> list:
+    return [SEATBELT, "-p", seatbelt_profile(writable, network, deny, expose, protected), *launcher_args(command, sentinel)]
 
 
 def seatbelt_status() -> tuple[bool, str]:
@@ -229,7 +241,8 @@ def seatbelt_status() -> tuple[bool, str]:
 _failures: dict[str, str] = {}   # why a sandbox start failed last (shown by status(); one entry, not a log)
 
 
-def plan(config: dict, command: str, *, cwd, writable, mode: Optional[str] = None, project_root=None) -> Plan:
+def plan(config: dict, command: str, *, cwd, writable, mode: Optional[str] = None, project_root=None,
+         sentinel: bool = True) -> Plan:
     """Decide how to run ``command`` under the configured sandbox. Never raises; see ``Plan.note`` / ``Plan.error``."""
     s = settings(config)
     mode = mode or s["mode"]
@@ -248,14 +261,15 @@ def plan(config: dict, command: str, *, cwd, writable, mode: Optional[str] = Non
         ok, why = bwrap_status(bool(s["network"]))
         if ok:
             return Plan(argv=bwrap_args(command, cwd=cwd, writable=allowed, network=bool(s["network"]), binary=why,
-                                        deny=deny, expose=expose, protected=protected),
+                                        deny=deny, expose=expose, protected=protected, sentinel=sentinel),
                         backend="bwrap", writable=allowed)
         reasons.append(why)
     if mode in ("auto", "seatbelt"):
         ok, why = seatbelt_status()
         if ok:
             return Plan(argv=seatbelt_args(command, writable=allowed, network=bool(s["network"]), deny=deny,
-                                           expose=expose, protected=protected), backend="seatbelt", writable=allowed)
+                                           expose=expose, protected=protected, sentinel=sentinel),
+                        backend="seatbelt", writable=allowed)
         reasons.append(why)
     plain.note = f"sandbox `{mode}` unavailable ({'; '.join(reasons)}); the command ran WITHOUT a sandbox"
     if mode != "auto" and s["require"]:  # the owner asked for this backend by name: no silent downgrade
@@ -263,15 +277,33 @@ def plan(config: dict, command: str, *, cwd, writable, mode: Optional[str] = Non
     return plain
 
 
-def start_failure(run: Plan, returncode: int, stderr: str) -> str:
-    """A sandbox that exists but did not start for this command ('' when it did): the environment is broken, the
-    command never ran, and it must not be retried unsandboxed. Remembered for ``status()``."""
-    if not run.sandboxed or returncode == 0:
-        return ""
-    m = _START_FAILURE.search(stderr or "")
-    if not m:
-        return ""
-    reason = (stderr or "")[m.start():].strip().splitlines()[0][:300]
+def execute(run: Plan, *, cwd, env, timeout) -> tuple:
+    """Run ``run`` and return ``(CompletedProcess, failure)``. ``failure`` is '' unless the sandbox exists but did
+    not start the command (the launcher's byte never arrived): the command never ran, so it is safe to say so and
+    safe to run it again. Raises ``subprocess.TimeoutExpired`` like ``subprocess.run``."""
+    kw = dict(cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=timeout, env=env)
+    if not run.sandboxed:
+        return subprocess.run(run.argv, **kw), ""
+    r, w = os.pipe()
+    try:
+        argv = [a.replace(_FD, str(w)) if a == _LAUNCHER else a for a in run.argv]
+        try:
+            proc = subprocess.run(argv, pass_fds=(w,), **kw)
+        finally:
+            os.close(w)
+        os.set_blocking(r, False)
+        try:
+            started = os.read(r, 1) == b"s"
+        except BlockingIOError:
+            started = False
+    finally:
+        os.close(r)
+    return proc, ("" if started or proc.returncode == 0 else _start_failure(run, proc.stderr))
+
+
+def _start_failure(run: Plan, stderr: str) -> str:
+    m = _START_REASON.search(stderr or "")
+    reason = m.group(0).strip()[:300] if m else "the sandbox gave no sign that it started the command"
     _failures[run.backend] = reason
     return f"sandbox cannot start commands ({run.backend}): {reason}; the command was NOT run unsandboxed"
 
@@ -305,4 +337,4 @@ def status(config: dict) -> dict:
 
 
 __all__ = ["Plan", "plan", "settings", "bwrap_args", "bwrap_status", "seatbelt_profile", "seatbelt_status",
-           "temp_dirs", "MODES", "DEFAULTS", "read_policy", "protected_paths", "start_failure", "refusal", "status"]
+           "temp_dirs", "MODES", "DEFAULTS", "read_policy", "protected_paths", "execute", "refusal", "status"]

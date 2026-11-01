@@ -65,17 +65,14 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
     if sandbox.refusal(run, config):
         raise ToolError(f"command NOT run: {run.error}")
     try:
-        proc = subprocess.run(run.argv, cwd=ctx.workspace, capture_output=True, text=True, timeout=timeout,
-                              env=shell_env(env), encoding="utf-8", errors="replace")
-        failed = sandbox.start_failure(run, proc.returncode, proc.stderr)
+        proc, failed = sandbox.execute(run, cwd=ctx.workspace, env=shell_env(env), timeout=timeout)
         if failed:  # fail closed: the sandbox exists but did not start; never fall back unless the owner said so
             ctx.project.log.append("sandbox/start_failed", actor=ctx.actor, error=failed)
             if sandbox.settings(config)["require"]:
                 raise ToolError(f"command NOT run: {failed}")
             run = sandbox.plan(config, command, cwd=ctx.workspace, writable=writable, mode="off")
             run.note = f"{failed.split(';')[0]}; sandbox.require is off, so the command ran WITHOUT a sandbox"
-            proc = subprocess.run(run.argv, cwd=ctx.workspace, capture_output=True, text=True, timeout=timeout,
-                                  env=shell_env(env), encoding="utf-8", errors="replace")
+            proc, _ = sandbox.execute(run, cwd=ctx.workspace, env=shell_env(env), timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise ToolError(f"timed out after {timeout}s; partial output:\n{_clip(str(exc.stdout or ''), 4000)}")
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")

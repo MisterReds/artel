@@ -349,7 +349,7 @@ class ResultRunner:
         if sandbox.settings(self.config)["mode"] == "off" or WIN:
             return argv
         plan = sandbox.plan(self.config, shlex.join(argv), cwd=cwd, writable=[str(project.shared)],
-                            project_root=project.root)
+                            project_root=project.root, sentinel=False)
         return plan.argv if plan.backend != "none" else argv
 
     def sandboxed(self, project) -> bool:
