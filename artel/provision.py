@@ -366,6 +366,11 @@ def first_programs(checks) -> set:
     return out
 
 
+def absent_programs(checks, path: str) -> list:
+    """The first programs of the checks that do not resolve on ``path`` (the PATH the gate itself runs with)."""
+    return sorted(p for p in first_programs(checks) if not shutil.which(p, path=path))
+
+
 def prepare_checks(checks, cfg: Optional[dict] = None, log: Log = None) -> list:
     """Before the gates run: make the missing first programs available. Only names Artel knows how to install (the
     catalogue and the package map) are installed; anything else is returned as missing, never guessed at."""

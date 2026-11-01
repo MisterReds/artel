@@ -45,3 +45,21 @@ def reachable(config: dict, timeout: float = 5.0) -> tuple[bool, str]:
         return True, f"{host}:{port}"
     except OSError as exc:
         return False, f"{host}:{port}: {exc}"
+
+
+def loopback_proxy_down(env: dict, timeout: float = 2.0) -> str:
+    """Why the loopback proxy named in ``env`` refuses the runner's own TCP connection ('' when there is none or
+    it answers). Structural: Artel connects itself; nothing a checked command printed is consulted."""
+    for var in PROXY_VARS:
+        val = env.get(var)
+        if not val:
+            continue
+        p = urlparse(val if "//" in val else "//" + val)
+        if p.hostname not in ("127.0.0.1", "localhost", "::1"):
+            continue
+        port = p.port or (443 if p.scheme == "https" else 8080)
+        try:
+            socket.create_connection((p.hostname, port), timeout=timeout).close()
+        except OSError as exc:
+            return f"{var} points to {p.hostname}:{port}, which refuses connections ({exc})"
+    return ""

@@ -62,23 +62,51 @@ def test_real_python_is_not_shadowed(cfg, tmp_path, monkeypatch):
 
 # --- item 8 -----------------------------------------------------------------
 
-def test_gate_failure_classes():
+def test_text_alone_never_makes_a_failure_environmental():
+    """Forgery: the work (or a test it runs) can print any text; only structure of the machine counts."""
     from artel.failures import gate_failure_class
 
-    def g(code, out):
-        return [{"command": "x", "exit": code, "output": out}]
+    def g(code, out, **kw):
+        return [{"command": "x", "exit": code, "output": out, **kw}]
 
-    assert gate_failure_class(g(127, "sh: 1: rg: not found")) == "environment"
-    assert gate_failure_class(g(126, "")) == "environment"
-    assert gate_failure_class(g(1, "bash: jq: command not found")) == "environment"
-    assert gate_failure_class(g(1, "bwrap: setting up uid map: Permission denied")) == "environment"
-    assert gate_failure_class(g(1, "sandbox-exec: sandbox_apply: Operation not permitted")) == "environment"
-    assert gate_failure_class(g(1, "ProxyError: cannot connect to proxy at 127.0.0.1:3128")) == "environment"
+    assert gate_failure_class(g(1, "AssertionError: user: not found")) == "work"
+    assert gate_failure_class(g(127, "sh: 1: rg: not found")) == "work"
+    assert gate_failure_class(g(1, "bash: jq: command not found")) == "work"
+    assert gate_failure_class(g(1, "bwrap: setting up uid map: Permission denied")) == "work"
+    assert gate_failure_class(g(1, "ProxyError: cannot connect to proxy at 127.0.0.1:3128")) == "work"
     assert gate_failure_class(g(1, "AssertionError: 2 != 3")) == "work"
     assert gate_failure_class(g(0, "")) is None
-    # one real failure among environment ones: the work is still to blame
-    mixed = g(127, "rg: not found") + g(1, "AssertionError")
-    assert gate_failure_class(mixed) == "work"
+    assert gate_failure_class(g(1, "x", env="missing_tool")) == "environment"
+    mixed = g(1, "rg: not found", env="missing_tool") + g(1, "AssertionError")
+    assert gate_failure_class(mixed) == "work"      # one real failure among environment ones: the work is to blame
+
+
+def test_gates_classify_by_what_the_machine_lacks(cfg, tmp_path):
+    from artel.failures import gate_failure_class
+
+    def cls(*checks):
+        return gate_failure_class(_gates(cfg, tmp_path, list(checks)))
+
+    assert cls("nonexistent_tool_xyz --version") == "environment"
+    assert cls("echo 'AssertionError: user: not found' >&2; exit 1") == "work"
+    assert cls("sh -c 'exit 127'") == "work"            # the program exists: 127 is the script's own business
+    assert cls("echo done") is None
+
+
+def test_dead_loopback_proxy_is_environmental_only_when_the_runner_cannot_reach_it(cfg, tmp_path, monkeypatch):
+    import socket
+
+    from artel.failures import gate_failure_class
+
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.listen(1)
+    monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{port}")
+    up = gate_failure_class(_gates(cfg, tmp_path, ["echo ProxyError 127.0.0.1 >&2; exit 1"]))
+    s.close()
+    down = gate_failure_class(_gates(cfg, tmp_path, ["exit 1"]))
+    assert up == "work" and down == "environment"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="symlink fixture")

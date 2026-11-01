@@ -398,21 +398,37 @@ class Manager:
             run = sandbox.plan(self.cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off",
                                project_root=self.project.root)
             if sandbox.refusal(run, self.cfg):  # demanded backend missing: the check does not run unsandboxed
-                res = {"command": cmd, "exit": -1, "output": f"command NOT run: {run.error}"}
+                res = {"command": cmd, "exit": -1, "output": f"command NOT run: {run.error}", "env": "sandbox"}
                 results.append(res)
                 self.project.log.append("gate/result", task_id=task["id"], **res)
                 continue
             try:
-                p, failed = sandbox.execute(run, cwd=cwd, env=shell_env(env),
+                genv = shell_env(env)
+                p, failed = sandbox.execute(run, cwd=cwd, env=genv,
                                             timeout=int(self.cfg.get("gate_timeout_s", 900)))
                 failed = failed if sb["require"] else ""
                 res = {"command": cmd, "exit": p.returncode if not failed else -1,
                        "output": window_text(p.stdout + p.stderr, 3000) if not failed else f"command NOT run: {failed}"}
+                cause = "sandbox" if failed else self._gate_env_cause(cmd, p.returncode, genv)
+                if cause:
+                    res["env"] = cause
             except subprocess.TimeoutExpired:
                 res = {"command": cmd, "exit": -1, "output": "timed out"}
             results.append(res)
             self.project.log.append("gate/result", task_id=task["id"], **res)
         return results
+
+    @staticmethod
+    def _gate_env_cause(cmd: str, returncode: int, genv: dict) -> str:
+        """Why a failed check says nothing about the work, from the machine alone ('' = it does): a program it
+        starts is absent from the gate's PATH, or the loopback proxy refuses the runner's connection."""
+        from . import netprobe, provision
+
+        if returncode == 0:
+            return ""
+        if provision.absent_programs([cmd], genv.get("PATH") or os.defpath):
+            return "missing_tool"
+        return "proxy" if netprobe.loopback_proxy_down(genv) else ""
 
     def job_review(self, task: dict) -> tuple[list, Outcome]:
         wt, changed = None, ""
