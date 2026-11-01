@@ -2,7 +2,9 @@
 # artel-root: the only thing Artel may do as root. Installed by install.sh with the owner's consent as
 # /usr/local/sbin/artel-root (root:root 0755); /etc/sudoers.d/artel lets the installing user run exactly this file.
 #
-#   artel-root apt-install <package>...   apt-get install of signed-repository packages, names validated, deny list
+#   artel-root apt-install <package>...   apt-get install of signed-repository packages: names validated, only names
+#                                         in the root-owned allowlist (/etc/artel-root.conf `allow=` lines), the deny
+#                                         list as defence in depth, and a simulated install checked before the real one
 #   artel-root apparmor-bwrap             AppArmor profile that lets /usr/bin/bwrap create user namespaces
 #
 # Nothing else: no removals, no sources, no options, no shell. Everything on the command line is data.
@@ -40,14 +42,40 @@ builtin_denied() {
   return 1
 }
 
-# /etc/artel-root.conf (root-owned, not group/other writable): lines `deny=<glob>` add to the deny list. Nothing else
-# in the file is interpreted, and values are matched as patterns, never executed.
-conf_denied() {
+# Names that look like daemons. Used on the packages a simulated install would pull in. Whether a package ships a
+# systemd service cannot be seen without unpacking it; this name heuristic is the known limitation, and the allowlist
+# (a handful of tools written by the installer at the owner's consent) is what actually bounds the risk.
+service_like() {
+  case "$1" in
+    *-server|*-daemon|*-service|*-agent|*-broker|*-relay|*-httpd|*sshd*|*-common-server) return 0 ;;
+  esac
+  return 1
+}
+
+check_conf() {
   [ -f "$CONF" ] || return 1
   if [ "$CHECK_CONF" = 1 ]; then
     [ "$(stat -c %u "$CONF")" = 0 ] || die "$CONF is not owned by root"
     case "$(stat -c %a "$CONF")" in *[2367]?|*[2367]) die "$CONF is writable by others" ;; esac
   fi
+}
+
+# /etc/artel-root.conf (root-owned, not group/other writable). `allow=<name>` lines (exact package names, written by
+# the installer from the package map the owner consented to) are the only packages ever installed; no file, no
+# allowlist: nothing is installed.
+conf_allowed() {
+  check_conf || return 1
+  while IFS= read -r line || [ -n "$line" ]; do
+    case "$line" in
+      allow=*) [ "${line#allow=}" = "$1" ] && return 0 ;;
+    esac
+  done < "$CONF"
+  return 1
+}
+
+# lines `deny=<glob>` add to the deny list. Values are matched as patterns, never executed.
+conf_denied() {
+  check_conf || return 1
   while IFS= read -r line || [ -n "$line" ]; do
     case "$line" in
       deny=*)
@@ -72,11 +100,20 @@ apt_install() {
   for p in "$@"; do
     valid_name "$p" || die "invalid package name"
     if builtin_denied "$p" || conf_denied "$p"; then die "package denied by policy: $p"; fi
+    conf_allowed "$p" || die "package not in the allowlist ($CONF): $p"
   done
   command -v apt-get >/dev/null 2>&1 || die "apt-get not found"
   [ "$(id -u)" = 0 ] || [ "$NEED_ROOT" = 0 ] || die "must run as root (through sudo)"
   DEBIAN_FRONTEND=noninteractive
   export DEBIAN_FRONTEND
+  # what the install would really pull in (dependencies included) must pass the same policy
+  if ! sim=$(apt-get -s install --no-install-recommends -- "$@" 2>/dev/null); then
+    apt-get update -qq || die "apt-get update failed"
+    sim=$(apt-get -s install --no-install-recommends -- "$@") || die "apt-get cannot resolve: $*"
+  fi
+  for p in $(printf '%s\n' "$sim" | awk '/^Inst /{print $2}'); do
+    if builtin_denied "$p" || conf_denied "$p" || service_like "$p"; then die "install would pull in a denied package: $p"; fi
+  done
   if ! apt-get install -y --no-install-recommends --no-remove -- "$@"; then
     apt-get update -qq || die "apt-get update failed"
     apt-get install -y --no-install-recommends --no-remove -- "$@" || die "apt-get install failed"

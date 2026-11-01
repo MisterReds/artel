@@ -366,6 +366,15 @@ def first_programs(checks) -> set:
     return out
 
 
+def known_tools() -> set:
+    """Names Artel knows how to install: the pinned catalogue (names and binaries) and the package map. Nothing else
+    is ever installed, whoever asks."""
+    known = set(packages())
+    for name, e in catalogue().items():
+        known |= {name, e.get("bin")}
+    return known
+
+
 def absent_programs(checks, path: str) -> list:
     """The first programs of the checks that do not resolve on ``path`` (the PATH the gate itself runs with)."""
     return sorted(p for p in first_programs(checks) if not shutil.which(p, path=path))
@@ -374,9 +383,7 @@ def absent_programs(checks, path: str) -> list:
 def prepare_checks(checks, cfg: Optional[dict] = None, log: Log = None) -> list:
     """Before the gates run: make the missing first programs available. Only names Artel knows how to install (the
     catalogue and the package map) are installed; anything else is returned as missing, never guessed at."""
-    known = set(packages())
-    for name, e in catalogue().items():
-        known |= {name, e.get("bin")}
+    known = known_tools()
     missing = []
     for prog in sorted(first_programs(checks)):
         if _find(prog):

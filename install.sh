@@ -45,7 +45,7 @@ VENV="${ARTEL_VENV-$HOME/.artel/venv}"
 BIN="${ARTEL_BIN:-$HOME/.local/bin}"
 CODEX=0 CLAUDE=0 SERVICE=0 START=1 YES=0 REINSTALL=0 REMOVE_ROOT=0
 ROOT_WRAPPER="${ARTEL_ROOT_WRAPPER:-/usr/local/sbin/artel-root}" ROOT_SUDOERS="${ARTEL_ROOT_SUDOERS:-/etc/sudoers.d/artel}"
-ROOT_CONF=/etc/artel-root.conf
+ROOT_CONF="${ARTEL_ROOT_CONF:-/etc/artel-root.conf}"
 [ "${ARTEL_REINSTALL:-}" = 1 ] && REINSTALL=1
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -208,7 +208,7 @@ reinstall_prepare() {
 
 # --- root wrapper (Linux, optional, owner's consent) ---------------------------------------------------------------
 # /usr/local/sbin/artel-root (root:root 0755, POSIX sh) is the ONLY thing Artel may run as root: apt-install of signed
-# packages (validated names, deny list in /etc/artel-root.conf) and the AppArmor profile that lets bwrap use user
+# packages (validated names, the allowlist and deny list in /etc/artel-root.conf) and the AppArmor profile that lets bwrap use user
 # namespaces. /etc/sudoers.d/artel allows exactly that file, no password, for the installing user.
 root_installed() { [ -e "$ROOT_WRAPPER" ] || [ -e "$ROOT_SUDOERS" ]; }
 
@@ -234,11 +234,26 @@ root_remove() {
   note "removed $ROOT_WRAPPER and $ROOT_SUDOERS (kept: $ROOT_CONF, packages already installed)"
 }
 
+# /etc/artel-root.conf: `allow=` lines are the apt names of the package map in tools.yaml (the only packages the wrapper
+# will install, written here at the owner's consent); `deny=` lines the owner added are kept.
+root_conf() {
+  local yaml="$1" tmp
+  tmp="$(mktemp)"
+  { printf '# Artel root wrapper. allow= : exact apt package names it may install (written by install.sh from tools.yaml).\n'
+    printf '# deny= : extra packages it must never install (shell globs); kept across reinstalls.\n'
+    [ -r "$ROOT_CONF" ] && grep '^deny=' "$ROOT_CONF" || true
+    awk '/^packages:/{f=1;next} /^[^ #]/{f=0} f && match($0,/apt: *[a-z0-9+.-]+/){print "allow=" substr($0,RSTART+5,RLENGTH-5)}' "$yaml" | tr -d ' ' | sort -u
+  } > "$tmp"
+  $SUDO install -m 0644 -o root -g root "$tmp" "$ROOT_CONF"
+  rm -f "$tmp"
+}
+
 root_setup() {
   [ "$OS" = Linux ] || return 0
   local src="$DIR/artel/data/artel-root.sh" tpl="$DIR/artel/data/artel-sudoers.tpl" user tmp
   [ -f "$src" ] && [ -f "$tpl" ] || { note "root wrapper files missing in $DIR; skipped"; return 0; }
   if root_installed && [ "${ARTEL_ALLOW_ROOT:-}" != 0 ]; then  # the owner consented once: a reinstall does not ask again
+    root_conf "$DIR/artel/data/tools.yaml"
     note "root wrapper kept ($ROOT_WRAPPER); remove: bash install.sh --remove-root"; return 0
   fi
   ask_root || { root_remove; note "no root wrapper (system packages and the AppArmor profile stay a manual step)"; return 0; }
@@ -253,8 +268,7 @@ root_setup() {
   if have visudo && ! $SUDO visudo -cf "$tmp/sudoers" >/dev/null; then rm -rf "$tmp"; die "sudoers rule does not validate; nothing installed"; fi
   $SUDO install -d -m 0755 -o root -g root /usr/local/sbin
   $SUDO install -m 0755 -o root -g root "$tmp/artel-root" "$ROOT_WRAPPER"
-  [ -e "$ROOT_CONF" ] || printf '# Artel root wrapper: extra packages it must never install (shell globs), one per line.\n# deny=ffmpeg\n' | $SUDO tee "$ROOT_CONF" >/dev/null
-  $SUDO chown root:root "$ROOT_CONF"; $SUDO chmod 0644 "$ROOT_CONF"
+  root_conf "$DIR/artel/data/tools.yaml"
   $SUDO install -m 0440 -o root -g root "$tmp/sudoers" "$ROOT_SUDOERS"
   rm -rf "$tmp"
   note "$user may run $ROOT_WRAPPER (apt-install, apparmor-bwrap) without a password; nothing else"

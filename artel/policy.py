@@ -160,6 +160,9 @@ def _prefix_hit(prefix: list, seg: list[str]) -> bool:
 
 
 _SH = r"(?:ba|z|da)?sh"
+# A command word at command position: after a separator, a subshell, a quote opening `sh -c`, or a launcher prefix.
+_AT_CMD = (r"(?:^|[;&|(`\n]|\$\(|\b(?:then|do|else|env|exec|command|nohup|time|xargs|nice|timeout|stdbuf|setsid|watch|"
+           rf"busybox)\b|\b{_SH}\s+(?:-\S+\s+)*[\"']|\beval\s+[\"']?)\s*(?:(?:-\S+|\w+=\S*|\d+)\s+)*(?:\S*/)?")
 _CRED = (r"(?:~|\$HOME|/home/[^/\s]+|/root)/\.ssh/(?:id_\S*|authorized_keys)|\.aws/credentials|"
          r"(?:^|[\s/='\"<>])\.env(?:\.[\w.-]+)?(?=$|[\s'\"|;&<>])")
 DEFAULT_RULES = [
@@ -184,6 +187,19 @@ DEFAULT_RULES = [
      "match": ["git push --force origin main", "git push -f origin master", "git push origin +main",
                "git push --force-with-lease origin HEAD:main"],
      "not_match": ["git push origin main", "git push --force origin feature", "git push -f origin my-main-fix"]},
+    {"id": "privilege-escalation", "regex": rf"{_AT_CMD}(?:sudo|doas|pkexec|su)(?=\s|$|[;&|)\"'`])",
+     "decision": "forbidden", "justification": "Agents never escalate privileges; Artel itself installs approved "
+     "tools through its own root wrapper.",
+     "match": ["sudo -n /usr/local/sbin/artel-root apt-install x", "env sudo ls", "/usr/bin/sudo id", "doas id",
+               "pkexec id", "ls && sudo id", "sh -c 'sudo id'", "env -i FOO=1 sudo -n id", "timeout 5 sudo id",
+               "echo x | sudo tee f", "(sudo id)", "$(sudo id)"],
+     "not_match": ["echo use sudo here", "git commit -m 'fix sudo docs'", "ls sudoers.txt", "pseudo -x", "cat sudo.md",
+                   "python -c 'import sudo'"]},
+    {"id": "root-wrapper", "regex": r"(?<![\w.-])(?:\S*/)?artel-root(?!\.sh)(?=\s|$|[;&|)\"'`])",
+     "decision": "forbidden", "justification": "The root wrapper is called only by Artel's own harness process, never "
+     "from an agent's shell.",
+     "match": ["/usr/local/sbin/artel-root apt-install x", "artel-root apparmor-bwrap", "ls && artel-root x"],
+     "not_match": ["cat artel/data/artel-root.sh", "echo artel-rooted", "ls my-artel-root"]},
     {"id": "credential-files", "regex": _CRED, "decision": "prompt",
      "justification": "Touches credential files (SSH keys, AWS credentials, .env); a person must approve.",
      "match": ["cat ~/.ssh/id_rsa", "cp .aws/credentials /tmp/x", "cat .env", "echo K=1 >> .env.local"],

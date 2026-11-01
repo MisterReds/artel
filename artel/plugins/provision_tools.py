@@ -14,6 +14,8 @@ def tool_install(ctx: ToolContext, name: str, reason: str) -> str:
     name, reason = str(name or "").strip(), str(reason or "").strip()
     if not provision.valid_name(name):
         raise ToolError(f"invalid tool name {name!r}: use the program's name, lower case (rg, jq, pandoc)")
+    if name not in provision.known_tools():
+        raise ToolError(f"{name}: нет в каталоге: попросите владельца добавить")
     if not reason:
         raise ToolError("say why the tool is needed: it is written to the decision log")
     cfg = ctx.kernel.config

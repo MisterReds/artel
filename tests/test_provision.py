@@ -369,6 +369,7 @@ def test_tool_install_returns_path_or_reason_and_logs(home, tmp_path, monkeypatc
     exe = home / "sysbin" / "have"
     exe.write_text("#!/bin/sh\n")
     exe.chmod(0o755)
+    monkeypatch.setattr(provision, "known_tools", lambda: {"have", "zz-nothing"})
     assert provision_tools.tool_install(ctx, "have", "need it") == str(exe)
     out = provision_tools.tool_install(ctx, "zz-nothing", "need it")
     assert out.startswith("not installed") and "zz-nothing" in out
@@ -390,6 +391,7 @@ def test_tool_install_decision_events_carry_task_and_why(home, tmp_path, monkeyp
     events = []
     project = SimpleNamespace(root=tmp_path, shared=tmp_path, log=SimpleNamespace(append=lambda k, **p: events.append((k, p))))
     ctx = SimpleNamespace(project=project, role="tester", actor="tester", task={"id": "t-9"}, kernel=SimpleNamespace(config={}))
+    monkeypatch.setattr(provision, "known_tools", lambda: {"pdftk"})
     path = provision_tools.tool_install(ctx, "pdftk", "split pdf for test")
     assert path.endswith("pdftk")
     [(kind, ev)] = events
@@ -403,3 +405,17 @@ def test_agent_shell_path_includes_tools_dirs(home, monkeypatch):
     env = agent_env("native")
     assert env["PATH"].split(os.pathsep)[0] == str(tools.bin_dir())
     assert env["PATH"].split(os.pathsep).count(str(tools.bin_dir())) == 1
+
+
+def test_tool_install_refuses_names_outside_the_catalogue(home, tmp_path):
+    from artel.plugins import provision_tools
+    from artel.tooling import ToolError
+
+    events = []
+    project = SimpleNamespace(root=tmp_path, shared=tmp_path, log=SimpleNamespace(append=lambda k, **p: events.append((k, p))))
+    ctx = SimpleNamespace(project=project, role="worker", actor="worker", task={"id": "t-1"}, kernel=SimpleNamespace(config={}))
+    for name in ("openssh-server", "nginx", "totally-unknown"):
+        with pytest.raises(ToolError, match="нет в каталоге: попросите владельца добавить"):
+            provision_tools.tool_install(ctx, name, "I want it")
+    assert events == []                       # nothing was attempted
+    assert "rg" in provision.known_tools()    # catalogue / package-map names stay installable

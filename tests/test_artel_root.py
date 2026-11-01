@@ -21,12 +21,17 @@ def box(tmp_path):
     bin_.mkdir()
     calls = tmp_path / "calls.log"
     for name, body in {
-        "apt-get": 'echo "apt-get $*" >> "$CALLS"\n[ "${FAKE_APT_FAIL:-}" = 1 ] && [ "$1" = install ] && exit 100\nexit 0\n',
+        "apt-get": 'echo "apt-get $*" >> "$CALLS"\n[ "$1" = -s ] && { [ -n "${FAKE_APT_SIM:-}" ] && printf "Inst %s (1 repo)\\n" $FAKE_APT_SIM; exit 0; }\n[ "${FAKE_APT_FAIL:-}" = 1 ] && [ "$1" = install ] && exit 100\nexit 0\n',
         "apparmor_parser": 'echo "apparmor_parser $*" >> "$CALLS"\nexit 0\n',
     }.items():
         p = bin_ / name
         p.write_text("#!/bin/sh\n" + body)
         p.chmod(0o755)
+    conf = tmp_path / "artel-root.conf"
+    conf.write_text("".join(f"allow={n}\n" for n in ("ripgrep", "g++", "libstdc++6", "python3.11-venv", "ffmpeg",
+                                                       "libfoo-secret", "ssh", "openssh-server", "sudo", "nginx-server",
+                                                       "foo-daemon", "sudo-ldap", "apparmor-utils", "apparmor",
+                                                       "docker.io", "postgresql-16", "systemd", "linux-image-generic")))
     (tmp_path / "abi").mkdir()
     (tmp_path / "abi" / "4.0").write_text("# abi\n")
     fake_bwrap = tmp_path / "bwrap"
@@ -55,7 +60,8 @@ def test_script_is_valid_posix_sh():
 def test_apt_install_runs_exactly_the_fixed_command(box):
     r = box("apt-install", "ripgrep", "g++", "libstdc++6", "python3.11-venv")
     assert r.returncode == 0, r.stderr
-    assert box.calls() == ["apt-get install -y --no-install-recommends --no-remove -- ripgrep g++ libstdc++6 python3.11-venv"]
+    assert box.calls() == ["apt-get -s install --no-install-recommends -- ripgrep g++ libstdc++6 python3.11-venv",
+                           "apt-get install -y --no-install-recommends --no-remove -- ripgrep g++ libstdc++6 python3.11-venv"]
 
 
 @posix_only
@@ -87,16 +93,16 @@ def test_deny_list_builtin(box, name):
 @posix_only
 def test_deny_list_from_root_config(box):
     conf = box.tmp / "artel-root.conf"
-    conf.write_text("# comment\ndeny=ffmpeg\ndeny=lib*-secret\n")
+    conf.write_text(conf.read_text() + "# comment\ndeny=ffmpeg\ndeny=lib*-secret\n")
     assert box("apt-install", "ffmpeg").returncode != 0
     assert box("apt-install", "libfoo-secret").returncode != 0
     assert box("apt-install", "ripgrep").returncode == 0
-    assert box.calls() == ["apt-get install -y --no-install-recommends --no-remove -- ripgrep"]
+    assert box.calls()[-1] == "apt-get install -y --no-install-recommends --no-remove -- ripgrep"
 
 
 @posix_only
 def test_config_cannot_inject_commands(box):
-    (box.tmp / "artel-root.conf").write_text("deny=$(touch %s/pwned)\nrun=touch %s/pwned2\n" % (box.tmp, box.tmp))
+    (box.tmp / "artel-root.conf").write_text("allow=ripgrep\ndeny=$(touch %s/pwned)\nrun=touch %s/pwned2\n" % (box.tmp, box.tmp))
     assert box("apt-install", "ripgrep").returncode == 0
     assert not (box.tmp / "pwned").exists() and not (box.tmp / "pwned2").exists()
 
@@ -108,7 +114,7 @@ def test_update_and_retry_once_when_install_fails_first(box, tmp_path):
                          'if [ "$1" = install ] && [ ! -e "$CALLS.seen" ]; then : > "$CALLS.seen"; exit 100; fi\nexit 0\n')
     r = box("apt-install", "ripgrep")
     assert r.returncode == 0
-    assert [c.split()[1] for c in box.calls()] == ["install", "update", "install"]
+    assert [c.split()[1] for c in box.calls()] == ["-s", "install", "update", "install"]
 
 
 @posix_only
@@ -192,3 +198,30 @@ def test_installer_asks_once_defaults_to_no_and_removes_both_files():
     prep = INSTALL[INSTALL.index("reinstall_prepare() {"):INSTALL.index("# --- root wrapper")]
     assert "root_remove" not in prep  # reinstall keeps what the owner consented to; see test_reinstall.py
     assert "--remove-root" in INSTALL
+
+
+@posix_only
+def test_only_allowlisted_names_are_installed(box):
+    """Allowlist, not deny list: `ssh` is refused when it is not listed; `ripgrep` is allowed when it is."""
+    (box.tmp / "artel-root.conf").write_text("allow=ripgrep\n")
+    r = box("apt-install", "ssh")
+    assert r.returncode != 0 and "allowlist" in r.stderr and box.calls() == []
+    assert box("apt-install", "ripgrep", "jq").returncode != 0 and box.calls() == []   # one unlisted name refuses all
+    assert box("apt-install", "ripgrep").returncode == 0
+    (box.tmp / "artel-root.conf").unlink()                                              # no file: nothing is allowed
+    assert box("apt-install", "ripgrep").returncode != 0
+
+
+@posix_only
+def test_allow_lines_are_exact_names_not_patterns(box):
+    (box.tmp / "artel-root.conf").write_text("allow=rip*\nallow=ripgrep-extra\n")
+    assert box("apt-install", "ripgrep").returncode != 0 and box.calls() == []
+
+
+@posix_only
+@pytest.mark.parametrize("pulled", ["openssh-server", "foo-daemon", "libx11-6 sudo", "cron", "foo-agent"])
+def test_simulated_install_pulling_in_a_denied_package_is_refused(box, pulled):
+    r = box("apt-install", "ssh", FAKE_APT_SIM=f"ssh {pulled}")
+    assert r.returncode != 0 and "would pull in" in r.stderr
+    assert not any(c.startswith("apt-get install") for c in box.calls())    # only the simulation ran
+    assert box("apt-install", "ripgrep", FAKE_APT_SIM="ripgrep libpcre2-8-0").returncode == 0

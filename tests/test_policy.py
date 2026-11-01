@@ -137,3 +137,30 @@ def test_forbidden_error_has_command_and_justification(tmp_path):
     with pytest.raises(ToolError) as e:
         builtin_tools.bash(ctx, "rm -rf /")
     assert "rm -rf /" in str(e.value) and "never allowed" in str(e.value)
+
+
+@pytest.mark.parametrize("cmd", [
+    "sudo -n /usr/local/sbin/artel-root apt-install x", "env sudo -n /usr/local/sbin/artel-root apt-install x",
+    "/usr/bin/sudo -n true", "doas id", "pkexec id", "x=1 sudo id", "ls | sudo tee /etc/x", "bash -c 'sudo id'",
+    "/usr/local/sbin/artel-root apt-install nginx", "cd / && artel-root apparmor-bwrap", "nohup sudo -n id &"])
+def test_agents_cannot_escalate_or_call_the_root_wrapper(cmd):
+    d = evaluate(cmd)
+    assert d.decision == "forbidden", cmd
+
+
+def test_escalation_rules_do_not_block_ordinary_text():
+    assert evaluate("cat artel/data/artel-root.sh").decision == "allow"
+    assert evaluate("git commit -m 'document sudo setup'").decision == "allow"
+    assert evaluate("grep -rn sudoers docs").decision == "allow"
+
+
+def test_claude_code_hook_and_codex_gate_use_the_same_rules(tmp_path):
+    import json
+    import subprocess
+    import sys
+
+    r = subprocess.run([sys.executable, "-I", policy.__file__],
+                       input=json.dumps({"tool_name": "Bash", "tool_input": {"command": "env sudo -n /usr/local/sbin/artel-root x"},
+                                         "cwd": str(tmp_path)}),
+                       capture_output=True, text=True, env={**__import__("os").environ})
+    assert r.returncode == 2 and "privilege-escalation" in r.stderr or "root-wrapper" in r.stderr
