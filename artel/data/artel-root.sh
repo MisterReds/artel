@@ -101,6 +101,60 @@ valid_name() {
   [ "${#1}" -le 100 ]
 }
 
+# Upper bound for the packages an install would add (the requested ones included). `maxdeps=<n>` lines in the conf
+# lower or raise it; several lines: the smallest wins. Default 25.
+max_deps() {
+  max=25
+  best=""
+  if check_conf; then
+    while IFS= read -r line || [ -n "$line" ]; do
+      case "$line" in
+        maxdeps=*)
+          n=${line#maxdeps=}
+          case "$n" in ''|*[!0-9]*) continue ;; esac
+          [ "${#n}" -le 4 ] || continue
+          if [ "$best" = "" ] || [ "$n" -lt "$best" ]; then best=$n; fi ;;
+      esac
+    done < "$CONF"
+    [ "$best" = "" ] || max=$best
+  fi
+  echo "$max"
+}
+
+# The name must be exactly one real package: `apt-cache show` accepts globs and regular expressions, so its answer
+# is read, not trusted: one of its stanzas must carry `Package: <name>` (a virtual or unknown name fails outright).
+exact_package() {
+  out=$(apt-cache show --no-all-versions -- "$1" 2>/dev/null) || return 1
+  printf '%s\n' "$out" | awk -v n="$1" '$1 == "Package:" && $2 == n { found = 1 } END { exit !found }'
+}
+
+exact_names() {
+  for p in "$@"; do exact_package "$p" || return 1; done
+}
+
+# the install is simulated and every package it would add must pass the policy and the cap (dependencies included)
+simulate() {
+  sim=$(apt-get -s install --no-install-recommends -- "$@" 2>/dev/null)
+}
+
+check_simulation() {
+  total=0
+  for p in $(printf '%s\n' "$sim" | awk '/^Inst /{print $2}'); do
+    if builtin_denied "$p" || conf_denied "$p" || service_like "$p"; then die "install would pull in a denied package: $p"; fi
+    total=$((total + 1))
+  done
+  limit=$(max_deps)
+  [ "$total" -le "$limit" ] || die "install would add $total packages, more than the cap of $limit"
+}
+
+# refresh the lists, then judge again from scratch: the names, the simulated dependency set, its size
+refresh_and_check() {
+  apt-get update -qq || die "apt-get update failed"
+  exact_names "$@" || die "not an exact package name in the repositories: $*"
+  simulate "$@" || die "apt-get cannot resolve: $*"
+  check_simulation
+}
+
 apt_install() {
   [ $# -ge 1 ] && [ $# -le 20 ] || die "apt-install takes 1 to 20 package names"
   for p in "$@"; do
@@ -109,19 +163,17 @@ apt_install() {
     conf_allowed "$p" || die "package not in the allowlist ($CONF): $p"
   done
   command -v apt-get >/dev/null 2>&1 || die "apt-get not found"
+  command -v apt-cache >/dev/null 2>&1 || die "apt-cache not found"
   [ "$(id -u)" = 0 ] || [ "$NEED_ROOT" = 0 ] || die "must run as root (through sudo)"
   DEBIAN_FRONTEND=noninteractive
   export DEBIAN_FRONTEND
-  # what the install would really pull in (dependencies included) must pass the same policy
-  if ! sim=$(apt-get -s install --no-install-recommends -- "$@" 2>/dev/null); then
-    apt-get update -qq || die "apt-get update failed"
-    sim=$(apt-get -s install --no-install-recommends -- "$@") || die "apt-get cannot resolve: $*"
+  if exact_names "$@" && simulate "$@"; then
+    check_simulation
+  else
+    refresh_and_check "$@"      # stale lists: update, then every check again
   fi
-  for p in $(printf '%s\n' "$sim" | awk '/^Inst /{print $2}'); do
-    if builtin_denied "$p" || conf_denied "$p" || service_like "$p"; then die "install would pull in a denied package: $p"; fi
-  done
   if ! apt-get install -y --no-install-recommends --no-remove -- "$@"; then
-    apt-get update -qq || die "apt-get update failed"
+    refresh_and_check "$@"      # the lists changed under us: the new simulation is vetted before the second try
     apt-get install -y --no-install-recommends --no-remove -- "$@" || die "apt-get install failed"
   fi
 }

@@ -22,6 +22,9 @@ def box(tmp_path):
     calls = tmp_path / "calls.log"
     for name, body in {
         "apt-get": 'echo "apt-get $*" >> "$CALLS"\n[ "$1" = -s ] && { [ -n "${FAKE_APT_SIM:-}" ] && printf "Inst %s (1 repo)\\n" $FAKE_APT_SIM; exit 0; }\n[ "${FAKE_APT_FAIL:-}" = 1 ] && [ "$1" = install ] && exit 100\nexit 0\n',
+        # the exact-name check: `Package:` stanzas of the names asked for (FAKE_CACHE_SAYS replaces the name: regex-like expansion)
+        "apt-cache": 'echo "apt-cache $*" >> "$CALLS.cache"\n[ "${FAKE_CACHE_MISSING:-}" = 1 ] && exit 100\n'
+                     'for a; do last=$a; done\nprintf "Package: %s\\nVersion: 1\\n" "${FAKE_CACHE_SAYS:-$last}"\nexit 0\n',
         "apparmor_parser": 'echo "apparmor_parser $*" >> "$CALLS"\nexit 0\n',
     }.items():
         p = bin_ / name
@@ -114,7 +117,7 @@ def test_update_and_retry_once_when_install_fails_first(box, tmp_path):
                          'if [ "$1" = install ] && [ ! -e "$CALLS.seen" ]; then : > "$CALLS.seen"; exit 100; fi\nexit 0\n')
     r = box("apt-install", "ripgrep")
     assert r.returncode == 0
-    assert [c.split()[1] for c in box.calls()] == ["-s", "install", "update", "install"]
+    assert [c.split()[1] for c in box.calls()] == ["-s", "install", "update", "-s", "install"]   # re-simulated
 
 
 @posix_only
@@ -262,3 +265,44 @@ def test_conf_symlink_is_refused(box):
     (box.tmp / "artel-root.conf").symlink_to(real)
     r = box("apt-install", "ripgrep", ARTEL_ROOT_TEST_CONF_OWNER=f"{os.getuid()}:{os.getgid()}")
     assert r.returncode != 0 and box.calls() == []
+
+
+@posix_only
+def test_after_apt_get_update_the_simulation_is_checked_again_before_the_real_install(box):
+    """The first install failed, the lists were refreshed, and now the dependency set differs: the changed set is
+    vetted, so a denied package that appeared with the update stops the real install."""
+    sim_after = box.tmp / "sim_after"
+    (box.tmp / "bin" / "apt-get").write_text(
+        '#!/bin/sh\necho "apt-get $*" >> "$CALLS"\n'
+        f'if [ "$1" = -s ]; then if [ -e "{sim_after}" ]; then printf "Inst ripgrep (1 r)\\nInst openssh-server (1 r)\\n"; else printf "Inst ripgrep (1 r)\\n"; fi; exit 0; fi\n'
+        f'if [ "$1" = update ]; then : > "{sim_after}"; exit 0; fi\n'
+        'if [ "$1" = install ]; then exit 100; fi\nexit 0\n')
+    r = box("apt-install", "ripgrep")
+    assert r.returncode != 0 and "denied package: openssh-server" in r.stderr
+    assert [c.split()[1] for c in box.calls()] == ["-s", "install", "update", "-s"]      # one real install only
+
+
+@posix_only
+def test_a_name_must_resolve_to_exactly_that_package(box):
+    r = box("apt-install", "ripgrep", FAKE_CACHE_SAYS="ripgrep-all")
+    assert r.returncode != 0 and "exact package" in r.stderr
+    assert not any(c.startswith(("apt-get -s", "apt-get install")) for c in box.calls())
+    r = box("apt-install", "ripgrep", FAKE_CACHE_MISSING="1")                                   # virtual / unknown
+    assert r.returncode != 0 and "exact package" in r.stderr
+    assert not any(c.startswith(("apt-get -s", "apt-get install")) for c in box.calls())
+    assert box("apt-install", "ripgrep").returncode == 0
+    cache = Path(str(box.tmp / "calls.log") + ".cache").read_text().splitlines()
+    assert cache[-1] == "apt-cache show --no-all-versions -- ripgrep"
+
+
+@posix_only
+def test_the_number_of_new_packages_is_capped_and_the_cap_is_configurable(box):
+    many = " ".join(f"libdep{i}" for i in range(25))               # 25 new packages: at the default cap
+    assert box("apt-install", "ripgrep", FAKE_APT_SIM=many).returncode == 0
+    r = box("apt-install", "ripgrep", FAKE_APT_SIM=many + " libextra")
+    assert r.returncode != 0 and "26" in r.stderr and "25" in r.stderr
+    conf = box.tmp / "artel-root.conf"
+    conf.write_text(conf.read_text() + "maxdeps=30\n")
+    assert box("apt-install", "ripgrep", FAKE_APT_SIM=many + " libextra").returncode == 0
+    conf.write_text(conf.read_text() + "maxdeps=2\n")             # several lines: the smallest wins
+    assert box("apt-install", "ripgrep", FAKE_APT_SIM="libdep1 libdep2 libdep3").returncode != 0
