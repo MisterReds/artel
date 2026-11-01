@@ -244,7 +244,9 @@ root_conf() {
     [ -r "$ROOT_CONF" ] && grep '^deny=' "$ROOT_CONF" || true
     awk '/^packages:/{f=1;next} /^[^ #]/{f=0} f && match($0,/apt: *[a-z0-9+.-]+/){print "allow=" substr($0,RSTART+5,RLENGTH-5)}' "$yaml" | tr -d ' ' | sort -u
   } > "$tmp"
-  $SUDO install -m 0644 -o root -g root "$tmp" "$ROOT_CONF"
+  if [ -n "$SUDO" ] || [ "$(id -u)" = 0 ]; then $SUDO install -m 0644 -o root -g root "$tmp" "$ROOT_CONF"
+  else install -m 0644 "$tmp" "$ROOT_CONF"   # no way to become root (tests use a private ARTEL_ROOT_CONF)
+  fi
   rm -f "$tmp"
 }
 
