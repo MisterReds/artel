@@ -379,8 +379,29 @@ def first_programs(checks) -> set:
 
 
 def leading_program(cmd) -> Optional[str]:
-    """The program the FIRST segment of ``cmd`` starts with (None when it starts with none)."""
-    return _segment_program(_segments(cmd)[0])
+    """The program whose absence is what a 126/127 exit of ``cmd`` means: the first real program, after leading
+    builtins, ``cd`` and variable assignments (``cd sub && rg x`` -> rg). None when it starts with none (a loop
+    header) or when the exit status may come from something after it (``;``, ``|``, ``||``, ``&`` follow it)."""
+    parts = re.split(r"(&&|\|\||[;|\n&])", re.sub(r"\d*[<>]&\d*|&>>?", " ", str(cmd)))
+    segs, seps = parts[0::2], parts[1::2] + [""]
+    for seg, sep in zip(segs, seps):
+        prog = _segment_program(seg)
+        if prog:
+            return prog if sep in ("", "&&") else None
+        if not _skippable(seg) or sep not in (";", "\n", "&&"):
+            return None
+    return None
+
+
+def _skippable(seg: str) -> bool:
+    """A segment with no effect on which program fails later: empty, only assignments, or a leading builtin."""
+    try:
+        words = shlex.split(seg.strip().lstrip("({!"), posix=True)
+    except ValueError:
+        return False
+    while words and re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]):
+        words.pop(0)
+    return not words or (words[0] in _BUILTINS and words[0] not in _HEADERS)
 
 
 def known_tools() -> set:

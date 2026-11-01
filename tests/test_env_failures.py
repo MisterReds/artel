@@ -103,7 +103,9 @@ def test_environment_only_when_the_first_program_of_the_first_segment_is_absent(
     assert cls("for f in tests/*.py; do python3 $f; done") == "work"             # `for`, `f` are not programs
     assert cls("for f in a; do nonexistent_tool_xyz $f; done") == "work"          # not the first segment's program
     assert cls("python3 -c 'exit(1)' && nonexistent_tool_xyz") == "work"
-    assert cls("ok=1; nonexistent_tool_xyz") == "work"                            # first segment is not a program
+    assert cls("ok=1; nonexistent_tool_xyz") == "environment"                     # assignments are skipped
+    assert cls("cd . && nonexistent_tool_xyz") == "environment"                   # so is cd
+    assert cls("nonexistent_tool_xyz; python3 -c 'exit(1)'") == "work"            # the exit status is python's
     assert cls("nonexistent_tool_xyz") == "environment"
     assert cls("X=1 nonexistent_tool_xyz --version && echo hi") == "environment"
 
@@ -116,7 +118,8 @@ def test_first_programs_skips_loop_headers_and_variables():
     assert first_programs(["case $x in a) ;; esac"]) == set()
     assert leading_program("for f in a; do python3 $f; done") is None
     assert leading_program("FOO=1 BAR=2 rg x") == "rg"
-    assert leading_program("cd d && rg x") is None
+    assert leading_program("cd d && rg x") == "rg"
+    assert leading_program("cd d; echo hi; rg x | wc") is None
 
 
 def test_a_dead_loopback_proxy_is_never_an_environment_verdict(cfg, tmp_path, monkeypatch):
