@@ -21,6 +21,7 @@ import contextlib
 import json
 import os
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -56,6 +57,7 @@ MANAGER_BRIEF_CHARS = 3200
 TICK_S = 0.5
 NETWORK_PROBE_S = 30.0         # first probe after a network failure; doubles up to the max
 NETWORK_PROBE_MAX_S = 600.0
+VET_TIMEOUT_S = 120            # one vetting run of a rewritten check
 PROXY_HOLDS_MAX = 3            # a failing gate next to a dead loopback proxy is held this many times (or this long)
 PROXY_HOLD_S = 1800.0
 PROXY_HOLD = "network: cannot connect to proxy: "
@@ -390,9 +392,11 @@ class Manager:
                                     "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()},
                          self.cfg)
 
-    def run_gates(self, task: dict, cwd=None, checks=None, record: bool = True) -> list[dict]:
+    def run_gates(self, task: dict, cwd=None, checks=None, record: bool = True, vet: bool = False) -> list[dict]:
         """Run the task's shell checks in ``cwd`` (the task worktree under isolation, else shared/).
-        ``record=False``: the runs are not journaled as the task's gate results (vetting runs)."""
+        ``record=False``: the runs are not journaled as the task's gate results. ``vet``: a vetting run of checks
+        nobody has accepted yet: sandboxed whenever a backend exists, network off, only ``cwd`` (a temporary copy)
+        writable, ``VET_TIMEOUT_S``, and nothing is installed for it."""
         from . import sandbox
 
         results = []
@@ -404,8 +408,12 @@ class Manager:
             if record:
                 self.project.log.append("gate/result", task_id=task["id"], **res)
 
-        sb = sandbox.settings(self.cfg)
-        if (self.cfg.get("provision") or {}).get("auto", True):
+        cfg = self.cfg
+        if vet:
+            cfg = {**cfg, "sandbox": {**(cfg.get("sandbox") or {}), "mode": "auto", "network": False,
+                                      "gates": True, "writable": []}}
+        sb = sandbox.settings(cfg)
+        if not vet and (self.cfg.get("provision") or {}).get("auto", True):
             from . import provision
 
             provision.prepare_checks(checks, self.cfg, self.project.log.append)  # missing first programs
@@ -428,9 +436,9 @@ class Manager:
                 emit(res)
                 continue
             # gates run unsandboxed unless `sandbox.gates` asks for it (then writable: the gate cwd + temp)
-            run = sandbox.plan(self.cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off",
+            run = sandbox.plan(cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off",
                                project_root=self.project.root)
-            if sandbox.refusal(run, self.cfg):  # demanded backend missing: the check does not run unsandboxed
+            if sandbox.refusal(run, cfg):  # demanded backend missing: the check does not run unsandboxed
                 res = {"command": cmd, "exit": -1, "output": f"command NOT run: {run.error}", "env": "sandbox"}
                 results.append(res)
                 emit(res)
@@ -438,7 +446,7 @@ class Manager:
             try:
                 genv = shell_env(env)
                 p, failed = sandbox.execute(run, cwd=cwd, env=genv,
-                                            timeout=int(self.cfg.get("gate_timeout_s", 900)))
+                                            timeout=VET_TIMEOUT_S if vet else int(self.cfg.get("gate_timeout_s", 900)))
                 failed = failed if sb["require"] else ""
                 res = {"command": cmd, "exit": p.returncode if not failed else -1,
                        "output": window_text(p.stdout + p.stderr, 3000) if not failed else f"command NOT run: {failed}"}
@@ -589,8 +597,11 @@ class Manager:
         roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster()[:12])
         user = f"{self.manager_brief(task)}\n\n<roster>\n{roster}\n</roster>\n\nDecide now."
         ctx = ToolContext(self.kernel, self.project, role="manager", workspace=self.project.shared, task=task)
-        return run_agent(self.kernel, self.project, role="manager", system=prompts.MANAGER, first_user=user, ctx=ctx,
+        out = run_agent(self.kernel, self.project, role="manager", system=prompts.MANAGER, first_user=user, ctx=ctx,
                         max_turns=6, purpose="replan", stop_event=self.stop)
+        if out.name == "replan_decision" and out.payload.get("checks") and self._env_failure(task["id"]):
+            out.payload["_vet"] = self._vet_rewrite(task, [str(c) for c in out.payload["checks"]])  # in the pool
+        return out
 
     def job_audit(self) -> Outcome:
         roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster()[:12])
@@ -776,6 +787,9 @@ class Manager:
         else:
             passed = bool(out.payload["passed"]) and gates_ok
             feedback = out.payload["feedback"]
+            if out.payload["passed"] and self._needs_checks_confirmation(task_id) and not out.payload.get("checks_cover_criteria"):
+                passed, feedback = False, ("The rewritten checks were not confirmed to cover the criteria "
+                                           "(checks_cover_criteria): " + feedback)
             if out.payload["passed"] and not gates_ok:
                 feedback = "Automated gates failed:\n" + "\n".join(
                     f"$ {g['command']} -> exit {g['exit']}\n{window_text(g['output'], 800)}" for g in gates if g["exit"] != 0)
@@ -907,13 +921,14 @@ class Manager:
                               backoff_until=time.time() + float(self.cfg.get("backoff_base_s", BACKOFF_BASE_S)))
             return
         d = out.payload
+        vet = d.pop("_vet", None)
         self.note("decision", task_id=task_id, env=env, **d)
         action = d["action"]
         if d.get("guidance"):
             self.board.comment(task_id, "manager", f"Guidance: {d['guidance']}")
         if d.get("checks"):  # only an environment failure lets the manager rewrite the checks
             if env:
-                self._rewrite_checks(task, [str(c) for c in d["checks"]])
+                self._rewrite_checks(task, [str(c) for c in d["checks"]], vet)
             else:
                 self.board.comment(task_id, "manager", "Checks are not changed: the failure was not an environment one.")
         if action == "retry" and env:  # the work was never judged: straight back to the review, no rework
@@ -960,49 +975,84 @@ class Manager:
                 ok = bool(trees) and self.snapper.export(trees[0], tmp)
             yield Path(tmp) if ok else None
 
-    def _rewrite_checks(self, task: dict, new: list) -> None:
-        """Accept a rewrite of the checks only when it is DISCRIMINATING: every new check fails on the task's baseline
-        and passes on the submitted result, both run the way gates run (see ``checks.discrimination_problem``). A
-        cheap syntactic pre-check goes first. The task goes through review, whose brief carries the old and the new
-        checks."""
-        from . import checks, provision
-
+    def _rewrite_checks(self, task: dict, new: list, vet: Optional[dict]) -> None:
+        """Accept a rewrite of the checks that was vetted by ``_vet_rewrite`` (in the job pool): a problem refuses
+        it; reasons for confirmation are journaled with the evidence and the reviewer must confirm them. The task
+        goes through review, whose brief carries the old and the new checks."""
         task_id, old = task["id"], list(task["checks"])
-        path = agent_env("native", None, self.cfg).get("PATH") or os.defpath
-        if (self.cfg.get("provision") or {}).get("auto", True):
-            provision.prepare_checks(new, self.cfg, self.project.log.append)
-        problem = checks.rewrite_problem(old, new, provision.absent_programs(new, path))
-        if not problem:
-            problem = self._discrimination_problem(task, new)
+        problem = "the rewrite was not vetted" if vet is None else vet["problem"]
         if problem:
             self.project.log.append("check/rejected", task_id=task_id, old=old, new=new, reason=problem)
             self.board.comment(task_id, "manager", f"Checks are not changed: the rewrite was refused ({problem}).")
             return
         self.board.update(task_id, checks=new)
-        self.project.log.append("check/rewritten", task_id=task_id, old=old, new=new)
-        self.board.comment(task_id, "manager", "Checks rewritten after an environment failure:\n" + _fmt_list(new))
+        self.project.log.append("check/rewritten", task_id=task_id, old=old, new=new, confirm=vet["confirm"],
+                                evidence=vet["evidence"])
+        self.board.comment(task_id, "manager", "Checks rewritten after an environment failure:\n" + _fmt_list(new)
+                           + ("\nThe reviewer must confirm that they cover the criteria." if vet["confirm"] else ""))
 
-    def _discrimination_problem(self, task: dict, new: list) -> str:
-        from . import checks
+    def _vet_rewrite(self, task: dict, new: list) -> dict:
+        """Judge a rewrite of the checks: ``{problem, confirm, evidence}``. Cheap syntactic refusals first, then the
+        baseline run (the commit recorded at claim time), then the result run only for the checks that failed the
+        baseline. Runs are sandboxed, offline, in temporary copies, and nothing is provisioned for them."""
+        from . import checks, provision
 
+        old = list(task["checks"])
+        path = agent_env("native", None, self.cfg).get("PATH") or os.defpath
+        res = {"problem": checks.rewrite_problem(old, new, provision.absent_programs(new, path)), "confirm": [],
+               "evidence": []}
+        if res["problem"]:
+            return res
         with self._baseline(task["id"]) as base:
-            if base is None and self.iso is not None and self._task_base(task["id"]) and self.iso.exists(task["id"]) \
-                    and not self.iso.base_intact(task["id"], self._task_base(task["id"])):
-                return "база задачи изменена"
             if base is None:
-                return "the task has no baseline (no worktree base commit or claim-time snapshot) to compare the checks against"
-            on_base = self.run_gates(task, cwd=base, checks=new, record=False)
-        result_dir = self.iso.path(task["id"]) if self.iso is not None else self.project.shared
-        on_result = self.run_gates(task, cwd=result_dir, checks=new, record=False)
-        return checks.discrimination_problem(new, on_base, on_result)
+                res["problem"] = ("база задачи изменена" if self._base_moved(task["id"]) else
+                                  "the task has no baseline (no worktree base commit or claim-time snapshot) to compare the checks against")
+                return res
+            on_base = self.run_gates(task, cwd=base, checks=new, record=False, vet=True)
+        guard = checks.guards(new, on_base)
+        todo = [c for c in new if c not in guard]
+        on_result = []
+        if todo:  # a baseline that passes everything leaves nothing to ask of the result
+            src = self.iso.path(task["id"]) if self.iso is not None else self.project.shared
+            with tempfile.TemporaryDirectory(prefix="artel-result-") as tmp:
+                copy = Path(tmp) / "tree"
+                shutil.copytree(src, copy, symlinks=True, ignore=shutil.ignore_patterns(".git"), dirs_exist_ok=True)
+                ran = dict(zip(todo, self.run_gates(task, cwd=copy, checks=todo, record=False, vet=True)))
+            on_result = [ran.get(c) for c in new]
+        else:
+            on_result = [None] * len(new)
+        res["problem"] = checks.discrimination_problem(new, on_base, on_result)
+        absent_old = {p for p in (provision.leading_program(c) for c in old) if p and not shutil.which(p, path=path)}
+        res["confirm"] = checks.confirmation_reasons(old, new, absent_old) + [
+            f"`{c}` passes on the baseline: a guard, it says nothing about the task" for c in guard]
+        tail = lambda r: None if r is None else {"exit": r["exit"], "tail": str(r.get("output", ""))[-300:]}  # noqa: E731
+        res["evidence"] = [{"command": c, "baseline": tail(b), "result": tail(r)} for c, b, r in zip(new, on_base, on_result)]
+        return res
+
+    def _base_moved(self, task_id: str) -> bool:
+        base = self._task_base(task_id)
+        return bool(self.iso is not None and base and self.iso.exists(task_id) and not self.iso.base_intact(task_id, base))
+
+    def _needs_checks_confirmation(self, task_id: str) -> bool:
+        ev = [e for e in self.project.log.read(kinds={"check/rewritten"}) if e.get("task_id") == task_id]
+        return bool(ev and ev[-1].get("confirm") and list(self.board.get(task_id)["checks"]) == list(ev[-1]["new"]))
 
     def _rewritten_brief(self, task_id: str) -> str:
         ev = [e for e in self.project.log.read(kinds={"check/rewritten"}) if e.get("task_id") == task_id]
         if not ev:
             return ""
-        return (f"<checks_rewritten>\n<old>\n{_fmt_list(ev[0]['old'])}\n</old>\n<new>\n{_fmt_list(ev[-1]['new'])}\n</new>\n"
+        last = ev[-1]
+        shown = "\n".join(
+            f"$ {e['command']}\n  baseline: " + (f"exit {e['baseline']['exit']}  {e['baseline']['tail'][-150:]!r}" if e["baseline"] else "not run")
+            + "\n  result: " + (f"exit {e['result']['exit']}  {e['result']['tail'][-150:]!r}" if e["result"] else "not run")
+            for e in last.get("evidence") or [])
+        why = "\n".join(f"- {r}" for r in last.get("confirm") or [])
+        ask = (f"These need your explicit confirmation:\n{why}\nPass only if the new checks verify the criteria, "
+               "and then set checks_cover_criteria=true in review_verdict; otherwise the review fails.\n" if why else "")
+        return (f"<checks_rewritten>\n<old>\n{_fmt_list(ev[0]['old'])}\n</old>\n<new>\n{_fmt_list(last['new'])}\n</new>\n"
+                f"<vetting>\n{shown}\n</vetting>\n"
                 "These checks were rewritten after an environment failure. Confirm that the new checks verify the "
-                "same criteria as the old ones; if they verify less, the review fails.\n</checks_rewritten>\n\n")
+                f"same criteria as the old ones; if they verify less, the review fails.\n{ask}</checks_rewritten>\n\n")
 
     def _audit_failed(self, reason: str) -> None:
         """An audit that ended without a verdict is retried the way a task is: after the provider's limit resets

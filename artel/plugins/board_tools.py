@@ -70,11 +70,13 @@ def task_block(ctx: ToolContext, reason: str, evidence: str, needs_human: bool =
     return _terminal(ctx, "task_block", {"reason": reason, "evidence": evidence, "needs_human": bool(needs_human)})
 
 
-def review_verdict(ctx: ToolContext, passed: bool, feedback: str, failed_criteria: list = None) -> str:
+def review_verdict(ctx: ToolContext, passed: bool, feedback: str, failed_criteria: list = None,
+                   checks_cover_criteria: bool = False) -> str:
     if not passed and not feedback.strip():
         raise ToolError("a failing verdict needs actionable feedback")
     return _terminal(ctx, "review_verdict", {"passed": bool(passed), "feedback": feedback,
-                                             "failed_criteria": failed_criteria or []})
+                                             "failed_criteria": failed_criteria or [],
+                                             "checks_cover_criteria": bool(checks_cover_criteria)})
 
 
 def audit_verdict(ctx: ToolContext, complete: bool, summary: str, missing: list = None, run: dict = None) -> str:
@@ -243,7 +245,10 @@ def setup(kernel) -> None:
     kernel.register_tool(ToolSpec(
         "review_verdict", "Deliver the review verdict. Pass only if every criterion is verifiably met.",
         {**S, "properties": {"passed": {"type": "boolean"}, "feedback": {"type": "string"},
-                             "failed_criteria": {"type": "array", "items": {"type": "string"}}},
+                             "failed_criteria": {"type": "array", "items": {"type": "string"}},
+                             "checks_cover_criteria": {"type": "boolean", "description": "only when the brief has "
+                                                       "<checks_rewritten> asking for confirmation: true = the new checks "
+                                                       "verify the criteria; without it the task cannot be accepted"}},
          "required": ["passed", "feedback"]}, review_verdict, roles=("reviewer",), terminal=True))
     kernel.register_tool(ToolSpec(
         "audit_verdict", "Deliver the goal audit. If anything required by the goal is missing or weak, set "

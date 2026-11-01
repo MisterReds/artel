@@ -1,6 +1,7 @@
 """Stage B items 3 and 8: `python` resolves in agents' shells; a broken environment is not bad work."""
 import os
 import subprocess
+from pathlib import Path
 import sys
 
 import pytest
@@ -232,7 +233,7 @@ def test_replan_can_change_checks_only_for_environment_failures(cfg, tmp_path):
     mgr.board.update(tid, status="blocked")
     project.log.append("review/verdict", task_id=tid, passed=False, feedback="f", failure_class="environment",
                        gates=[{"command": "rg foo", "exit": 127}])
-    mgr.on_replan(tid, out)
+    _replan(mgr, tid, ["grep -rq foo ."])
     assert mgr.board.get(tid)["checks"] == ["grep -rq foo ."]
 
 
@@ -262,6 +263,17 @@ def _blocked_env_task(cfg, tmp_path, checks, baseline=None, result=None, isolate
     return project, mgr, tid
 
 
+def _replan(mgr, tid, checks):
+    """The replanner decides to rewrite the checks: vetted in the job (pool) the way the manager schedules it."""
+    from unittest import mock
+
+    from artel import manager as manager_mod
+
+    with mock.patch.object(manager_mod, "run_agent", lambda *a, **k: _decision(checks)):
+        out = mgr.job_replan(mgr.board.get(tid))
+    mgr.on_replan(tid, out)
+
+
 def _decision(checks):
     from artel.agent import Outcome
 
@@ -274,34 +286,33 @@ def _decision(checks):
                                  ["nonexistent_tool_xyz foo"], ["printf done"]])
 def test_trivial_or_unrunnable_rewrites_are_rejected(cfg, tmp_path, bad):
     project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"])
-    mgr.on_replan(tid, _decision(bad))
+    _replan(mgr, tid, bad)
     assert mgr.board.get(tid)["checks"] == ["rg foo"]
     assert project.log.read(kinds={"check/rejected"}) and not project.log.read(kinds={"check/rewritten"})
 
 
-@pytest.mark.parametrize("bad", ["python3 -c pass", "bash -c true", "test -e .", "cat f.txt", "pytest -k nonexistent"])
+@pytest.mark.parametrize("bad", ["python3 -c pass", "bash -c true", "test -e .", "cat f.txt"])
 @pytest.mark.parametrize("isolated", [False, True])
-def test_a_check_that_passes_on_the_baseline_is_rejected_and_the_replanner_is_told_why(cfg, tmp_path, bad, isolated):
-    """No syntax decides this: whatever the command looks like, it must FAIL before the task and PASS after it."""
+def test_a_check_that_passes_on_the_baseline_is_only_a_reviewer_confirmed_guard(cfg, tmp_path, bad, isolated):
+    """No syntax decides this: a check that already passes before the task says nothing about it, so it is accepted
+    only as a guard that the reviewer must confirm; the result is not even run."""
     project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "old\n"},
                                           result={"f.txt": "old\n", "foo.txt": "foo\n"}, isolated=isolated)
-    mgr.on_replan(tid, _decision([bad]))
-    assert mgr.board.get(tid)["checks"] == ["rg foo"]
-    rejected = project.log.read(kinds={"check/rejected"})
-    assert rejected and not project.log.read(kinds={"check/rewritten"})
-    assert "baseline" in rejected[-1]["reason"] or "result" in rejected[-1]["reason"]
-    assert any("refused" in c["body"] for c in mgr.board.comments(tid))      # the replanner is told
+    _replan(mgr, tid, [bad])
+    ev = project.log.read(kinds={"check/rewritten"})
+    assert ev and any("passes on the baseline" in r for r in ev[-1]["confirm"])
+    assert ev[-1]["evidence"][0]["baseline"]["exit"] == 0 and ev[-1]["evidence"][0]["result"] is None
 
 
-def test_the_baseline_pass_is_the_reason_when_the_result_passes_too(cfg, tmp_path):
+def test_the_baseline_pass_is_a_guard_when_the_result_passes_too(cfg, tmp_path):
     project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "x"}, result={"f.txt": "x"})
-    mgr.on_replan(tid, _decision(["test -e f.txt"]))
-    assert "passes on the baseline" in project.log.read(kinds={"check/rejected"})[-1]["reason"]
+    _replan(mgr, tid, ["test -e f.txt"])
+    assert any("passes on the baseline" in r for r in project.log.read(kinds={"check/rewritten"})[-1]["confirm"])
 
 
 def test_a_check_that_fails_on_the_submitted_result_is_rejected(cfg, tmp_path):
     project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "x"}, result={"f.txt": "x"})
-    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    _replan(mgr, tid, ["grep -rq foo ."])
     assert "fails on the submitted result" in project.log.read(kinds={"check/rejected"})[-1]["reason"]
 
 
@@ -309,14 +320,14 @@ def test_a_task_without_a_baseline_cannot_have_its_checks_rewritten(cfg, tmp_pat
     """A task nobody ever claimed has no snapshot event and no worktree: nothing to compare against."""
     project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], result={"foo.txt": "foo\n"},
                                           claimed=False)
-    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    _replan(mgr, tid, ["grep -rq foo ."])
     assert mgr.board.get(tid)["checks"] == ["rg foo"]
     assert "baseline" in project.log.read(kinds={"check/rejected"})[-1]["reason"]
 
 
 def test_rewrite_must_not_drop_checks(cfg, tmp_path):
     project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo", "rg bar"], result={"foo.txt": "foo bar\n"})
-    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    _replan(mgr, tid, ["grep -rq foo ."])
     assert mgr.board.get(tid)["checks"] == ["rg foo", "rg bar"]
 
 
@@ -324,7 +335,7 @@ def test_rewrite_must_not_drop_checks(cfg, tmp_path):
 def test_rg_to_grep_is_accepted_journaled_and_reviewed_against_the_old_checks(cfg, tmp_path, monkeypatch, isolated):
     project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "old\n"},
                                           result={"f.txt": "old\n", "foo.txt": "foo\n"}, isolated=isolated)
-    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    _replan(mgr, tid, ["grep -rq foo ."])
     assert mgr.board.get(tid)["checks"] == ["grep -rq foo ."]
     ev = project.log.read(kinds={"check/rewritten"})
     assert ev and ev[-1]["old"] == ["rg foo"] and ev[-1]["new"] == ["grep -rq foo ."]
@@ -350,7 +361,7 @@ def test_a_worker_moving_main_does_not_move_the_baseline(cfg, tmp_path, monkeypa
     (wt / "foo.txt").write_text("foo\n")
     mgr.iso.commit(tid, "work")
     subprocess.run(["git", f"--git-dir={mgr.iso.git_dir}", "branch", "-f", "main", mgr.iso.branch(tid)], check=True)
-    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    _replan(mgr, tid, ["grep -rq foo ."])
     assert mgr.board.get(tid)["checks"] == ["grep -rq foo ."]
 
 
@@ -363,6 +374,98 @@ def test_a_branch_that_lost_the_recorded_base_rejects_the_rewrite(cfg, tmp_path)
     subprocess.run(["git", "-C", str(wt), "-c", "user.name=a", "-c", "user.email=a@a", "commit", "-q", "-m", "r", "--allow-empty"],
                    check=True)
     subprocess.run(["git", f"--git-dir={mgr.iso.git_dir}", "branch", "-f", mgr.iso.branch(tid), "x"], check=True)
-    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    _replan(mgr, tid, ["grep -rq foo ."])
     assert mgr.board.get(tid)["checks"] == ["rg foo"]
     assert "база задачи изменена" in project.log.read(kinds={"check/rejected"})[-1]["reason"]
+
+
+def test_existence_check_replacing_a_test_run_needs_the_reviewer_and_the_review_tool_gates_acceptance(cfg, tmp_path, monkeypatch):
+    from artel import manager as manager_mod
+    from artel.agent import Outcome
+
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["pytest tests/test_x.py"], baseline={"f.txt": "old\n"},
+                                          result={"f.txt": "old\n", "out.txt": "x\n"})
+    _replan(mgr, tid, ["test -e out.txt"])
+    ev = project.log.read(kinds={"check/rewritten"})[-1]
+    assert len(ev["confirm"]) >= 2 and any("existence" in r for r in ev["confirm"])
+    assert any("pytest" in r for r in ev["confirm"]) and any("artefacts" in r for r in ev["confirm"])
+    seen = []
+
+    def verdict(confirmed):
+        def fake(*a, **k):
+            seen.append(k["first_user"])
+            return Outcome(status="terminal", terminal=("review_verdict", {
+                "passed": True, "feedback": "ok", "failed_criteria": [], "checks_cover_criteria": confirmed}))
+        monkeypatch.setattr(manager_mod, "run_agent", fake)
+        mgr.board.update(tid, status="review")
+        mgr.on_review(tid, mgr.job_review(mgr.board.get(tid)))
+        return mgr.board.get(tid)["status"]
+
+    assert verdict(False) != "done"
+    assert "test -e out.txt" in seen[0] and "baseline: exit 1" in seen[0] and "result: exit 0" in seen[0]
+    assert "checks_cover_criteria" in seen[0]
+    assert verdict(True) == "done"
+
+
+def test_rg_to_grep_needs_no_extra_confirmation(cfg, tmp_path):
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "old\n"},
+                                          result={"f.txt": "old\n", "foo.txt": "foo\n"})
+    _replan(mgr, tid, ["grep -rq foo ."])
+    assert project.log.read(kinds={"check/rewritten"})[-1]["confirm"] == []
+
+
+def test_vetting_runs_in_the_job_pool_baseline_first_and_without_provisioning(cfg, tmp_path, monkeypatch):
+    import threading
+
+    from artel import provision
+
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "x"}, result={"f.txt": "x"})
+    calls = []
+    orig = mgr.run_gates
+    monkeypatch.setattr(mgr, "run_gates", lambda task, **kw: calls.append((threading.current_thread().name, kw.get("vet"),
+                                                                           kw["checks"], str(kw["cwd"]))) or orig(task, **kw))
+    monkeypatch.setattr(provision, "prepare_checks", lambda *a, **k: calls.append("provisioned") or [])
+    from unittest import mock
+
+    from artel import manager as manager_mod
+
+    with mock.patch.object(manager_mod, "run_agent", lambda *a, **k: _decision(["test -e f.txt"])):
+        fut = mgr.pool.submit(mgr.job_replan, mgr.board.get(tid))
+        fut.result(timeout=60)
+    assert "provisioned" not in calls
+    assert len(calls) == 1 and calls[0][0].startswith("artel") and calls[0][1] is True   # baseline only: it passed
+    assert "artel-baseline-" in calls[0][3]
+
+
+def test_vetting_is_offline_and_writes_only_its_temporary_tree(cfg, tmp_path, request):
+    from artel import sandbox
+
+    ok, why = sandbox.bwrap_status(False)
+    if not ok:
+        pytest.skip(f"no sandbox backend here: {why}")
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "x"})
+    task = mgr.board.get(tid)
+    out = Path.home() / f".artel-vet-probe-{tmp_path.name}"       # outside the tree and the temp directories
+    request.addfinalizer(lambda: out.unlink(missing_ok=True))
+    import socket
+
+    srv = socket.socket()
+    srv.bind(("127.0.0.1", 0))
+    srv.listen(5)
+    port = srv.getsockname()[1]
+    try:
+        res = mgr.run_gates(task, cwd=project.shared, record=False, vet=True, checks=[
+            f"touch {out}", f"python3 -c \"import socket; socket.create_connection(('127.0.0.1', {port}), 2)\""])
+        online = mgr.run_gates(task, cwd=project.shared, record=False, vet=False, checks=[
+            f"python3 -c \"import socket; socket.create_connection(('127.0.0.1', {port}), 2)\""])
+    finally:
+        srv.close()
+    assert online[0]["exit"] == 0                                  # the listener is reachable from a normal gate
+    assert res[0]["exit"] != 0 and not out.exists()                # only the temporary tree is writable
+    assert res[1]["exit"] != 0                                     # and the network is off
+
+
+def test_a_check_that_fails_on_the_result_too_is_rejected(cfg, tmp_path):
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "x"}, result={"f.txt": "x"})
+    _replan(mgr, tid, ["pytest -k nonexistent"])
+    assert "fails on the submitted result" in project.log.read(kinds={"check/rejected"})[-1]["reason"]

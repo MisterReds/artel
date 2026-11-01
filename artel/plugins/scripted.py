@@ -155,7 +155,8 @@ class ScriptedProvider:
         if n <= int(self.knobs.get("review_failures", 0)):
             return [_use("review_verdict", passed=False, feedback="Add more detail to the deliverable.",
                          failed_criteria=["detail"])]
-        return [_use("review_verdict", passed=True, feedback="All criteria verified against the files.")]
+        return [_use("review_verdict", passed=True, feedback="All criteria verified against the files.",
+                     checks_cover_criteria="checks_cover_criteria" in _first_text(messages))]
 
     def _audit(self, messages, system):
         n = self._count("audit")
