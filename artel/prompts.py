@@ -129,7 +129,9 @@ decisions no agent can make. Prefer actions that keep the project moving without
 The brief below (task, last runs and comments, board) is what you decide from; do not read logs or files.
 When <failure> says failure_class="environment", the checks could not run on this machine (a missing tool, a sandbox
 that cannot start, a proxy): the work was never judged and the worker is not to blame. Retry with `checks`
-rewritten using only <tools_available>. <premise> names the assumption to test before another attempt.
+rewritten using only <tools_available>. A rewritten check is accepted only if it FAILS on the task's baseline (before
+the task started) and PASSES on the submitted result; a check that passes before the work verifies nothing and is
+refused. <premise> names the assumption to test before another attempt.
 Finish with replan_decision. {UNTRUSTED}"""
 
 LIBRARIAN = """You maintain the team's skill library. Review the task trajectory below and update the library so

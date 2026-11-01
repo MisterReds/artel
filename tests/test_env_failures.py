@@ -216,27 +216,43 @@ def test_replan_can_change_checks_only_for_environment_failures(cfg, tmp_path):
     project = Project.create("g", cfg, name="chk", workdir=str(tmp_path / "wd"))
     mgr = Manager(new_kernel(cfg), project)
     tid = mgr.board.add_task("T", "b", assignee="x", criteria=["c"], checks=["rg foo"], created_by="planner")
+    mgr.note("snapshot", task_id=tid, tree=mgr.snapper.track())          # claimed: the baseline has no foo
+    (project.shared / "foo.txt").write_text("foo\n")                    # the submission
     mgr.board.update(tid, status="blocked")
     from artel.agent import Outcome
 
     out = Outcome(status="terminal", terminal=("replan_decision", {
         "action": "retry", "rationale": "r", "guidance": "", "assignee": "", "new_worker": {}, "subtasks": [],
-        "checks": ["grep foo ."]}))
+        "checks": ["grep -rq foo ."]}))
     mgr.on_replan(tid, out)                      # no environment failure on record: checks stay
     assert mgr.board.get(tid)["checks"] == ["rg foo"]
     mgr.board.update(tid, status="blocked")
     project.log.append("review/verdict", task_id=tid, passed=False, feedback="f", failure_class="environment",
                        gates=[{"command": "rg foo", "exit": 127}])
     mgr.on_replan(tid, out)
-    assert mgr.board.get(tid)["checks"] == ["grep foo ."]
+    assert mgr.board.get(tid)["checks"] == ["grep -rq foo ."]
 
 
-# --- rewritten checks are vetted ----------------------------------------------
+# --- rewritten checks are vetted: they must discriminate (fail on the baseline, pass on the result) -------------
 
-def _blocked_env_task(cfg, tmp_path, checks):
+def _blocked_env_task(cfg, tmp_path, checks, baseline=None, result=None, isolated=False, claimed=True):
+    """A task whose checks hit an environment failure. ``baseline`` files exist when the task is claimed (a snapshot
+    of shared/, or the worktree's base commit under isolation), ``result`` files are the worker's submission."""
+    if isolated:
+        cfg = deep_merge(cfg, {"isolation": {"worktrees": True}})
     project = Project.create("g", cfg, name="vet", workdir=str(tmp_path / "wd"))
     mgr = Manager(new_kernel(cfg), project)
     tid = mgr.board.add_task("T", "b", assignee="x", criteria=["c"], checks=checks, created_by="planner")
+    for name, text in (baseline or {}).items():
+        (project.shared / name).write_text(text)
+    if isolated:
+        where = mgr.iso.ensure(tid)
+    else:
+        if claimed:
+            mgr.note("snapshot", task_id=tid, tree=mgr.snapper.track())      # what job_work records at claim time
+        where = project.shared
+    for name, text in (result or {}).items():
+        (where / name).write_text(text)
     mgr.board.update(tid, status="blocked")
     project.log.append("review/verdict", task_id=tid, passed=False, feedback="f", failure_class="environment",
                        gates=[{"command": checks[0], "exit": 127}])
@@ -252,7 +268,7 @@ def _decision(checks):
 
 
 @pytest.mark.parametrize("bad", [["true"], [":"], ["exit 0"], ["echo ok"], ["test 1"], ["pytest || true"],
-                                 ["nonexistent_tool_xyz foo"], ["printf done"], ["exit 0"]])
+                                 ["nonexistent_tool_xyz foo"], ["printf done"]])
 def test_trivial_or_unrunnable_rewrites_are_rejected(cfg, tmp_path, bad):
     project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"])
     mgr.on_replan(tid, _decision(bad))
@@ -260,19 +276,57 @@ def test_trivial_or_unrunnable_rewrites_are_rejected(cfg, tmp_path, bad):
     assert project.log.read(kinds={"check/rejected"}) and not project.log.read(kinds={"check/rewritten"})
 
 
+@pytest.mark.parametrize("bad", ["python3 -c pass", "bash -c true", "test -e .", "cat f.txt", "pytest -k nonexistent"])
+@pytest.mark.parametrize("isolated", [False, True])
+def test_a_check_that_passes_on_the_baseline_is_rejected_and_the_replanner_is_told_why(cfg, tmp_path, bad, isolated):
+    """No syntax decides this: whatever the command looks like, it must FAIL before the task and PASS after it."""
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "old\n"},
+                                          result={"f.txt": "old\n", "foo.txt": "foo\n"}, isolated=isolated)
+    mgr.on_replan(tid, _decision([bad]))
+    assert mgr.board.get(tid)["checks"] == ["rg foo"]
+    rejected = project.log.read(kinds={"check/rejected"})
+    assert rejected and not project.log.read(kinds={"check/rewritten"})
+    assert "baseline" in rejected[-1]["reason"] or "result" in rejected[-1]["reason"]
+    assert any("refused" in c["body"] for c in mgr.board.comments(tid))      # the replanner is told
+
+
+def test_the_baseline_pass_is_the_reason_when_the_result_passes_too(cfg, tmp_path):
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "x"}, result={"f.txt": "x"})
+    mgr.on_replan(tid, _decision(["test -e f.txt"]))
+    assert "passes on the baseline" in project.log.read(kinds={"check/rejected"})[-1]["reason"]
+
+
+def test_a_check_that_fails_on_the_submitted_result_is_rejected(cfg, tmp_path):
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "x"}, result={"f.txt": "x"})
+    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    assert "fails on the submitted result" in project.log.read(kinds={"check/rejected"})[-1]["reason"]
+
+
+def test_a_task_without_a_baseline_cannot_have_its_checks_rewritten(cfg, tmp_path):
+    """A task nobody ever claimed has no snapshot event and no worktree: nothing to compare against."""
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], result={"foo.txt": "foo\n"},
+                                          claimed=False)
+    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    assert mgr.board.get(tid)["checks"] == ["rg foo"]
+    assert "baseline" in project.log.read(kinds={"check/rejected"})[-1]["reason"]
+
+
 def test_rewrite_must_not_drop_checks(cfg, tmp_path):
-    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo", "rg bar"])
-    mgr.on_replan(tid, _decision(["grep foo ."]))
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo", "rg bar"], result={"foo.txt": "foo bar\n"})
+    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
     assert mgr.board.get(tid)["checks"] == ["rg foo", "rg bar"]
 
 
-def test_rg_to_grep_is_accepted_journaled_and_reviewed_against_the_old_checks(cfg, tmp_path, monkeypatch):
-    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"])
-    mgr.on_replan(tid, _decision(["grep foo ."]))
-    assert mgr.board.get(tid)["checks"] == ["grep foo ."]
+@pytest.mark.parametrize("isolated", [False, True])
+def test_rg_to_grep_is_accepted_journaled_and_reviewed_against_the_old_checks(cfg, tmp_path, monkeypatch, isolated):
+    project, mgr, tid = _blocked_env_task(cfg, tmp_path, ["rg foo"], baseline={"f.txt": "old\n"},
+                                          result={"f.txt": "old\n", "foo.txt": "foo\n"}, isolated=isolated)
+    mgr.on_replan(tid, _decision(["grep -rq foo ."]))
+    assert mgr.board.get(tid)["checks"] == ["grep -rq foo ."]
     ev = project.log.read(kinds={"check/rewritten"})
-    assert ev and ev[-1]["old"] == ["rg foo"] and ev[-1]["new"] == ["grep foo ."]
+    assert ev and ev[-1]["old"] == ["rg foo"] and ev[-1]["new"] == ["grep -rq foo ."]
     assert mgr.board.get(tid)["status"] == "review"
+    assert not project.log.read(kinds={"gate/result"})          # the vetting runs are not the task's gate results
     seen = []
     from artel import manager as manager_mod
     from artel.agent import Outcome
@@ -280,5 +334,5 @@ def test_rg_to_grep_is_accepted_journaled_and_reviewed_against_the_old_checks(cf
     monkeypatch.setattr(manager_mod, "run_agent", lambda *a, **k: seen.append(k["first_user"]) or Outcome(status="error"))
     mgr.job_review(mgr.board.get(tid))
     brief = seen[0]
-    assert "<checks_rewritten>" in brief and "rg foo" in brief and "grep foo ." in brief
+    assert "<checks_rewritten>" in brief and "rg foo" in brief and "grep -rq foo ." in brief
     assert "same criteria" in brief

@@ -1,8 +1,11 @@
 """Vetting a rewritten set of task checks (pure functions).
 
-A check is the only automated evidence a task has, so a rewrite (after an environment failure) must not weaken it:
-every program must resolve, no check may be a no-op, and there may not be fewer checks than before. The reviewer is
-told the old and the new checks and confirms the new ones verify the same criteria.
+A check is the only automated evidence a task has, so a rewrite (after an environment failure) must not weaken it.
+The boundary is behaviour, not syntax: a rewritten check is accepted only if it FAILS on the task's baseline (the
+state before the task started) and PASSES on the submitted result (``discrimination_problem``, fed by runs in the
+gates' own sandbox and environment). ``rewrite_problem`` is a cheap pre-check in front of that (no checks, fewer
+checks than before, obvious no-ops, programs that do not exist): it saves the two runs, it is not the boundary.
+The reviewer is told the old and the new checks and confirms the new ones verify the same criteria.
 """
 
 from __future__ import annotations
@@ -59,4 +62,18 @@ def rewrite_problem(old: list, new: list, absent: list) -> str:
         return "trivial check(s) that verify nothing: " + "; ".join(bad)
     if absent:
         return "the program(s) do not exist on this machine: " + ", ".join(absent)
+    return ""
+
+
+def discrimination_problem(new: list, on_baseline: list, on_result: list) -> str:
+    """Why ``new`` does not verify the task ('' = it does). ``on_baseline`` / ``on_result``: gate results (``exit``,
+    optional ``env``) of the same checks, in order, run before the task and on its submission."""
+    for cmd, base, res in zip(new, on_baseline, on_result):
+        if res.get("env") or res["exit"] != 0:
+            why = "cannot run here" if res.get("env") else f"exit {res['exit']}"
+            return f"`{cmd}` fails on the submitted result ({why}): {str(res.get('output', ''))[:200]}"
+        if base["exit"] == 0:
+            return f"`{cmd}` passes on the baseline (before the task started), so it verifies nothing about the task"
+        if base.get("env"):
+            return f"`{cmd}` cannot run on the baseline here ({base['env']}), so it cannot be shown to discriminate"
     return ""

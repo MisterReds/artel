@@ -17,13 +17,16 @@ human stop, or every remaining path waiting on a human.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
 import subprocess
+import tempfile
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, Optional
 
 from . import netprobe, prompts
@@ -369,19 +372,26 @@ class Manager:
                                     "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()},
                          self.cfg)
 
-    def run_gates(self, task: dict, cwd=None) -> list[dict]:
-        """Run the task's shell checks in ``cwd`` (the task worktree under isolation, else shared/)."""
+    def run_gates(self, task: dict, cwd=None, checks=None, record: bool = True) -> list[dict]:
+        """Run the task's shell checks in ``cwd`` (the task worktree under isolation, else shared/).
+        ``record=False``: the runs are not journaled as the task's gate results (vetting runs)."""
         from . import sandbox
 
         results = []
         cwd = cwd or self.project.shared
+        checks = task["checks"] if checks is None else checks
         env = self._gate_env(cwd)
+
+        def emit(res: dict) -> None:
+            if record:
+                self.project.log.append("gate/result", task_id=task["id"], **res)
+
         sb = sandbox.settings(self.cfg)
         if (self.cfg.get("provision") or {}).get("auto", True):
             from . import provision
 
-            provision.prepare_checks(task["checks"], self.cfg, self.project.log.append)  # missing first programs
-        for cmd in task["checks"]:
+            provision.prepare_checks(checks, self.cfg, self.project.log.append)  # missing first programs
+        for cmd in checks:
             # a check is a shell command like any other: the command policy applies (nobody to ask: prompt = fail)
             reason = None
             if str((self.cfg.get("gates") or {}).get("policy", "enforce")).lower() != "off":
@@ -396,7 +406,7 @@ class Manager:
                 res = {"command": cmd, "exit": -1,
                        "output": f"{reason}; task checks cannot ask for approval — change the check or the policy"}
                 results.append(res)
-                self.project.log.append("gate/result", task_id=task["id"], **res)
+                emit(res)
                 continue
             # gates run unsandboxed unless `sandbox.gates` asks for it (then writable: the gate cwd + temp)
             run = sandbox.plan(self.cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off",
@@ -404,7 +414,7 @@ class Manager:
             if sandbox.refusal(run, self.cfg):  # demanded backend missing: the check does not run unsandboxed
                 res = {"command": cmd, "exit": -1, "output": f"command NOT run: {run.error}", "env": "sandbox"}
                 results.append(res)
-                self.project.log.append("gate/result", task_id=task["id"], **res)
+                emit(res)
                 continue
             try:
                 genv = shell_env(env)
@@ -421,7 +431,7 @@ class Manager:
             except subprocess.TimeoutExpired:
                 res = {"command": cmd, "exit": -1, "output": "timed out"}
             results.append(res)
-            self.project.log.append("gate/result", task_id=task["id"], **res)
+            emit(res)
         return results
 
     @staticmethod
@@ -895,9 +905,26 @@ class Manager:
             self.note("escalated", task_id=task_id, rationale=d["rationale"])
             self.ask_doctor(task_id, f"Менеджер передал задачу человеку: {d['rationale']}")
 
+    @contextlib.contextmanager
+    def _baseline(self, task_id: str):
+        """A directory holding the task's baseline: the work directory as it was before the task started (the base
+        commit of its worktree under isolation, else the snapshot of shared/ taken at claim time). None when there is
+        no baseline for this task."""
+        with tempfile.TemporaryDirectory(prefix="artel-baseline-") as tmp:
+            ok = False
+            if self.iso is not None:
+                ok = self.iso.exists(task_id) and self.iso.export_base(task_id, tmp)
+            else:
+                trees = [e.get("tree") for e in self.project.log.read(kinds={"manager/snapshot"})
+                         if e.get("task_id") == task_id and e.get("tree")]
+                ok = bool(trees) and self.snapper.export(trees[0], tmp)
+            yield Path(tmp) if ok else None
+
     def _rewrite_checks(self, task: dict, new: list) -> None:
-        """Accept a rewrite of the checks only when it keeps them meaningful (see ``checks.rewrite_problem``); the
-        task goes through review, whose brief carries the old and the new checks."""
+        """Accept a rewrite of the checks only when it is DISCRIMINATING: every new check fails on the task's baseline
+        and passes on the submitted result, both run the way gates run (see ``checks.discrimination_problem``). A
+        cheap syntactic pre-check goes first. The task goes through review, whose brief carries the old and the new
+        checks."""
         from . import checks, provision
 
         task_id, old = task["id"], list(task["checks"])
@@ -905,6 +932,8 @@ class Manager:
         if (self.cfg.get("provision") or {}).get("auto", True):
             provision.prepare_checks(new, self.cfg, self.project.log.append)
         problem = checks.rewrite_problem(old, new, provision.absent_programs(new, path))
+        if not problem:
+            problem = self._discrimination_problem(task, new)
         if problem:
             self.project.log.append("check/rejected", task_id=task_id, old=old, new=new, reason=problem)
             self.board.comment(task_id, "manager", f"Checks are not changed: the rewrite was refused ({problem}).")
@@ -912,6 +941,17 @@ class Manager:
         self.board.update(task_id, checks=new)
         self.project.log.append("check/rewritten", task_id=task_id, old=old, new=new)
         self.board.comment(task_id, "manager", "Checks rewritten after an environment failure:\n" + _fmt_list(new))
+
+    def _discrimination_problem(self, task: dict, new: list) -> str:
+        from . import checks
+
+        with self._baseline(task["id"]) as base:
+            if base is None:
+                return "the task has no baseline (no worktree base commit or claim-time snapshot) to compare the checks against"
+            on_base = self.run_gates(task, cwd=base, checks=new, record=False)
+        result_dir = self.iso.path(task["id"]) if self.iso is not None else self.project.shared
+        on_result = self.run_gates(task, cwd=result_dir, checks=new, record=False)
+        return checks.discrimination_problem(new, on_base, on_result)
 
     def _rewritten_brief(self, task_id: str) -> str:
         ev = [e for e in self.project.log.read(kinds={"check/rewritten"}) if e.get("task_id") == task_id]

@@ -30,7 +30,7 @@ import threading
 from pathlib import Path
 from typing import Optional
 
-from .snapshot import EXCLUDES
+from .snapshot import EXCLUDES, extract_tar
 
 MAIN = "main"
 CONFLICT_MARKERS = ("<<<<<<< ", ">>>>>>> ")
@@ -202,6 +202,20 @@ class Isolation:
                 self._wt(task_id, "merge", "--abort", check=False)
                 raise IsolationError(f"merging the updated base failed: {(p.stderr or p.stdout).strip()[:800]}")
             return sorted(conflicts)
+
+    def export_base(self, task_id: str, dest) -> bool:
+        """Write the task's baseline (the shared deliverables as its branch started from them, before any of its own
+        work) into the empty directory ``dest``."""
+        with self.lock:
+            base = self._repo("merge-base", MAIN, self.branch(task_id), check=False)
+            if base.returncode != 0 or not base.stdout.strip():
+                return False
+            try:
+                p = subprocess.run(["git", f"--git-dir={self.git_dir}", "archive", "--format=tar", base.stdout.strip()],
+                                   capture_output=True, timeout=300, env=_clean_git_env())
+            except (OSError, subprocess.SubprocessError):
+                return False
+        return p.returncode == 0 and extract_tar(p.stdout, dest)
 
     def changed_files(self, task_id: str) -> list[str]:
         """Files the task changed relative to main (for the reviewer)."""
