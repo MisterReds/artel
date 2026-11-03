@@ -251,6 +251,27 @@ def test_codex_usage_arriving_after_the_terminal_tool_is_recorded(env, monkeypat
     assert not end.get("usage_missing")
 
 
+def test_codex_submit_judged_before_artel_read_the_output_lines_still_counts_usage_once(env, monkeypatch):
+    """The CLI prints its command result and calls the terminal tool back to back; Artel's guard ("you ran nothing")
+    reads state fed by the stdout lines, so on a loaded machine the first submit can be judged before they are read.
+    The agent (like a model) repeats the submit; the run must be one attempt, its usage counted once."""
+    from artel.adapters.agent import loop
+
+    real = loop.Run._tool_result
+
+    def slow(self, e):
+        time.sleep(1.0)  # the reader lags behind the CLI's output
+        real(self, e)
+
+    monkeypatch.setattr(loop.Run, "_tool_result", slow)
+    monkeypatch.setenv("FAKE_CODEX_USAGE_DELAY", "1")
+    cfg, project, _ = env
+    out, ctx = _run(cfg, project)
+    assert out.status == "terminal" and out.name == "task_submit", out.error
+    assert out.usage["input_tokens"] == 1000 and out.usage["output_tokens"] == 200
+    assert not [e for e in project.log.read() if e["kind"] == "agent/continuation"]
+
+
 def test_codex_killed_without_usage_is_flagged_not_silently_zero(env, monkeypatch):
     from artel.adapters.agent import codex
 
