@@ -63,3 +63,32 @@ def test_remembered_ids_are_capped_keeping_the_newest():
 def test_badge_counts_questions_to_the_owner():
     assert js("D.badgeCount(P)") == 2
     assert js("D.badgeCount([])") == 0
+
+
+@node
+def test_a_question_asked_again_notifies_again():
+    def ask(asked, question="Какой домен?"):
+        return [{"slug": "cafe", "name": "Кафе", "status": "running",
+                 "attention": [{"task_id": "t3", "reason": "нужен человек", "question": question, "asked": asked}]}]
+
+    first = js("D.fresh(P, [])", portfolio=ask(4))
+    assert len(first) == 1
+    shown = json.dumps([i["id"] for i in first])
+    assert js("D.fresh(P, %s)" % shown, portfolio=ask(4)) == []  # same ask: quiet
+    again = js("D.fresh(P, %s)" % shown, portfolio=ask(9))  # same text, new ask: notifies
+    assert len(again) == 1 and again[0]["id"] != first[0]["id"]
+    # without an ask id the question text tells asks apart
+    assert js("D.fresh(P, %s)" % shown, portfolio=ask(None, "Другой вопрос?")) != []
+
+
+@node
+def test_shown_ids_are_read_from_storage_each_time():
+    stored = {"v": json.dumps(["a"])}
+    src = ("global.window={};require(%s);const D=window.ArtelDesk;"
+           "const st={v:%s};const get=()=>st.v;const r=[];"
+           "r.push(D.loadShown(get()));st.v=JSON.stringify(['a','b']);r.push(D.loadShown(get()));"
+           "st.v='not json';r.push(D.loadShown(get()));st.v='{\"x\":1}';r.push(D.loadShown(get()));r.push(D.loadShown(null));"
+           "console.log(JSON.stringify(r))" % (json.dumps(str(JS)), json.dumps(stored["v"])))
+    out = subprocess.run(["node", "-e", src], capture_output=True, text=True, timeout=30)
+    assert out.returncode == 0, out.stderr
+    assert json.loads(out.stdout) == [["a"], ["a", "b"], [], [], []]

@@ -1,6 +1,6 @@
 /* Artel desktop helpers: what to tell the owner through system notifications and the app badge.
    Pure functions (no DOM, no network), so they are tested under node; index.html wires them to the Notification
-   API. API: ArtelDesk.fresh(portfolio, shownIds) -> new notifications, .remember(ids, newIds, cap),
+   API. API: ArtelDesk.fresh(portfolio, shownIds) -> new notifications, .remember(ids, newIds, cap), .loadShown(raw),
    .badgeCount(portfolio). */
 (function () {
   'use strict';
@@ -13,7 +13,8 @@
     for (const p of portfolio || []) {
       for (const a of p.attention || []) {
         if (a.reason !== 'нужен человек') continue;  // only what the owner must answer
-        const id = 'ask:' + p.slug + ':' + a.task_id;
+        // the ask id (or, without one, the text) is part of the key: a question asked again notifies again
+        const id = 'ask:' + p.slug + ':' + a.task_id + ':' + (a.asked != null ? a.asked : a.question || '');
         if (seen.has(id)) continue;
         const name = p.name || p.slug;
         out.push({id, kind: 'ask', slug: p.slug, task_id: a.task_id, title: 'Artel: нужен ваш ответ',
@@ -33,7 +34,12 @@
     return all.slice(Math.max(0, all.length - (cap || 500)));
   }
 
+  // the ids stored by an earlier call or another window: always read fresh, never trust a copy in memory
+  function loadShown(raw) {
+    try { const v = JSON.parse(raw || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; }
+  }
+
   const badgeCount = portfolio => (portfolio || []).reduce((n, p) => n + (p.attention || []).length, 0);
 
-  window.ArtelDesk = {fresh, remember, badgeCount};
+  window.ArtelDesk = {fresh, remember, loadShown, badgeCount};
 })();

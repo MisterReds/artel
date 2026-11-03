@@ -315,9 +315,8 @@ async function installApp(){const e=installEv;if(!e)return;installEv=null;syncIn
 $('#instbtn').onclick=installApp;
 const notifySupported=()=>typeof Notification!=='undefined';
 const notifyOn=()=>notifySupported()&&Notification.permission==='granted'&&lsGet('artel-notify')==='1';
-let shownMem=null;  // ids already announced: this list in memory and in localStorage (survives a reload)
-function shownIds(){if(!shownMem){try{shownMem=JSON.parse(lsGet('artel-notified')||'[]')}catch(e){shownMem=[]}if(!Array.isArray(shownMem))shownMem=[]}return shownMem}
-function markShown(ids){shownMem=ArtelDesk.remember(shownIds(),ids,500);lsSet('artel-notified',JSON.stringify(shownMem))}
+function shownIds(){return ArtelDesk.loadShown(lsGet('artel-notified'))}  // re-read each time: another window may have announced already
+function markShown(ids){lsSet('artel-notified',JSON.stringify(ArtelDesk.remember(shownIds(),ids,500)))}
 function openTaskWhenReady(slug,task){let i=0;const t=setInterval(()=>{if(++i>100)return clearInterval(t);
   if(state.slug===slug&&state.v&&state.v.board&&state.v.board.tasks.some(x=>x.id===task)){clearInterval(t);setTab('over');showTask(task)}},100)}
 function openFromNotice(n){window.focus();location.hash='#/p/'+encodeURIComponent(n.slug);if(n.kind==='ask')openTaskWhenReady(n.slug,n.task_id)}
