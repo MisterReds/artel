@@ -45,7 +45,7 @@ def find_browser(system: str | None = None, *, env=None, which=shutil.which, exi
                     return p
         return None
     if system == "Darwin":
-        bases = ["/Applications", os.path.join(env.get("HOME") or str(Path.home()), "Applications")]
+        bases = ["/Applications", f"{env.get('HOME') or Path.home()}/Applications"]
         for name in _MAC_APPS:
             for base in bases:
                 p = f"{base}/{name}.app/Contents/MacOS/{name}"
