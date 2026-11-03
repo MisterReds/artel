@@ -11,6 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
+from .humanize import block_question
 from .project import Project, artel_home
 from .runtimes import runtime_for
 
@@ -197,7 +198,8 @@ def project_stats(project: Project, live: bool = False) -> dict:
                                                                        "manager/job_started", "manager/job_finished")),
                 None)
     attention = [{"task_id": t["id"], "title": t["title"], "reason": "нужен человек" if t["needs_human"] else
-                  "заблокирована", "assignee": t["assignee"]}
+                  "заблокирована", "assignee": t["assignee"],
+                  "question": block_question(project.board.comments(t["id"])) if t["needs_human"] else ""}
                  for t in work if t["status"] == "blocked"]
     return {
         "slug": project.slug, "name": meta["name"], "goal": meta["goal"], "status": meta["status"],

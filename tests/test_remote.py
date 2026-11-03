@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from artel.project import DEFAULT_CONFIG, deep_merge
+from artel.project import DEFAULT_CONFIG, Project, deep_merge
 from artel.web import auth as authmod
 from artel.web.auth import COOKIE, Auth
 from artel.web.server import Runner, make_handler
@@ -269,3 +269,51 @@ def test_other_sites_cannot_drive_the_local_dashboard(server):
     assert req(base + "/api/portfolio", headers={"Host": f"localhost:{port}"})[0] == 200
     same = {"Origin": base}
     assert req(base + "/api/providers/timezone", "POST", {"timezone": "UTC"}, headers=same)[0] == 200
+
+
+# --- file viewer in remote mode ---------------------------------------------------------------------------------
+def _site(tmp_path):
+    project = Project.create("preview", deep_merge(DEFAULT_CONFIG, {"provider": "scripted"}), name="prev")
+    for d in ("site", "other"):
+        (project.shared / d).mkdir()
+        (project.shared / d / "s.css").write_text("b{}")
+    (project.shared / "site" / "index.html").write_text("<link rel=stylesheet href=s.css>")
+    return project
+
+
+def test_tree_hides_the_server_path_in_remote_mode_only(server, tmp_path):
+    project = _site(tmp_path)
+    base, auth, token, _ = server(True)
+    _, _, sid = login(base, token)
+    remote = json.loads(req(f"{base}/api/projects/{project.slug}/tree", cookie=sid)[2])
+    assert "items" in remote and "root" not in remote
+    base2, *_ = server(False)
+    assert "root" in json.loads(req(f"{base2}/api/projects/{project.slug}/tree")[2])
+
+
+def test_preview_subresources_need_a_scoped_short_lived_token(server, tmp_path):
+    project = _site(tmp_path)
+    base, auth, token, clock = server(True)
+    _, _, sid = login(base, token)
+    api = f"{base}/api/projects/{project.slug}"
+    info = json.loads(req(f"{api}/file?path=site/index.html", cookie=sid)[2])
+    tok = info["preview_token"]
+    assert req(f"{api}/preview/site/s.css")[0] == 401  # no cookie, no token
+    code, h, body = req(f"{api}/preview/@{tok}/site/s.css")
+    assert code == 200 and body == b"b{}" and h["Content-Security-Policy"] == "sandbox allow-scripts"
+    assert req(f"{api}/preview/@{tok}/site/index.html")[0] == 200
+    assert req(f"{api}/preview/@{tok}/other/s.css")[0] == 401  # another directory
+    assert req(f"{api}/preview/@{tok}/site/../other/s.css")[0] == 401  # not through ..
+    other = Project.create("two", deep_merge(DEFAULT_CONFIG, {"provider": "scripted"}), name="two")
+    (other.shared / "site").mkdir()
+    (other.shared / "site" / "s.css").write_text("x")
+    assert req(f"{base}/api/projects/{other.slug}/preview/@{tok}/site/s.css")[0] == 401  # another project
+    exp, sig = tok.split(".")
+    bad = f"{exp}.{'0' * len(sig)}"
+    assert req(f"{api}/preview/@{bad}/site/s.css")[0] == 401  # forged signature
+    forged = f"{int(exp) + 99999}.{sig}"
+    assert req(f"{api}/preview/@{forged}/site/s.css")[0] == 401  # extended lifetime
+    clock.t += 601
+    assert req(f"{api}/preview/@{tok}/site/s.css")[0] == 401  # expired (10 minutes)
+    base2, *_ = server(False)  # local mode needs no token and issues none
+    assert "preview_token" not in json.loads(req(f"{base2}/api/projects/{project.slug}/file?path=site/index.html")[2])
