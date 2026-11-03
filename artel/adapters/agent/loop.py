@@ -16,14 +16,18 @@ usage "cached"/"cost_usd", end "detail", error "fatal", command "phase".
 
 from __future__ import annotations
 
+import codecs
 import hmac
+import io
 import json
 import os
 import secrets
+import selectors
 import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -39,6 +43,121 @@ from ...tools import StderrTail, group_popen_kwargs, terminate_tree
 # The CLIs ship better versions of these; do not expose Artel's duplicates.
 NATIVE_DUPLICATES = {"bash", "read_file", "write_file", "edit_file", "list_files"}
 BROKEN_KEY = "codex_sandbox_broken"  # ctx.state key: the CLI's own sandbox failed to start a command
+
+
+BRIDGE_DRAIN_S = 2.0  # the longest the bridge waits for the stdout reader to catch up before judging a tool
+
+
+ERROR_BROKEN_PIPE = 109
+_peek = None  # kernel32.PeekNamedPipe with declared types, built on first use (Windows)
+
+
+def _peek_named_pipe():
+    global _peek
+    if _peek is None:
+        import ctypes
+        from ctypes import wintypes
+
+        fn = ctypes.WinDLL("kernel32", use_last_error=True).PeekNamedPipe
+        fn.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD, wintypes.LPDWORD, wintypes.LPDWORD,
+                       wintypes.LPDWORD]
+        fn.restype = wintypes.BOOL
+        _peek = fn
+    return _peek
+
+
+def _pipe_available(fd: int) -> int:
+    """Bytes a read on the pipe would return at once; 0 when none; -1 at end of file (the writer is gone).
+
+    Windows: a failed peek is end of file only for ERROR_BROKEN_PIPE; any other error raises OSError.
+    """
+    if sys.platform == "win32":
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        avail = wintypes.DWORD(0)
+        if _peek_named_pipe()(msvcrt.get_osfhandle(fd), None, 0, None, ctypes.byref(avail), None):
+            return avail.value
+        err = ctypes.get_last_error()
+        if err == ERROR_BROKEN_PIPE:
+            return -1
+        raise ctypes.WinError(err)
+    import fcntl
+    import struct
+    import termios
+
+    return struct.unpack("i", fcntl.ioctl(fd, termios.FIONREAD, struct.pack("i", 0)))[0]
+
+
+class StdoutReader:
+    """Reads the CLI's stdout line by line and tells the tool bridge when it has caught up.
+
+    Ordering guarantee: a CLI prints the events of a command or file change to stdout BEFORE it calls the bridge about
+    the next tool. The reader thread turns those lines into ``ctx.outputs`` / ``ctx.edited_files``; the bridge thread
+    judges terminal tools ("you edited code but ran nothing") from them. So before judging, the bridge calls
+    :meth:`wait_drained`, which sets a watermark: the bytes the reader has taken from the pipe so far plus the bytes
+    waiting in the pipe right now. It returns once the reader has PROCESSED that many bytes (every line of them
+    handled by the consumer), however much more the CLI has printed since, so continuous output cannot starve it.
+    Taking bytes and counting them happen under one lock, as does reading the watermark, so no byte is missed or
+    counted twice. Windows has no wait on a pipe, and a synchronous read in flight would block the bridge's peek at
+    the same handle: there the reader polls the pipe (``PeekNamedPipe``, 2 ms) and reads only when it cannot block.
+    The wait is bounded; on timeout the caller judges with what it has and journals ``bridge/reader_lag``.
+    """
+
+    def __init__(self, stream):
+        self.fd = stream.fileno()  # the text layer above is never read: no hidden buffer between pipe and reader
+        self.cond = threading.Condition()
+        self.taken = 0  # bytes read from the pipe
+        self.processed = 0  # bytes whose lines the consumer has finished handling
+        self.done = False
+
+    def _wait_readable(self, sel) -> None:
+        if sel is not None:
+            sel.select()  # selectors (poll/epoll), not select(): no fd >= 1024 limit
+            return
+        idle_since = time.monotonic()  # Windows: no blocking wait on a pipe here (see the class doc), so poll
+        while not _pipe_available(self.fd):
+            time.sleep(0.002 if time.monotonic() - idle_since < 1.0 else 0.02)  # back off while the CLI is quiet
+
+    def _advance(self, done: bool = False) -> None:
+        with self.cond:
+            self.processed, self.done = self.taken, self.done or done
+            self.cond.notify_all()
+
+    def lines(self):
+        # universal newlines like the text layer this replaced: a CRLF split across chunks, a lone CR
+        decoder = io.IncrementalNewlineDecoder(codecs.getincrementaldecoder("utf-8")("replace"), translate=True)
+        buf = ""
+        sel = None
+        if sys.platform != "win32":
+            sel = selectors.DefaultSelector()
+            sel.register(self.fd, selectors.EVENT_READ)
+        try:
+            while True:
+                self._advance()  # everything taken so far was handled
+                self._wait_readable(sel)
+                with self.cond:
+                    chunk = os.read(self.fd, 65536)  # data is waiting (or end of file): does not block
+                    self.taken += len(chunk)
+                buf += decoder.decode(chunk, final=not chunk)
+                *whole, buf = buf.split("\n")
+                for line in whole:
+                    yield line + "\n"
+                if not chunk:
+                    if buf:
+                        yield buf
+                    return
+        finally:
+            if sel is not None:
+                sel.close()
+            self._advance(done=True)
+
+    def wait_drained(self, timeout: float) -> bool:
+        """Wait until the reader processed every byte that was in the pipe when this was called."""
+        with self.cond:
+            mark = self.taken + max(_pipe_available(self.fd), 0)
+            return self.cond.wait_for(lambda: self.processed >= mark or self.done, timeout)
 
 
 class ToolBridge:
@@ -61,6 +180,7 @@ class ToolBridge:
         self.token_file = Path(path)
         self.token_arg = "@" + path
         self.calls = 0
+        self.reader: Optional[StdoutReader] = None  # the current attempt's stdout reader (set by run_agent)
         self.lock = threading.Lock()
         bridge = self
 
@@ -97,6 +217,17 @@ class ToolBridge:
     def call(self, name: str, args: dict) -> dict:
         task_id = (self.ctx.task or {}).get("id")
         call_id = "mcp_" + uuid.uuid4().hex[:10]
+        # judge the tool only after the reader processed everything the CLI printed before calling (StdoutReader)
+        reader = self.reader
+        if reader is not None:
+            try:
+                drained = reader.wait_drained(BRIDGE_DRAIN_S)
+                error = None
+            except OSError as exc:  # the pipe could not be inspected (Windows): judge with what there is
+                drained, error = False, str(exc)
+            if not drained:
+                self.project.log.append("bridge/reader_lag", actor=self.actor, task_id=task_id, tool=name,
+                                        waited_s=BRIDGE_DRAIN_S, runtime=self.runtime, error=error)
         with self.lock:
             if self.ctx.terminal:
                 return {"text": "this run is already finished; stop now", "is_error": True}
@@ -295,11 +426,11 @@ class Run:
         self.kill()
 
 
-def _read(run: Run, proc, grace_s: Optional[float]) -> Optional[threading.Timer]:
+def _read(run: Run, reader: StdoutReader, proc, grace_s: Optional[float]) -> Optional[threading.Timer]:
     """The stdout line loop. Returns the grace timer when one was started (the caller cancels it)."""
     grace: Optional[threading.Timer] = None
     ctx, codec = run.ctx, run.codec
-    for line in proc.stdout:
+    for line in reader.lines():
         if run.stop_event is not None and run.stop_event.is_set():
             run.kill()
         try:
@@ -384,7 +515,8 @@ def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str
             run.pending, run.got_usage, run.failed, run.failure, run.blocked, run.stopped = {}, False, False, "", "", False
             grace: Optional[threading.Timer] = None
             try:
-                grace = _read(run, proc, getattr(codec, "TERMINAL_GRACE_S", None))
+                bridge.reader = reader = StdoutReader(proc.stdout)
+                grace = _read(run, reader, proc, getattr(codec, "TERMINAL_GRACE_S", None))
             finally:
                 killer.cancel()
                 if grace is not None:
