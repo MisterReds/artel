@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import platform
+import shlex
 import shutil
 import struct
 import subprocess
@@ -107,8 +108,26 @@ def ensure_server(port: int, *, home: Path, config: str | None = None, popen=sub
 
 # ---------- shortcuts ----------
 
-def _quote(s: str) -> str:
-    return f'"{s}"' if " " in s else s
+_DESKTOP_RESERVED = set(" \t\n\"'\\><~|&;$*?#()`")
+
+
+def _exec_arg(s: str) -> str:
+    """One Exec= argument per the Desktop Entry spec: quoted when any reserved character is present; inside the
+    quotes " ` $ \\ get a backslash (and a literal backslash is doubled again by the string layer); % is a field
+    code, so a literal one is %%."""
+    s = s.replace("%", "%%")
+    if not _DESKTOP_RESERVED & set(s):
+        return s
+    out = "".join("\\\\" if c == "\\" else "\\" + c if c in '"`$' else c for c in s)
+    return f'"{out}"'
+
+
+def _cmd_arg(s: str) -> str:
+    """One argument for a .cmd line: list2cmdline quoting (+ quotes around cmd metacharacters), % doubled."""
+    q = subprocess.list2cmdline([s])
+    if not q.startswith('"') and set(s) & set("&|<>^()"):
+        q = f'"{q}"'
+    return q.replace("%", "%%")
 
 
 def _paths(system: str, home: Path, env) -> dict:
@@ -161,16 +180,17 @@ def install_shortcut(system: str, home: Path, *, env=None, launcher: str | None 
         app = p["app"]
         exe = app / "Contents/MacOS/Artel"
         exe.parent.mkdir(parents=True, exist_ok=True)
-        exe.write_text(f'#!/bin/sh\nexec "{launcher}" app\n')
+        exe.write_text(f"#!/bin/sh\nexec {shlex.quote(launcher)} app\n")
         exe.chmod(0o755)
         (app / "Contents/Info.plist").write_text(
             '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>\n'
             "<key>CFBundleExecutable</key><string>Artel</string>\n"
             "<key>CFBundleIdentifier</key><string>app.artel.desktop</string>\n"
             "<key>CFBundleName</key><string>Artel</string>\n"
+            "<key>CFBundleIconFile</key><string>Artel</string>\n"
             "<key>CFBundlePackageType</key><string>APPL</string>\n</dict></plist>\n")
         (app / "Contents/Resources").mkdir(exist_ok=True)
-        shutil.copyfile(ICON, app / "Contents/Resources/Artel.png")
+        (app / "Contents/Resources/Artel.icns").write_bytes(icns_from_png(ICON.read_bytes()))
         return app
     if system == "Windows":
         p["lnk"].parent.mkdir(parents=True, exist_ok=True)
@@ -185,13 +205,13 @@ def install_shortcut(system: str, home: Path, *, env=None, launcher: str | None 
                 return p["lnk"]
         except OSError:
             pass
-        p["cmd"].write_text(f'@echo off\r\nstart "" /min {_quote(launcher)} app\r\n')
+        p["cmd"].write_bytes(f'@echo off\r\nstart "" /min {_cmd_arg(launcher)} app\r\n'.encode())  # no newline translation
         return p["cmd"]
     p["entry"].parent.mkdir(parents=True, exist_ok=True)
     p["icon"].parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ICON, p["icon"])
     p["entry"].write_text("[Desktop Entry]\nType=Application\nName=Artel\nComment=Команда агентов доводит цель до результата\n"
-                          f"Exec={_quote(launcher)} app\nIcon={p['icon']}\nTerminal=false\n"
+                          f"Exec={_exec_arg(launcher)} app\nIcon={p['icon']}\nTerminal=false\n"
                           "Categories=Development;Utility;\nStartupWMClass=Artel\n")
     return p["entry"]
 

@@ -305,3 +305,75 @@ def test_icns_container_wraps_the_png_for_macos():
     assert icns[8:12] == b"ic09" and struct.unpack(">I", icns[12:16])[0] == len(png) + 8 and icns[16:] == png
     with pytest.raises(ValueError):
         desktop.icns_from_png((ICON.parent / "icon-192.png").read_bytes())
+
+
+# ---------- launcher quoting ----------
+
+AWKWARD = ["/h/plain/artel", "/h/with space/artel", '/h/qu"ote/artel', "/h/dol$lar/artel", "/h/per%cent/artel",
+           "/h/back`tick/artel", "/h/back\\slash/artel", "/h/it's/artel", "/h/a&b;c/artel"]
+
+
+RESERVED = " \t\n\"'\\><~|&;$*?#()`"
+
+
+def parse_exec(line: str) -> list[str]:
+    """The Desktop Entry spec, read the way a launcher reads it: string unescape, then Exec unquoting, then %%."""
+    value = line.split("=", 1)[1]
+    value = value.replace("\\\\", "\\")  # the string layer: \\ -> \
+    args, cur, quoted, i, have = [], "", False, 0, False
+    while i < len(value):
+        c = value[i]
+        if quoted:
+            if c == "\\" and i + 1 < len(value) and value[i + 1] in '"`$\\':
+                cur, i = cur + value[i + 1], i + 1
+            elif c == '"':
+                quoted = False
+            else:
+                cur += c
+        elif c == '"':
+            quoted, have = True, True
+        elif c == " ":
+            if have or cur:
+                args.append(cur)
+            cur, have = "", False
+        else:
+            assert c not in RESERVED, f"reserved {c!r} outside quotes"
+            cur += c
+        i += 1
+    if have or cur:
+        args.append(cur)
+    assert all(a.replace("%%", "").count("%") == 0 for a in args), "a lone % is a field code"
+    return [a.replace("%%", "%") for a in args]
+
+
+@pytest.mark.parametrize("launcher", AWKWARD)
+def test_desktop_entry_exec_roundtrips_awkward_paths(tmp_path, launcher):
+    entry = desktop.install_shortcut("Linux", tmp_path, env={}, launcher=launcher)
+    line = next(ln for ln in entry.read_text().splitlines() if ln.startswith("Exec="))
+    assert parse_exec(line) == [launcher, "app"]
+
+
+def test_macos_launcher_script_is_shell_safe(tmp_path):
+    import shlex
+    for launcher in AWKWARD:
+        app = desktop.install_shortcut("Darwin", tmp_path, env={}, launcher=launcher)
+        body = (app / "Contents/MacOS/Artel").read_text().splitlines()[1]
+        assert shlex.split(body) == ["exec", launcher, "app"]
+
+
+def test_macos_bundle_has_a_real_icns_named_in_the_plist(tmp_path):
+    app = desktop.install_shortcut("Darwin", tmp_path, env={}, launcher="artel")
+    assert "<key>CFBundleIconFile</key><string>Artel</string>" in (app / "Contents/Info.plist").read_text()
+    assert (app / "Contents/Resources/Artel.icns").read_bytes() == desktop.icns_from_png(ICON.read_bytes())
+    assert not (app / "Contents/Resources/Artel.png").exists()
+
+
+def test_windows_cmd_quotes_spaces_and_doubles_percent(tmp_path):
+    env = {"APPDATA": str(tmp_path)}
+    broken = lambda argv, env=None: 1  # noqa: E731
+    for launcher, want in [(r"C:\Program Files\Artel\artel.exe", r'"C:\Program Files\Artel\artel.exe"'),
+                           (r"C:\100%\artel.exe", r"C:\100%%\artel.exe"),
+                           (r"C:\A&B\artel.exe", r'"C:\A&B\artel.exe"'),
+                           (r"C:\My 50%\artel.exe", r'"C:\My 50%%\artel.exe"')]:
+        made = desktop.install_shortcut("Windows", tmp_path, env=env, launcher=launcher, run=broken)
+        assert f"start \"\" /min {want} app\r\n" in made.read_bytes().decode()
