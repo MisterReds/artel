@@ -343,7 +343,10 @@ def cmd_app(args) -> int:
             desktop.remove_shortcut(system, home)
             print("Ярлык Artel удалён.")
         else:
-            print(f"Ярлык создан: {desktop.install_shortcut(system, home)}")
+            made = desktop.install_shortcut(system, home)
+            print(f"Ярлык создан: {made}")
+            if made.suffix == ".cmd":
+                print("Обычный ярлык .lnk создать не удалось (PowerShell), создан запускающий файл Artel.cmd.")
         return 0
     url = f"http://127.0.0.1:{args.port}/"
     if args.print:

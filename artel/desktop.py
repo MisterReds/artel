@@ -9,6 +9,7 @@ import json
 import os
 import platform
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -17,6 +18,7 @@ import webbrowser
 from pathlib import Path
 
 ICON = Path(__file__).parent / "web/static/icons/icon-512.png"
+ICON_SMALL = Path(__file__).parent / "web/static/icons/icon-192.png"  # an ICO entry is at most 256 px
 
 _LINUX_NAMES = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser", "microsoft-edge",
                 "microsoft-edge-stable", "yandex-browser", "yandex-browser-beta", "brave-browser", "brave")
@@ -115,11 +117,42 @@ def _paths(system: str, home: Path, env) -> dict:
         return {"app": home / "Applications/Artel.app"}
     if system == "Windows":
         programs = Path(env.get("APPDATA") or home / "AppData/Roaming") / "Microsoft/Windows/Start Menu/Programs"
-        return {"lnk": programs / "Artel.lnk", "cmd": programs / "Artel.cmd"}
+        local = Path(env.get("LOCALAPPDATA") or home / "AppData/Local")
+        return {"lnk": programs / "Artel.lnk", "cmd": programs / "Artel.cmd", "ico": local / "Artel/Artel.ico"}
     return {"entry": home / ".local/share/applications/artel.desktop", "icon": home / ".local/share/icons/artel.png"}
 
 
-def install_shortcut(system: str, home: Path, *, env=None, launcher: str | None = None, run=subprocess.call) -> Path:
+def _png_size(png: bytes) -> tuple[int, int]:
+    if png[:8] != b"\x89PNG\r\n\x1a\n":
+        raise ValueError("not a PNG")
+    return int.from_bytes(png[16:20], "big"), int.from_bytes(png[20:24], "big")
+
+
+def ico_from_png(png: bytes) -> bytes:
+    """An .ico holding one PNG image (Windows Vista+ reads PNG-in-ICO); sizes of 256 are stored as 0."""
+    w, h = _png_size(png)
+    return (struct.pack("<HHH", 0, 1, 1) + struct.pack("<BBBBHHII", w % 256, h % 256, 0, 0, 1, 32, len(png), 22) + png)
+
+
+def icns_from_png(png: bytes) -> bytes:
+    """An .icns holding one PNG chunk: 'ic09' is the 512x512 PNG, 'ic10' the 1024x1024 one."""
+    kind = {512: b"ic09", 1024: b"ic10"}.get(_png_size(png)[0])
+    if kind is None:
+        raise ValueError("icns needs a 512 or 1024 px PNG")
+    return b"icns" + struct.pack(">I", 16 + len(png)) + kind + struct.pack(">I", 8 + len(png)) + png
+
+
+# no path text inside: the paths travel in the environment, so nothing needs quoting or escaping
+_LNK_SCRIPT = ("$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:ARTEL_LNK);"
+               "$s.TargetPath=$env:ARTEL_TARGET;$s.Arguments='app';$s.Description='Artel';"
+               "$s.IconLocation=$env:ARTEL_ICON;$s.Save()")
+
+
+def _run_with_env(argv, env=None):
+    return subprocess.call(argv, env=env)
+
+
+def install_shortcut(system: str, home: Path, *, env=None, launcher: str | None = None, run=_run_with_env) -> Path:
     """Create the launcher for this OS and return its path."""
     env = os.environ if env is None else env
     launcher = launcher or shutil.which("artel") or "artel"
@@ -141,10 +174,13 @@ def install_shortcut(system: str, home: Path, *, env=None, launcher: str | None 
         return app
     if system == "Windows":
         p["lnk"].parent.mkdir(parents=True, exist_ok=True)
-        ps = ("$s=(New-Object -ComObject WScript.Shell).CreateShortcut($args[0]);$s.TargetPath=$args[1];"
-              "$s.Arguments='app';$s.Description='Artel';$s.Save()")
+        p["ico"].parent.mkdir(parents=True, exist_ok=True)
+        p["ico"].write_bytes(ico_from_png(ICON_SMALL.read_bytes()))
+        p["lnk"].unlink(missing_ok=True)  # a stale one must not pass the existence check below
+        penv = {**env, "ARTEL_LNK": str(p["lnk"]), "ARTEL_TARGET": launcher, "ARTEL_ICON": str(p["ico"])}
         try:
-            if run(["powershell", "-NoProfile", "-Command", ps, str(p["lnk"]), launcher]) == 0:
+            # success is the file, not the exit code
+            if run(["powershell", "-NoProfile", "-Command", _LNK_SCRIPT], env=penv) == 0 and p["lnk"].exists():
                 p["cmd"].unlink(missing_ok=True)
                 return p["lnk"]
         except OSError:

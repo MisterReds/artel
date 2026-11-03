@@ -2,6 +2,7 @@
 import json
 import os
 import stat
+import struct
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -215,21 +216,57 @@ def test_macos_shortcut_is_an_app_bundle_with_shell_launcher(tmp_path):
     assert not app.exists()
 
 
-def test_windows_shortcut_prefers_lnk_and_falls_back_to_cmd(tmp_path):
-    env = {"APPDATA": str(tmp_path / "AppData/Roaming")}
-    ran = []
-    ok = lambda argv: ran.append(argv) or 0  # noqa: E731
-    made = desktop.install_shortcut("Windows", tmp_path, env=env, launcher="artel.exe", run=ok)
-    programs = tmp_path / "AppData/Roaming/Microsoft/Windows/Start Menu/Programs"
-    assert made == programs / "Artel.lnk"
-    assert ran and ran[0][0].lower().startswith("powershell") and "WScript.Shell" in " ".join(ran[0])
+PROGRAMS = "AppData/Roaming/Microsoft/Windows/Start Menu/Programs"
+WIN_LAUNCHER = r"C:\Users\Ann & Bob\100%\it's $x\artel.exe"
 
-    broken = lambda argv: (_ for _ in ()).throw(FileNotFoundError("powershell"))  # noqa: E731
+
+def test_windows_shortcut_passes_paths_only_through_environment(tmp_path):
+    env = {"APPDATA": str(tmp_path / "AppData/Roaming"), "LOCALAPPDATA": str(tmp_path / "AppData/Local")}
+    seen = []
+
+    def run(argv, env=None):  # PowerShell "makes" the shortcut: the file appears
+        seen.append((argv, env))
+        Path(env["ARTEL_LNK"]).write_bytes(b"lnk")
+        return 0
+
+    programs = tmp_path / PROGRAMS
+    made = desktop.install_shortcut("Windows", tmp_path, env=env, launcher=WIN_LAUNCHER, run=run)
+    assert made == programs / "Artel.lnk"
+    argv, penv = seen[0]
+    script = " ".join(argv)
+    assert argv[0].lower().startswith("powershell") and "WScript.Shell" in script
+    assert "$args" not in script  # -Command does not bind $args
+    assert penv["ARTEL_LNK"] == str(programs / "Artel.lnk") and penv["ARTEL_TARGET"] == WIN_LAUNCHER
+    for text in (str(programs), WIN_LAUNCHER, "AppData", "artel.exe"):
+        assert text not in script  # no path text inside the script: nothing to quote or inject
+    ico = Path(penv["ARTEL_ICON"])
+    assert ico.read_bytes()[:4] == b"\0\0\1\0" and "AppData" in str(ico)
+    assert not (programs / "Artel.cmd").exists()
+
+
+def test_windows_shortcut_falls_back_to_cmd_when_no_lnk_appears_or_powershell_is_missing(tmp_path):
+    env = {"APPDATA": str(tmp_path / "AppData/Roaming")}
+    programs = tmp_path / PROGRAMS
+    silent = lambda argv, env=None: 0  # noqa: E731 - exit code 0 but no file was written
+    made = desktop.install_shortcut("Windows", tmp_path, env=env, launcher="artel.exe", run=silent)
+    assert made == programs / "Artel.cmd" and "artel.exe" in made.read_text()
+
+    broken = lambda argv, env=None: (_ for _ in ()).throw(FileNotFoundError("powershell"))  # noqa: E731
     made = desktop.install_shortcut("Windows", tmp_path, env=env, launcher="artel.exe", run=broken)
     assert made == programs / "Artel.cmd"
-    assert "artel.exe" in made.read_text() and "app" in made.read_text()
     desktop.remove_shortcut("Windows", tmp_path, env=env)
-    assert not (programs / "Artel.cmd").exists()
+    assert not made.exists()
+
+
+def test_install_reports_which_windows_launcher_it_made(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
+    monkeypatch.setenv("APPDATA", str(tmp_path / "AppData/Roaming"))
+    monkeypatch.setattr(desktop.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(desktop.subprocess, "call", lambda *a, **k: 0)  # "succeeds" without a file
+    assert cli.main(["app", "--install-shortcut"]) == 0
+    out = capsys.readouterr().out
+    assert "Artel.cmd" in out and ".lnk" in out
 
 
 def test_install_and_remove_shortcut_flags(tmp_path, monkeypatch, capsys):
@@ -251,3 +288,20 @@ def test_manifest_has_install_fields():
     assert all(s["url"].startswith("/") for s in m["shortcuts"])
     sw = (Path(cli.__file__).parent / "web/static/sw.js").read_text()
     assert "'/'," in sw and "/static/desk.js" in sw
+
+
+def test_ico_container_wraps_the_png_for_windows():
+    png = (ICON.parent / "icon-192.png").read_bytes()
+    ico = desktop.ico_from_png(png)
+    assert ico[:6] == b"\0\0\1\0\1\0"  # ICONDIR: reserved, type icon, one image
+    w, h, _, _, planes, bpp, size, offset = struct.unpack("<BBBBHHII", ico[6:22])
+    assert (w, h, size, offset) == (192, 192, len(png), 22) and ico[offset:] == png
+
+
+def test_icns_container_wraps_the_png_for_macos():
+    png = ICON.read_bytes()
+    icns = desktop.icns_from_png(png)
+    assert icns[:4] == b"icns" and struct.unpack(">I", icns[4:8])[0] == len(icns)
+    assert icns[8:12] == b"ic09" and struct.unpack(">I", icns[12:16])[0] == len(png) + 8 and icns[16:] == png
+    with pytest.raises(ValueError):
+        desktop.icns_from_png((ICON.parent / "icon-192.png").read_bytes())
