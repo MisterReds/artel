@@ -10,6 +10,10 @@
   "orientation": "any",
   "theme_color": "#B5522B",
   "background_color": "#F7F4EE",
+  "shortcuts": [
+    {"name": "Новый проект", "short_name": "Новый", "url": "/#/new", "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png"}]},
+    {"name": "Нужно вам", "short_name": "Нужно вам", "url": "/#/portfolio", "icons": [{"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png"}]}
+  ],
   "icons": [
     {"src": "/static/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
     {"src": "/static/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
