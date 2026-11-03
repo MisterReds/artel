@@ -283,7 +283,7 @@ def test_codex_killed_without_usage_is_flagged_not_silently_zero(env, monkeypatc
 
     cfg, project, _ = env
     monkeypatch.setattr(codex, "TERMINAL_GRACE_S", 0.5)
-    monkeypatch.setenv("FAKE_CODEX_NO_USAGE", "FAKE_CODEX_NO_RESUBMIT", "1")
+    monkeypatch.setenv("FAKE_CODEX_NO_USAGE", "1")
     out, ctx = _run(cfg, project)
     assert out.status == "terminal" and out.usage["input_tokens"] == 0
     end = [e for e in project.log.read() if e["kind"] == "agent/end" and e.get("runtime") == "codex"][-1]
