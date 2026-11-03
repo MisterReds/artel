@@ -384,3 +384,21 @@ def test_tool_call_is_judged_after_its_preceding_lines_even_under_continuous_out
     assert [e["is_error"] for e in submits] == [False], submits
     assert not [e for e in ev if e["kind"] == "bridge/reader_lag"]
     assert time.time() - t0 < 3
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX fd numbers")
+def test_stdout_reader_works_on_a_pipe_whose_fd_is_above_1024():
+    import resource
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft < 1300:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (min(1300, hard), hard))
+    pad = [os.open(os.devnull, os.O_RDONLY) for _ in range(1100)]
+    try:
+        r_fd, w_fd = os.pipe()
+        assert r_fd >= 1024
+        os.close(r_fd), os.close(w_fd)
+        assert _read_chunks([b"a\n", b"b\n"]) == ["a\n", "b\n"]
+    finally:
+        for fd in pad:
+            os.close(fd)
