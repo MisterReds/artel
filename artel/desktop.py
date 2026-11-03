@@ -10,6 +10,7 @@ import os
 import platform
 import shlex
 import shutil
+import socket
 import struct
 import subprocess
 import sys
@@ -95,24 +96,115 @@ def server_alive(port: int) -> bool:
         return False
 
 
+def port_open(port: int) -> bool:
+    """True when something accepts connections on this port."""
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=1):
+            return True
+    except OSError:
+        return False
+
+
+def pid_alive(pid: int) -> bool:
+    if os.name == "nt":  # os.kill would terminate the process here
+        import ctypes
+        k = ctypes.windll.kernel32
+        h = k.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not h:
+            return False
+        code = ctypes.c_ulong()
+        ok = k.GetExitCodeProcess(h, ctypes.byref(code))
+        k.CloseHandle(h)
+        return bool(ok) and code.value == 259  # STILL_ACTIVE
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+_LOG_CAP, _LOG_KEEP = 2 * 1024 * 1024, 1024 * 1024
+
+
+def _open_log(path: Path):
+    """web.log, owner-only; when it grew past 2 MB only its last 1 MB is kept."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() and path.stat().st_size > _LOG_CAP:
+        with open(path, "rb") as f:
+            f.seek(-_LOG_KEEP, os.SEEK_END)
+            tail = f.read()
+        path.write_bytes(tail)
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT, 0o600)
+    if os.name != "nt":
+        os.chmod(path, 0o600)
+    return os.fdopen(fd, "ab")
+
+
+def _log_tail(path: Path, lines: int = 10) -> str:
+    try:
+        return "\n".join(path.read_bytes()[-4096:].decode("utf-8", "replace").splitlines()[-lines:])
+    except OSError:
+        return ""
+
+
+def _take_lock(lock: Path) -> bool:
+    """True when this process now owns the start lock. A lock of a dead process is stale and removed."""
+    while True:
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+        except FileExistsError:
+            try:
+                pid = int(lock.read_text().strip() or 0)
+            except (OSError, ValueError):
+                pid = 0
+            if pid and pid_alive(pid):
+                return False
+            lock.unlink(missing_ok=True)  # stale (or unreadable): try again
+            continue
+        with os.fdopen(fd, "w") as f:
+            f.write(str(os.getpid()))
+        return True
+
+
 def ensure_server(port: int, *, home: Path, config: str | None = None, popen=subprocess.Popen, probe=server_alive,
-                  sleep=time.sleep, clock=time.monotonic, wait_s: float = 30) -> str:
-    """'running' when a dashboard already answers, else start `artel web` detached (log: home/logs/web.log)
-    and wait until it answers -> 'started'."""
+                  port_open=port_open, sleep=time.sleep, clock=time.monotonic, wait_s: float = 30) -> str:
+    """'running' when a dashboard already answers; else start `artel web` detached (log: home/logs/web.log) and wait
+    until it answers -> 'started'. A port answered by another program is an error, never opened; a child that
+    exits early is reported with the log tail; a lock file keeps two callers from starting two servers."""
     if probe(port):
         return "running"
-    log_path = Path(home) / "logs" / "web.log"
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    argv = [sys.executable, "-c", "import sys; from artel.cli import main; sys.exit(main())",
-            *(["--config", config] if config else []), "web", "--port", str(port)]
-    with open(log_path, "ab") as log:
-        popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, **_detached())
+    if port_open(port):
+        raise DesktopError(f"порт {port} занят другой программой")
+    home = Path(home)
+    log_path, lock = home / "logs" / "web.log", home / "web.start.lock"
+    home.mkdir(parents=True, exist_ok=True)
     end = clock() + wait_s
-    while clock() < end:
+    while not _take_lock(lock):  # somebody else is starting it: wait for the dashboard, not for the lock
         if probe(port):
-            return "started"
+            return "running"
+        if clock() >= end:
+            raise DesktopError(f"панель не ответила за {int(wait_s)} с; смотрите журнал: {log_path}")
         sleep(0.5)
-    raise DesktopError(f"панель не ответила за {int(wait_s)} с; смотрите журнал: {log_path}")
+    try:
+        if probe(port):
+            return "running"
+        argv = [sys.executable, "-c", "import sys; from artel.cli import main; sys.exit(main())",
+                *(["--config", config] if config else []), "web", "--port", str(port)]
+        with _open_log(log_path) as log:
+            child = popen(argv, stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, **_detached())
+        end = clock() + wait_s
+        while clock() < end:
+            if probe(port):
+                return "started"
+            if (code := child.poll()) is not None:
+                raise DesktopError(f"панель завершилась с кодом {code} сразу после запуска; журнал {log_path}:\n"
+                                   + _log_tail(log_path))
+            sleep(0.5)
+        raise DesktopError(f"панель не ответила за {int(wait_s)} с; смотрите журнал: {log_path}")
+    finally:
+        lock.unlink(missing_ok=True)
 
 
 # ---------- shortcuts ----------

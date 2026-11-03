@@ -103,6 +103,15 @@ def test_probe_recognises_artel_and_ignores_other_servers(fake_dashboard):
     assert desktop.server_alive(1) is False  # nothing listens
 
 
+class Child:
+    """A started process: poll() is None while it runs, else its exit code."""
+    def __init__(self, code=None):
+        self.code = code
+
+    def poll(self):
+        return self.code
+
+
 def test_running_server_is_reused_not_started(tmp_path, fake_dashboard):
     port = fake_dashboard()
     spawned = []
@@ -117,9 +126,10 @@ def test_server_is_started_detached_logs_to_web_log_and_waited_for(tmp_path, fak
 
     def popen(argv, **kw):
         calls.update(argv=argv, kw=kw)
+        return Child()
 
     state = desktop.ensure_server(port, home=tmp_path, popen=popen, probe=lambda p: next(answers) if calls else False,
-                                  sleep=lambda s: None, wait_s=5)
+                                  port_open=lambda p: False, sleep=lambda s: None, wait_s=5)
     assert state == "started"
     assert calls["argv"][0] == sys.executable and "web" in calls["argv"] and str(port) in calls["argv"]
     assert not any("token" in a.lower() for a in calls["argv"])
@@ -131,8 +141,8 @@ def test_server_is_started_detached_logs_to_web_log_and_waited_for(tmp_path, fak
 def test_server_that_never_answers_is_reported_with_the_log_path(tmp_path):
     t = iter(range(0, 1000, 10))
     with pytest.raises(desktop.DesktopError) as e:
-        desktop.ensure_server(1, home=tmp_path, popen=lambda *a, **k: None, probe=lambda p: False,
-                              sleep=lambda s: None, wait_s=30, clock=lambda: next(t))
+        desktop.ensure_server(1, home=tmp_path, popen=lambda *a, **k: Child(), probe=lambda p: False,
+                              port_open=lambda p: False, sleep=lambda s: None, wait_s=30, clock=lambda: next(t))
     assert "web.log" in str(e.value)
 
 
@@ -388,3 +398,128 @@ def test_app_profile_dir_is_private_new_or_existing(app_env, tmp_path, monkeypat
     profile.chmod(0o755)
     assert cli.main(["app"]) == 0
     assert stat.S_IMODE(profile.stat().st_mode) == 0o700
+
+
+# ---------- starting the server safely ----------
+
+def _other_server(fake_dashboard):
+    class Other(_Artel):
+        def do_GET(self):
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"<html>not artel</html>")
+
+    return fake_dashboard(Other)
+
+
+def test_a_port_held_by_another_program_is_reported_and_nothing_is_started(tmp_path, fake_dashboard):
+    port = _other_server(fake_dashboard)
+    spawned = []
+    with pytest.raises(desktop.DesktopError) as e:
+        desktop.ensure_server(port, home=tmp_path, popen=lambda *a, **k: spawned.append(a))
+    assert str(e.value) == f"порт {port} занят другой программой" and spawned == []
+
+
+def test_child_that_dies_early_is_reported_with_the_log_tail(tmp_path):
+    def popen(argv, stdout=None, **kw):
+        stdout.write(b"line1\nTraceback...\nOSError: address already in use\n")
+        stdout.flush()
+        return Child(code=1)
+
+    t = iter(range(0, 1000))
+    with pytest.raises(desktop.DesktopError) as e:
+        desktop.ensure_server(1, home=tmp_path, popen=popen, probe=lambda p: False, port_open=lambda p: False,
+                              sleep=lambda s: None, clock=lambda: next(t), wait_s=500)
+    assert "address already in use" in str(e.value) and "завершилась" in str(e.value)
+    assert not (tmp_path / "web.start.lock").exists()  # the lock does not outlive a failed start
+
+
+def _start_with_log(tmp_path):
+    started = []
+
+    def popen(*a, **k):
+        started.append(1)
+        return Child()
+
+    desktop.ensure_server(1, home=tmp_path, popen=popen, port_open=lambda p: False, probe=lambda p: bool(started),
+                          sleep=lambda s: None)
+    return tmp_path / "logs" / "web.log"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_web_log_is_private_and_capped_at_start(tmp_path):
+    log = tmp_path / "logs" / "web.log"
+    log.parent.mkdir()
+    log.write_bytes(b"old\n" * 100 + b"x" * (3 * 1024 * 1024) + b"TAIL\n")
+    log.chmod(0o644)
+    _start_with_log(tmp_path)
+    data = log.read_bytes()
+    assert len(data) <= 1024 * 1024 + 16 and data.endswith(b"TAIL\n") and not data.startswith(b"old")
+    assert stat.S_IMODE(log.stat().st_mode) == 0o600
+
+
+def test_web_log_under_the_cap_is_kept(tmp_path):
+    log = tmp_path / "logs" / "web.log"
+    log.parent.mkdir()
+    log.write_bytes(b"keep me\n")
+    _start_with_log(tmp_path)
+    assert log.read_bytes() == b"keep me\n"
+
+
+def test_concurrent_starts_spawn_one_server(tmp_path):
+    import time as _t
+    spawned, up, results = [], threading.Event(), []
+
+    def popen(*a, **k):
+        spawned.append(1)
+        _t.sleep(0.2)  # booting takes a while; the second caller arrives meanwhile
+        up.set()
+        return Child()
+
+    def go():
+        results.append(desktop.ensure_server(1, home=tmp_path, popen=popen, probe=lambda p: up.is_set(),
+                                             port_open=lambda p: False, sleep=lambda s: _t.sleep(0.01), wait_s=10))
+
+    ts = [threading.Thread(target=go) for _ in range(2)]
+    [t.start() for t in ts]
+    [t.join(20) for t in ts]
+    assert len(spawned) == 1 and len(results) == 2 and set(results) <= {"started", "running"}
+    assert not (tmp_path / "web.start.lock").exists()
+
+
+def test_stale_start_lock_of_a_dead_process_is_taken_over(tmp_path):
+    import subprocess as sp
+    dead = sp.Popen([sys.executable, "-c", "pass"])
+    dead.wait()
+    (tmp_path / "web.start.lock").write_text(str(dead.pid))
+    spawned = []
+    up = []
+
+    def popen(*a, **k):
+        spawned.append(1)
+        up.append(1)
+        return Child()
+
+    state = desktop.ensure_server(1, home=tmp_path, popen=popen, probe=lambda p: bool(up), port_open=lambda p: False,
+                                  sleep=lambda s: None)
+    assert state == "started" and spawned == [1]
+
+
+def test_live_start_lock_makes_the_caller_wait_instead_of_spawning(tmp_path):
+    (tmp_path / "web.start.lock").write_text(str(os.getpid()))  # a live process is starting the server
+    ticks = iter([False, False, True])
+    state = desktop.ensure_server(1, home=tmp_path, popen=lambda *a, **k: pytest.fail("second start"),
+                                  probe=lambda p: next(ticks), port_open=lambda p: False, sleep=lambda s: None)
+    assert state == "running"
+    assert (tmp_path / "web.start.lock").exists()  # not ours: left alone
+
+
+def test_app_does_not_open_a_window_on_a_port_held_by_another_program(app_env, monkeypatch, capsys):
+    def busy(port, **k):
+        raise desktop.DesktopError(f"порт {port} занят другой программой")
+
+    monkeypatch.setattr(desktop, "ensure_server", busy)
+    monkeypatch.setattr(desktop, "find_browser", lambda *a, **k: "/usr/bin/chromium")
+    assert cli.main(["app", "--port", "9124"]) == 1
+    assert "порт 9124 занят другой программой" in capsys.readouterr().err
+    assert app_env["popen"] == [] and app_env["web"] == []
