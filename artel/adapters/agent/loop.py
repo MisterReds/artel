@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import codecs
 import hmac
+import io
 import json
 import os
 import secrets
@@ -87,7 +88,9 @@ class StdoutReader:
             self.cond.notify_all()
 
     def lines(self):
-        decoder, buf = codecs.getincrementaldecoder("utf-8")("replace"), ""
+        # universal newlines like the text layer this replaced: a CRLF split across chunks, a lone CR
+        decoder = io.IncrementalNewlineDecoder(codecs.getincrementaldecoder("utf-8")("replace"), translate=True)
+        buf = ""
         try:
             while True:
                 idle = not _pipe_has_data(self.fd)
@@ -100,7 +103,7 @@ class StdoutReader:
                         select.select([self.fd], [], [])
                     self._set(False)
                 chunk = os.read(self.fd, 65536)
-                buf += decoder.decode(chunk, final=not chunk).replace("\r\n", "\n")
+                buf += decoder.decode(chunk, final=not chunk)
                 *whole, buf = buf.split("\n")
                 for line in whole:
                     yield line + "\n"

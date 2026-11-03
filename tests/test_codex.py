@@ -24,7 +24,7 @@ def fake_codex(tmp_path) -> str:
 
 
 FAKE_CODEX_VARS = ["FAKE_CODEX_CMD", "FAKE_CODEX_LAZY", "FAKE_CODEX_LIMIT", "FAKE_CODEX_LOG", "FAKE_CODEX_NO_USAGE", "FAKE_CODEX_NO_RESUBMIT",
-                   "FAKE_CODEX_SANDBOX", "FAKE_CODEX_BADLINES", "FAKE_CODEX_STDERR_KB", "FAKE_CODEX_USAGE_DELAY", "FAKE_CODEX_WRITE"]
+                   "FAKE_CODEX_SANDBOX", "FAKE_CODEX_BADLINES", "FAKE_CODEX_STDERR_KB", "FAKE_CODEX_USAGE_DELAY", "FAKE_CODEX_WRITE", "FAKE_CODEX_FLOOD"]
 
 
 @pytest.fixture
@@ -331,3 +331,31 @@ def test_stdout_reader_yields_whole_lines_and_is_drained_only_when_the_pipe_is_e
     t.join(5)
     assert got == ["héllo\n", "wor"] and reader.wait_drained(0.1)
     r.close()
+
+
+def _read_chunks(chunks):
+    """Feed the chunks to a StdoutReader one by one (each fully processed before the next) and return its lines."""
+    import threading
+    from artel.adapters.agent.loop import StdoutReader
+
+    r_fd, w_fd = os.pipe()
+    r, w = os.fdopen(r_fd, "r"), os.fdopen(w_fd, "wb", buffering=0)
+    reader, got = StdoutReader(r), []
+    t = threading.Thread(target=lambda: got.extend(reader.lines()), daemon=True)
+    t.start()
+    for c in chunks:
+        w.write(c)
+        assert reader.wait_drained(5)
+    w.close()
+    t.join(5)
+    r.close()
+    return got
+
+
+def test_stdout_reader_crlf_split_across_chunks_is_one_line_break():
+    assert _read_chunks([b"a\r", b"\nb\n"]) == ["a\n", "b\n"]
+
+
+def test_stdout_reader_lone_cr_is_a_line_break_like_universal_newlines():
+    assert _read_chunks([b"x\ry\n"]) == ["x\n", "y\n"]
+    assert _read_chunks([b"x\r", b"y\n"]) == ["x\n", "y\n"]
