@@ -377,3 +377,14 @@ def test_windows_cmd_quotes_spaces_and_doubles_percent(tmp_path):
                            (r"C:\My 50%\artel.exe", r'"C:\My 50%%\artel.exe"')]:
         made = desktop.install_shortcut("Windows", tmp_path, env=env, launcher=launcher, run=broken)
         assert f"start \"\" /min {want} app\r\n" in made.read_bytes().decode()
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX permission bits")
+def test_app_profile_dir_is_private_new_or_existing(app_env, tmp_path, monkeypatch):
+    monkeypatch.setattr(desktop, "find_browser", lambda *a, **k: "/usr/bin/chromium")
+    profile = tmp_path / "app-profile"
+    assert cli.main(["app"]) == 0
+    assert stat.S_IMODE(profile.stat().st_mode) == 0o700
+    profile.chmod(0o755)
+    assert cli.main(["app"]) == 0
+    assert stat.S_IMODE(profile.stat().st_mode) == 0o700

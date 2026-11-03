@@ -369,7 +369,7 @@ def cmd_app(args) -> int:
             return 1
     browser = desktop.find_browser()
     if browser:
-        desktop.launch(desktop.app_command(browser, url, artel_home() / "app-profile"))
+        desktop.launch(desktop.app_command(browser, url, desktop.private_dir(artel_home() / "app-profile")))
     else:
         desktop.open_default(url)
         print("Окно приложения нужно Chrome, Edge, Chromium, Яндекс Браузер или Brave; панель открыта в браузере "

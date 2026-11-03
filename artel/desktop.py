@@ -66,6 +66,15 @@ def app_command(browser: str, url: str, profile: Path) -> list[str]:
     return [browser, f"--app={url}", f"--user-data-dir={profile}"]
 
 
+def private_dir(path: Path) -> Path:
+    """The browser profile holds cookies and the session: owner-only, also when it already existed."""
+    path = Path(path)
+    path.mkdir(mode=0o700, parents=True, exist_ok=True)
+    if os.name != "nt":
+        path.chmod(0o700)
+    return path
+
+
 def launch(argv: list[str]) -> None:
     subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      **_detached())
