@@ -26,6 +26,7 @@ import subprocess
 import sys
 import tempfile
 import threading
+import time
 import uuid
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
@@ -68,9 +69,9 @@ class StdoutReader:
     :meth:`wait_drained`: it returns once every byte the CLI wrote before the call was read AND processed (the reader
     is idle: nothing buffered, not handling a line, about to wait for more). Idle is published under one Condition,
     and the reader leaves idle (POSIX: in the same step that wakes it from the wait) before it takes any byte, and
-    the bridge also checks the pipe itself, so a byte that is still in the pipe never counts as drained. (Windows has
-    no wait on a pipe: the reader blocks in the read itself, leaving a window of microseconds between the read
-    returning and idle being cleared, in which the bridge still sees the emptied pipe.)
+    the bridge also checks the pipe itself, so a byte that is still in the pipe never counts as drained. Windows has
+    no wait on a pipe, and a synchronous read in flight would block the bridge's peek at the same handle: there the
+    reader polls the pipe (``PeekNamedPipe``, 2 ms) while idle and calls the read only when it cannot block.
     The wait is bounded; on timeout the caller judges with what it has and journals ``bridge/reader_lag``.
     """
 
@@ -91,12 +92,14 @@ class StdoutReader:
             while True:
                 idle = not _pipe_has_data(self.fd)
                 self._set(idle)
-                if idle and sys.platform != "win32":
-                    select.select([self.fd], [], [])
+                if idle:
+                    if sys.platform == "win32":
+                        while not _pipe_has_data(self.fd):
+                            time.sleep(0.002)  # no blocking wait on a pipe here; see the class doc
+                    else:
+                        select.select([self.fd], [], [])
                     self._set(False)
                 chunk = os.read(self.fd, 65536)
-                if idle and sys.platform == "win32":
-                    self._set(False)
                 buf += decoder.decode(chunk, final=not chunk).replace("\r\n", "\n")
                 *whole, buf = buf.split("\n")
                 for line in whole:
