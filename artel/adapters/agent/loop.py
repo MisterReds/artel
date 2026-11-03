@@ -22,7 +22,7 @@ import io
 import json
 import os
 import secrets
-import select
+import selectors
 import subprocess
 import sys
 import tempfile
@@ -45,11 +45,11 @@ NATIVE_DUPLICATES = {"bash", "read_file", "write_file", "edit_file", "list_files
 BROKEN_KEY = "codex_sandbox_broken"  # ctx.state key: the CLI's own sandbox failed to start a command
 
 
-BRIDGE_DRAIN_S = 5.0  # the longest the bridge waits for the stdout reader to catch up before judging a tool
+BRIDGE_DRAIN_S = 2.0  # the longest the bridge waits for the stdout reader to catch up before judging a tool
 
 
-def _pipe_has_data(fd: int) -> bool:
-    """True when a read on the pipe would return at once (bytes waiting, or end of file)."""
+def _pipe_available(fd: int) -> int:
+    """Bytes a read on the pipe would return at once (0 when none, or at end of file)."""
     if sys.platform == "win32":
         import ctypes
         import msvcrt
@@ -57,8 +57,12 @@ def _pipe_has_data(fd: int) -> bool:
 
         avail = wintypes.DWORD(0)
         ok = ctypes.windll.kernel32.PeekNamedPipe(msvcrt.get_osfhandle(fd), None, 0, None, ctypes.byref(avail), None)
-        return avail.value > 0 or not ok  # a broken pipe is end of file: reading returns at once
-    return bool(select.select([fd], [], [], 0)[0])
+        return avail.value if ok else 0
+    import fcntl
+    import struct
+    import termios
+
+    return struct.unpack("i", fcntl.ioctl(fd, termios.FIONREAD, struct.pack("i", 0)))[0]
 
 
 class StdoutReader:
@@ -67,24 +71,34 @@ class StdoutReader:
     Ordering guarantee: a CLI prints the events of a command or file change to stdout BEFORE it calls the bridge about
     the next tool. The reader thread turns those lines into ``ctx.outputs`` / ``ctx.edited_files``; the bridge thread
     judges terminal tools ("you edited code but ran nothing") from them. So before judging, the bridge calls
-    :meth:`wait_drained`: it returns once every byte the CLI wrote before the call was read AND processed (the reader
-    is idle: nothing buffered, not handling a line, about to wait for more). Idle is published under one Condition,
-    and the reader leaves idle (POSIX: in the same step that wakes it from the wait) before it takes any byte, and
-    the bridge also checks the pipe itself, so a byte that is still in the pipe never counts as drained. Windows has
-    no wait on a pipe, and a synchronous read in flight would block the bridge's peek at the same handle: there the
-    reader polls the pipe (``PeekNamedPipe``, 2 ms) while idle and calls the read only when it cannot block.
+    :meth:`wait_drained`, which sets a watermark: the bytes the reader has taken from the pipe so far plus the bytes
+    waiting in the pipe right now. It returns once the reader has PROCESSED that many bytes (every line of them
+    handled by the consumer), however much more the CLI has printed since, so continuous output cannot starve it.
+    Taking bytes and counting them happen under one lock, as does reading the watermark, so no byte is missed or
+    counted twice. Windows has no wait on a pipe, and a synchronous read in flight would block the bridge's peek at
+    the same handle: there the reader polls the pipe (``PeekNamedPipe``, 2 ms) and reads only when it cannot block.
     The wait is bounded; on timeout the caller judges with what it has and journals ``bridge/reader_lag``.
     """
 
     def __init__(self, stream):
         self.fd = stream.fileno()  # the text layer above is never read: no hidden buffer between pipe and reader
         self.cond = threading.Condition()
-        self.idle = False
+        self.taken = 0  # bytes read from the pipe
+        self.processed = 0  # bytes whose lines the consumer has finished handling
         self.done = False
 
-    def _set(self, idle: bool, done: bool = False) -> None:
+    def _wait_readable(self) -> None:
+        if sys.platform == "win32":
+            while not _pipe_available(self.fd):
+                time.sleep(0.002)  # no blocking wait on a pipe here; see the class doc
+        else:
+            with selectors.DefaultSelector() as sel:
+                sel.register(self.fd, selectors.EVENT_READ)
+                sel.select()
+
+    def _advance(self, done: bool = False) -> None:
         with self.cond:
-            self.idle, self.done = idle, self.done or done
+            self.processed, self.done = self.taken, self.done or done
             self.cond.notify_all()
 
     def lines(self):
@@ -93,16 +107,11 @@ class StdoutReader:
         buf = ""
         try:
             while True:
-                idle = not _pipe_has_data(self.fd)
-                self._set(idle)
-                if idle:
-                    if sys.platform == "win32":
-                        while not _pipe_has_data(self.fd):
-                            time.sleep(0.002)  # no blocking wait on a pipe here; see the class doc
-                    else:
-                        select.select([self.fd], [], [])
-                    self._set(False)
-                chunk = os.read(self.fd, 65536)
+                self._advance()  # everything taken so far was handled
+                self._wait_readable()
+                with self.cond:
+                    chunk = os.read(self.fd, 65536)  # data is waiting (or end of file): does not block
+                    self.taken += len(chunk)
                 buf += decoder.decode(chunk, final=not chunk)
                 *whole, buf = buf.split("\n")
                 for line in whole:
@@ -112,11 +121,13 @@ class StdoutReader:
                         yield buf
                     return
         finally:
-            self._set(True, done=True)
+            self._advance(done=True)
 
     def wait_drained(self, timeout: float) -> bool:
+        """Wait until the reader processed every byte that was in the pipe when this was called."""
         with self.cond:
-            return self.cond.wait_for(lambda: (self.idle and not _pipe_has_data(self.fd)) or self.done, timeout)
+            mark = self.taken + _pipe_available(self.fd)
+            return self.cond.wait_for(lambda: self.processed >= mark or self.done, timeout)
 
 
 class ToolBridge:

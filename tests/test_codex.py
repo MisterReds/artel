@@ -359,3 +359,28 @@ def test_stdout_reader_crlf_split_across_chunks_is_one_line_break():
 def test_stdout_reader_lone_cr_is_a_line_break_like_universal_newlines():
     assert _read_chunks([b"x\ry\n"]) == ["x\n", "y\n"]
     assert _read_chunks([b"x\r", b"y\n"]) == ["x\n", "y\n"]
+
+
+def test_tool_call_is_judged_after_its_preceding_lines_even_under_continuous_output(env, monkeypatch):
+    monkeypatch.setenv("FAKE_CODEX_FLOOD", "1")  # a backlog before the edit, then output that never stops
+    monkeypatch.setenv("FAKE_CODEX_NO_RESUBMIT", "1")  # a rejected submit would not be retried: the first judgement counts
+    from artel.adapters.agent import codex
+
+    real_parse = codex.parse
+
+    def slow_parse(line):  # a reader that cannot keep up with the CLI's output
+        if '"noise"' in line:
+            time.sleep(0.0002)
+        return real_parse(line)
+
+    monkeypatch.setattr(codex, "parse", slow_parse)
+    cfg, project, _ = env
+    t0 = time.time()
+    out, ctx = _run(cfg, project)
+    assert out.status == "terminal" and out.name == "task_submit", out.error
+    assert "hello.py" in ctx.edited_files
+    ev = project.log.read()
+    submits = [e for e in ev if e["kind"] == "tool/result" and e.get("tool") == "task_submit" and e.get("runtime") == "codex"]
+    assert [e["is_error"] for e in submits] == [False], submits
+    assert not [e for e in ev if e["kind"] == "bridge/reader_lag"]
+    assert time.time() - t0 < 3
