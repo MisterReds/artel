@@ -14,6 +14,7 @@ import socket
 import struct
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 import webbrowser
@@ -150,22 +151,28 @@ def _log_tail(path: Path, lines: int = 10) -> str:
 
 
 def _take_lock(lock: Path) -> bool:
-    """True when this process now owns the start lock. A lock of a dead process is stale and removed."""
-    while True:
-        try:
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-        except FileExistsError:
+    """True when this process now owns the start lock. The file appears with its pid already inside (written aside,
+    then hard-linked: atomic), so a half-written lock is never mistaken for a stale one. A lock whose pid is gone
+    is stale and removed."""
+    mine = lock.with_name(f"{lock.name}.{os.getpid()}.{threading.get_ident()}")
+    mine.write_text(str(os.getpid()))
+    try:
+        while True:
             try:
-                pid = int(lock.read_text().strip() or 0)
-            except (OSError, ValueError):
-                pid = 0
-            if pid and pid_alive(pid):
-                return False
-            lock.unlink(missing_ok=True)  # stale (or unreadable): try again
-            continue
-        with os.fdopen(fd, "w") as f:
-            f.write(str(os.getpid()))
-        return True
+                os.link(mine, lock)
+                return True
+            except FileExistsError:
+                try:
+                    pid = int(lock.read_text().strip() or 0)
+                except FileNotFoundError:
+                    continue  # released meanwhile
+                except (OSError, ValueError):
+                    pid = 0
+                if pid and pid_alive(pid):
+                    return False
+                lock.unlink(missing_ok=True)  # stale: try again
+    finally:
+        mine.unlink(missing_ok=True)
 
 
 def ensure_server(port: int, *, home: Path, config: str | None = None, popen=subprocess.Popen, probe=server_alive,
