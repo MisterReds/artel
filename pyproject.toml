@@ -19,6 +19,6 @@ build-backend = "setuptools.build_meta"
 include = ["artel*"]
 
 [tool.setuptools.package-data]
-"artel.web" = ["index.html", "login.html", "static/*.svg", "static/*.js", "static/*.webmanifest", "static/icons/*",
+"artel.web" = ["index.html", "login.html", "static/*.svg", "static/*.js", "static/*.css", "static/*.webmanifest", "static/icons/*",
                "static/fonts/*"]
 "artel.data" = ["harnesses.json"]

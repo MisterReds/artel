@@ -23,7 +23,7 @@ from . import filesview
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .. import analytics, guardian
+from .. import analytics, chat, guardian
 from ..humanize import happenings, localize_stats, localize_view, ru
 from ..manager import human_comment, new_kernel, resume, run_goal
 from ..project import Project, list_projects
@@ -465,6 +465,8 @@ def make_handler(runner: Runner, auth=None):
                     self.send_header("Content-Length", str(len(body)))
                     self.end_headers()
                     self.wfile.write(body)
+                elif parts == ["api", "chat", "history"]:  # chat block (artel/chat.py)
+                    self._json({"turns": chat.load("dashboard"), "suggestions": chat.SUGGESTIONS})
                 elif parts and parts[0] == "static":
                     self._static("/".join(parts[1:]))
                 elif parts == ["favicon.ico"] or parts == ["favicon.svg"]:
@@ -476,7 +478,9 @@ def make_handler(runner: Runner, auth=None):
                 elif parts == ["api", "ready"]:
                     from ..runtimes import detect_runtime
 
-                    self._json({"runtime": detect_runtime(runner.config)})
+                    usage = chat.usage_total()
+                    self._json({"runtime": detect_runtime(runner.config),
+                                "concierge": {"tokens": usage["tokens"], "usd": usage["usd"]}})
                 elif parts == ["api", "providers"]:
                     from ..providers import overview
 
@@ -742,6 +746,20 @@ def make_handler(runner: Runner, auth=None):
                 return self._json({"ok": True}, 200, {"Set-Cookie": self._cookie("", 0)})
             try:
                 data = self._body()
+                if parts == ["api", "chat"]:  # chat block (artel/chat.py)
+                    message = str(data.get("message") or "").strip()
+                    if not message:
+                        return self._json({"error": "message required"}, 400)
+                    if not chat.limiter(runner).allow(self._sid() or self._client_ip()):
+                        return self._json({"error": "слишком много сообщений, подождите минуту"}, 429,
+                                          {"Retry-After": "60"})
+                    return self._json(chat.respond(runner, "dashboard", message))
+                if parts == ["api", "chat", "confirm"]:
+                    if not chat.limiter(runner).allow(self._sid() or self._client_ip()):
+                        return self._json({"error": "слишком много сообщений, подождите минуту"}, 429,
+                                          {"Retry-After": "60"})
+                    out = chat.confirm(runner, "dashboard", str(data.get("id") or ""), "dashboard")
+                    return self._json(out, 404 if out.get("gone") else 200)
                 if parts == ["api", "projects"]:
                     goal = (data.get("goal") or "").strip()
                     if not goal:
