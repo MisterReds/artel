@@ -76,7 +76,11 @@ def call(name, a):  # through Artel's real MCP proxy code, like the real Codex
     from artel.runtimes.mcp_proxy import _http, read_token
     assert token.startswith("@"), "the bridge token must not be on the command line"
     return _http(url, read_token(token), "", {"name": name, "args": a})
-r = call("task_submit", {"summary": "hello.py prints hi", "evidence": "$ python hello.py\nhi"})
+for _ in range(100):  # like a model: a rejected submit is read and tried again (Artel may not have read our output lines yet)
+    r = call("task_submit", {"summary": "hello.py prints hi", "evidence": "$ python hello.py\nhi"})
+    if not r.get("is_error"):
+        break
+    time.sleep(0.1)
 emit({"type": "item.completed", "item": {"id": "i4", "type": "mcp_tool_call", "server": "artel", "tool": "task_submit", "arguments": {}, "status": "completed"}})
 if os.environ.get("FAKE_CODEX_NO_USAGE"):  # never sends turn.completed
     time.sleep(30)
