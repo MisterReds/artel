@@ -16,10 +16,12 @@ usage "cached"/"cost_usd", end "detail", error "fatal", command "phase".
 
 from __future__ import annotations
 
+import codecs
 import hmac
 import json
 import os
 import secrets
+import select
 import subprocess
 import sys
 import tempfile
@@ -39,6 +41,76 @@ from ...tools import StderrTail, group_popen_kwargs, terminate_tree
 # The CLIs ship better versions of these; do not expose Artel's duplicates.
 NATIVE_DUPLICATES = {"bash", "read_file", "write_file", "edit_file", "list_files"}
 BROKEN_KEY = "codex_sandbox_broken"  # ctx.state key: the CLI's own sandbox failed to start a command
+
+
+BRIDGE_DRAIN_S = 5.0  # the longest the bridge waits for the stdout reader to catch up before judging a tool
+
+
+def _pipe_has_data(fd: int) -> bool:
+    """True when a read on the pipe would return at once (bytes waiting, or end of file)."""
+    if sys.platform == "win32":
+        import ctypes
+        import msvcrt
+        from ctypes import wintypes
+
+        avail = wintypes.DWORD(0)
+        ok = ctypes.windll.kernel32.PeekNamedPipe(msvcrt.get_osfhandle(fd), None, 0, None, ctypes.byref(avail), None)
+        return avail.value > 0 or not ok  # a broken pipe is end of file: reading returns at once
+    return bool(select.select([fd], [], [], 0)[0])
+
+
+class StdoutReader:
+    """Reads the CLI's stdout line by line and tells the tool bridge when it has caught up.
+
+    Ordering guarantee: a CLI prints the events of a command or file change to stdout BEFORE it calls the bridge about
+    the next tool. The reader thread turns those lines into ``ctx.outputs`` / ``ctx.edited_files``; the bridge thread
+    judges terminal tools ("you edited code but ran nothing") from them. So before judging, the bridge calls
+    :meth:`wait_drained`: it returns once every byte the CLI wrote before the call was read AND processed (the reader
+    is idle: nothing buffered, not handling a line, about to wait for more). Idle is published under one Condition,
+    and the reader leaves idle (POSIX: in the same step that wakes it from the wait) before it takes any byte, and
+    the bridge also checks the pipe itself, so a byte that is still in the pipe never counts as drained. (Windows has
+    no wait on a pipe: the reader blocks in the read itself, leaving a window of microseconds between the read
+    returning and idle being cleared, in which the bridge still sees the emptied pipe.)
+    The wait is bounded; on timeout the caller judges with what it has and journals ``bridge/reader_lag``.
+    """
+
+    def __init__(self, stream):
+        self.fd = stream.fileno()  # the text layer above is never read: no hidden buffer between pipe and reader
+        self.cond = threading.Condition()
+        self.idle = False
+        self.done = False
+
+    def _set(self, idle: bool, done: bool = False) -> None:
+        with self.cond:
+            self.idle, self.done = idle, self.done or done
+            self.cond.notify_all()
+
+    def lines(self):
+        decoder, buf = codecs.getincrementaldecoder("utf-8")("replace"), ""
+        try:
+            while True:
+                idle = not _pipe_has_data(self.fd)
+                self._set(idle)
+                if idle and sys.platform != "win32":
+                    select.select([self.fd], [], [])
+                    self._set(False)
+                chunk = os.read(self.fd, 65536)
+                if idle and sys.platform == "win32":
+                    self._set(False)
+                buf += decoder.decode(chunk, final=not chunk).replace("\r\n", "\n")
+                *whole, buf = buf.split("\n")
+                for line in whole:
+                    yield line + "\n"
+                if not chunk:
+                    if buf:
+                        yield buf
+                    return
+        finally:
+            self._set(True, done=True)
+
+    def wait_drained(self, timeout: float) -> bool:
+        with self.cond:
+            return self.cond.wait_for(lambda: (self.idle and not _pipe_has_data(self.fd)) or self.done, timeout)
 
 
 class ToolBridge:
@@ -61,6 +133,7 @@ class ToolBridge:
         self.token_file = Path(path)
         self.token_arg = "@" + path
         self.calls = 0
+        self.reader: Optional[StdoutReader] = None  # the current attempt's stdout reader (set by run_agent)
         self.lock = threading.Lock()
         bridge = self
 
@@ -97,6 +170,11 @@ class ToolBridge:
     def call(self, name: str, args: dict) -> dict:
         task_id = (self.ctx.task or {}).get("id")
         call_id = "mcp_" + uuid.uuid4().hex[:10]
+        # judge the tool only after the reader processed everything the CLI printed before calling (StdoutReader)
+        reader = self.reader
+        if reader is not None and not reader.wait_drained(BRIDGE_DRAIN_S):
+            self.project.log.append("bridge/reader_lag", actor=self.actor, task_id=task_id, tool=name,
+                                    waited_s=BRIDGE_DRAIN_S, runtime=self.runtime)
         with self.lock:
             if self.ctx.terminal:
                 return {"text": "this run is already finished; stop now", "is_error": True}
@@ -295,11 +373,11 @@ class Run:
         self.kill()
 
 
-def _read(run: Run, proc, grace_s: Optional[float]) -> Optional[threading.Timer]:
+def _read(run: Run, reader: StdoutReader, proc, grace_s: Optional[float]) -> Optional[threading.Timer]:
     """The stdout line loop. Returns the grace timer when one was started (the caller cancels it)."""
     grace: Optional[threading.Timer] = None
     ctx, codec = run.ctx, run.codec
-    for line in proc.stdout:
+    for line in reader.lines():
         if run.stop_event is not None and run.stop_event.is_set():
             run.kill()
         try:
@@ -384,7 +462,8 @@ def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str
             run.pending, run.got_usage, run.failed, run.failure, run.blocked, run.stopped = {}, False, False, "", "", False
             grace: Optional[threading.Timer] = None
             try:
-                grace = _read(run, proc, getattr(codec, "TERMINAL_GRACE_S", None))
+                bridge.reader = reader = StdoutReader(proc.stdout)
+                grace = _read(run, reader, proc, getattr(codec, "TERMINAL_GRACE_S", None))
             finally:
                 killer.cancel()
                 if grace is not None:

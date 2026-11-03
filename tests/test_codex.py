@@ -23,7 +23,7 @@ def fake_codex(tmp_path) -> str:
     return str(shim)
 
 
-FAKE_CODEX_VARS = ["FAKE_CODEX_CMD", "FAKE_CODEX_LAZY", "FAKE_CODEX_LIMIT", "FAKE_CODEX_LOG", "FAKE_CODEX_NO_USAGE",
+FAKE_CODEX_VARS = ["FAKE_CODEX_CMD", "FAKE_CODEX_LAZY", "FAKE_CODEX_LIMIT", "FAKE_CODEX_LOG", "FAKE_CODEX_NO_USAGE", "FAKE_CODEX_NO_RESUBMIT",
                    "FAKE_CODEX_SANDBOX", "FAKE_CODEX_BADLINES", "FAKE_CODEX_STDERR_KB", "FAKE_CODEX_USAGE_DELAY", "FAKE_CODEX_WRITE"]
 
 
@@ -254,7 +254,8 @@ def test_codex_usage_arriving_after_the_terminal_tool_is_recorded(env, monkeypat
 def test_codex_submit_judged_before_artel_read_the_output_lines_still_counts_usage_once(env, monkeypatch):
     """The CLI prints its command result and calls the terminal tool back to back; Artel's guard ("you ran nothing")
     reads state fed by the stdout lines, so on a loaded machine the first submit can be judged before they are read.
-    The agent (like a model) repeats the submit; the run must be one attempt, its usage counted once."""
+    Artel must wait until it has read everything the CLI already printed before judging the submit: it is accepted on
+    the FIRST call (the fake does not repeat a rejected one), the run is one attempt, its usage counted once."""
     from artel.adapters.agent import loop
 
     real = loop.Run._tool_result
@@ -265,9 +266,14 @@ def test_codex_submit_judged_before_artel_read_the_output_lines_still_counts_usa
 
     monkeypatch.setattr(loop.Run, "_tool_result", slow)
     monkeypatch.setenv("FAKE_CODEX_USAGE_DELAY", "1")
+    monkeypatch.setenv("FAKE_CODEX_NO_RESUBMIT", "1")
     cfg, project, _ = env
     out, ctx = _run(cfg, project)
     assert out.status == "terminal" and out.name == "task_submit", out.error
+    submits = [e for e in project.log.read() if e["kind"] == "tool/result" and e.get("tool") == "task_submit"
+              and e.get("runtime") == "codex"]
+    assert [e["is_error"] for e in submits] == [False], submits
+    assert not [e for e in project.log.read() if e["kind"] == "bridge/reader_lag"]
     assert out.usage["input_tokens"] == 1000 and out.usage["output_tokens"] == 200
     assert not [e for e in project.log.read() if e["kind"] == "agent/continuation"]
 
@@ -277,7 +283,7 @@ def test_codex_killed_without_usage_is_flagged_not_silently_zero(env, monkeypatc
 
     cfg, project, _ = env
     monkeypatch.setattr(codex, "TERMINAL_GRACE_S", 0.5)
-    monkeypatch.setenv("FAKE_CODEX_NO_USAGE", "1")
+    monkeypatch.setenv("FAKE_CODEX_NO_USAGE", "FAKE_CODEX_NO_RESUBMIT", "1")
     out, ctx = _run(cfg, project)
     assert out.status == "terminal" and out.usage["input_tokens"] == 0
     end = [e for e in project.log.read() if e["kind"] == "agent/end" and e.get("runtime") == "codex"][-1]
@@ -305,3 +311,23 @@ def test_codex_agent_satisfies_the_agent_port_and_runs(env):
                                        "capability": "executor", "reversible": True, "depends_on": []})
     res = agent.run(contract, str(project.shared), ["task_submit"])
     assert res.status == "done" and res.usage.in_ > 0
+
+
+def test_stdout_reader_yields_whole_lines_and_is_drained_only_when_the_pipe_is_empty():
+    from artel.adapters.agent.loop import StdoutReader
+
+    r_fd, w_fd = os.pipe()
+    r, w = os.fdopen(r_fd, "r"), os.fdopen(w_fd, "wb", buffering=0)
+    reader = StdoutReader(r)
+    got = []
+    t = __import__("threading").Thread(target=lambda: got.extend(reader.lines()), daemon=True)
+    t.start()
+    assert reader.wait_drained(5)  # nothing written: caught up
+    w.write("héllo\r\nwor".encode()[:3])  # a multi-byte character split across writes, no newline yet
+    assert reader.wait_drained(5) and got == []
+    w.write("héllo\r\nwor".encode()[3:])
+    assert reader.wait_drained(5) and got == ["héllo\n"]
+    w.close()
+    t.join(5)
+    assert got == ["héllo\n", "wor"] and reader.wait_drained(0.1)
+    r.close()

@@ -76,7 +76,7 @@ def call(name, a):  # through Artel's real MCP proxy code, like the real Codex
     from artel.runtimes.mcp_proxy import _http, read_token
     assert token.startswith("@"), "the bridge token must not be on the command line"
     return _http(url, read_token(token), "", {"name": name, "args": a})
-for _ in range(100):  # like a model: a rejected submit is read and tried again (Artel may not have read our output lines yet)
+for _ in range(1 if os.environ.get("FAKE_CODEX_NO_RESUBMIT") else 100):  # like a model, a rejected submit is tried again; NO_RESUBMIT: once
     r = call("task_submit", {"summary": "hello.py prints hi", "evidence": "$ python hello.py\nhi"})
     if not r.get("is_error"):
         break
