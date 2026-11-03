@@ -261,7 +261,7 @@ def test_codex_submit_judged_before_artel_read_the_output_lines_still_counts_usa
     real = loop.Run._tool_result
 
     def slow(self, e):
-        time.sleep(1.0)  # the reader lags behind the CLI's output
+        time.sleep(0.4)  # the reader lags behind the CLI's output (its events together stay under the bridge's drain cap)
         real(self, e)
 
     monkeypatch.setattr(loop.Run, "_tool_result", slow)
@@ -370,12 +370,23 @@ def test_tool_call_is_judged_after_its_preceding_lines_even_under_continuous_out
 
     def slow_parse(line):  # a reader that cannot keep up with the CLI's output
         if '"noise"' in line:
-            time.sleep(0.0002)
+            time.sleep(0.0001)
         return real_parse(line)
 
     monkeypatch.setattr(codex, "parse", slow_parse)
+    from artel.adapters.agent.loop import StdoutReader
+
+    real_wait, waited = StdoutReader.wait_drained, []
+
+    def timed_wait(self, timeout):
+        t = time.monotonic()
+        try:
+            return real_wait(self, timeout)
+        finally:
+            waited.append(time.monotonic() - t)
+
+    monkeypatch.setattr(StdoutReader, "wait_drained", timed_wait)
     cfg, project, _ = env
-    t0 = time.time()
     out, ctx = _run(cfg, project)
     assert out.status == "terminal" and out.name == "task_submit", out.error
     assert "hello.py" in ctx.edited_files
@@ -383,7 +394,7 @@ def test_tool_call_is_judged_after_its_preceding_lines_even_under_continuous_out
     submits = [e for e in ev if e["kind"] == "tool/result" and e.get("tool") == "task_submit" and e.get("runtime") == "codex"]
     assert [e["is_error"] for e in submits] == [False], submits
     assert not [e for e in ev if e["kind"] == "bridge/reader_lag"]
-    assert time.time() - t0 < 3
+    assert waited and max(waited) < 1.5, waited  # the watermark, not the 2 s cap
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="POSIX fd numbers")
