@@ -35,8 +35,8 @@ def test_linux_falls_back_to_known_install_paths():
 def test_macos_looks_inside_app_bundles(tmp_path):
     edge = "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge"
     assert desktop.find_browser("Darwin", env={"HOME": str(tmp_path)}, **fake_fs(edge)) == edge
-    mine = tmp_path / "Applications/Chromium.app/Contents/MacOS/Chromium"
-    assert desktop.find_browser("Darwin", env={"HOME": str(tmp_path)}, **fake_fs(mine)) == str(mine)
+    mine = f"{tmp_path}/Applications/Chromium.app/Contents/MacOS/Chromium"  # macOS paths are '/'-joined
+    assert desktop.find_browser("Darwin", env={"HOME": str(tmp_path)}, **fake_fs(mine)) == mine
 
 
 def test_windows_searches_program_files_and_local_app_data():
@@ -208,7 +208,7 @@ def test_macos_shortcut_is_an_app_bundle_with_shell_launcher(tmp_path):
     assert app == tmp_path / "Applications/Artel.app"
     exe = app / "Contents/MacOS/Artel"
     assert exe.read_text().startswith("#!/bin/sh") and "/usr/local/bin/artel" in exe.read_text()
-    assert exe.stat().st_mode & stat.S_IXUSR
+    assert os.name == "nt" or exe.stat().st_mode & stat.S_IXUSR  # Windows has no exec bit
     plist = (app / "Contents/Info.plist").read_text()
     assert "<key>CFBundleExecutable</key>" in plist and "<string>Artel</string>" in plist
     desktop.remove_shortcut("Darwin", tmp_path, env={})
@@ -234,6 +234,7 @@ def test_windows_shortcut_prefers_lnk_and_falls_back_to_cmd(tmp_path):
 
 def test_install_and_remove_shortcut_flags(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # Path.home() on Windows
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / ".artel"))
     monkeypatch.setattr(desktop.platform, "system", lambda: "Linux")
     assert cli.main(["app", "--install-shortcut"]) == 0
