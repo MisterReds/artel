@@ -370,7 +370,9 @@ def test_tool_call_is_judged_after_its_preceding_lines_even_under_continuous_out
 
     def slow_parse(line):  # a reader that cannot keep up with the CLI's output
         if '"noise"' in line:
-            time.sleep(0.0001)
+            end = time.perf_counter() + 0.0001  # a busy wait: time.sleep is too coarse on Windows
+            while time.perf_counter() < end:
+                pass
         return real_parse(line)
 
     monkeypatch.setattr(codex, "parse", slow_parse)
