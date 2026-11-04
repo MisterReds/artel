@@ -27,7 +27,9 @@ class _Plain:
     """to_dict shared by all schemas; Python field `in_` is serialised as `in`."""
 
     def to_dict(self) -> dict[str, Any]:
-        return {("in" if f.name == "in_" else f.name): b.to_plain(getattr(self, f.name)) for f in fields(cast(Any, self))}
+        return {
+            ("in" if f.name == "in_" else f.name): b.to_plain(getattr(self, f.name)) for f in fields(cast(Any, self))
+        }
 
 
 def _head(d: Any, path: str, cls: Any) -> tuple[Any, str]:

@@ -27,7 +27,6 @@
  "artel/cli.py:SIM105": 2,
  "artel/contracts/core.py:E501": 2,
  "artel/contracts/events.py:E501": 1,
- "artel/contracts/schemas.py:E501": 1,
  "artel/desktop.py:E501": 2,
  "artel/desktop.py:PERF203": 1,
  "artel/desktop.py:S603": 2,
