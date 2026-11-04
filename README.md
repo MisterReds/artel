@@ -587,3 +587,23 @@ artel acceptance verify <проект>      # независимая прове�
 
 `python3 -m pytest -q` — полный набор тестов; CI запускает его на Linux, macOS и Windows.
 
+
+## Для разработчиков: инженерные ворота
+
+Ворота описаны в [`docs/SPEC.md`](docs/SPEC.md) §11 и работают как храповик: текущие нарушения записаны в
+закоммиченные базовые файлы (`scripts/*_baseline.json`), CI падает на любом новом нарушении и на записи, которая
+больше не встречается (задание удалить её из файла — так база только уменьшается). Установка:
+`pip install -e ".[dev,gates]"`.
+
+| Команда | Что проверяет |
+|---|---|
+| `python3 scripts/archcheck.py` | циклы импортов, изменяемое состояние модулей, имена вендоров вне адаптеров/конфига, чистота `contracts` и `ports` |
+| `ruff check` (и `python3 scripts/lint_ratchet.py ruff`) | стиль и безопасность; второй вариант сверяет счётчики с `scripts/ruff_baseline.json` |
+| `mypy` (и `python3 scripts/lint_ratchet.py mypy`) | строгая типизация `artel/contracts`, `artel/ports` (ноль ошибок), по остальным — счётчик на файл |
+| `scripts/gates.sh` | всё сразу: перечисленное, pip-audit, покрытие с порогом, CRAP < 10, дубли и мутации по изменённым файлам; `--quick` — только статика |
+
+Базовый файл только уменьшается: `python3 scripts/archcheck.py --update-baseline` (и то же для `lint_ratchet.py`)
+перезаписывает его и отказывается добавлять записи; добавить долг может только осознанный ревью-прогон с
+`--update-baseline --allow-add`. Порог покрытия лежит в `scripts/coverage_threshold.txt` и может только расти
+(`python3 scripts/coverage_gate.py raise coverage.json`). Мутанты, которые выжили и объяснены, перечисляются в
+`scripts/mutation_explained.txt` (`файл:строка: причина`).
