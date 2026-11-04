@@ -9,6 +9,7 @@
     artel acceptance run S|L | verify <project>             acceptance scenarios, independent final check
     artel web [--port 8765] [--remote [--host H]]           live dashboard (remote: login, docs/REMOTE.md)
     artel web token [--new]                                 remote-mode access token (--new rotates it)
+    artel app [--no-start] [--print] [--install-shortcut]   dashboard in its own app window
     artel skills list|view|import|curate|pin|unpin|ledger|rollback|restore
     artel refine history|rollback <project> [<edit>]
     artel plugins list|install <git-url|pip-spec|path>|show|enable|disable|remove|update [<name>]
@@ -335,6 +336,52 @@ def cmd_web(args) -> int:
     from .web.server import serve
 
     serve(port=args.port, config=_cfg(args), host=args.host, remote=True if args.remote else None)
+    return 0
+
+
+def cmd_app(args) -> int:
+    import platform
+
+    from . import desktop
+    from .project import artel_home
+
+    system, home = platform.system(), Path.home()
+    if args.install_shortcut or args.remove_shortcut:
+        if args.remove_shortcut:
+            desktop.remove_shortcut(system, home)
+            print("Ярлык Artel удалён.")
+        else:
+            made = desktop.install_shortcut(system, home)
+            print(f"Ярлык создан: {made}")
+            if made.suffix == ".cmd":
+                print("Обычный ярлык .lnk создать не удалось (PowerShell), создан запускающий файл Artel.cmd.")
+        return 0
+    url = f"http://127.0.0.1:{args.port}/"
+    if args.print:
+        print(url)
+        return 0
+    if not args.no_start:
+        cfg = _cfg(args)
+        if (cfg.get("web") or {}).get("remote") and not desktop.server_alive(args.port):
+            from .web.auth import Auth
+
+            if not Auth().has_token():  # the first remote start prints the access token once - not into a log
+                print("Удалённый режим ещё не запускался: один раз выполните `artel web` в терминале, "
+                      "сохраните токен, затем `artel app`.", file=sys.stderr)
+                return 2
+        try:
+            if desktop.ensure_server(args.port, home=artel_home(), config=getattr(args, "config", None)) == "started":
+                print(f"Панель запущена в фоне, журнал: {artel_home() / 'logs' / 'web.log'}")
+        except desktop.DesktopError as e:
+            print(e, file=sys.stderr)
+            return 1
+    browser = desktop.find_browser()
+    if browser:
+        desktop.launch(desktop.app_command(browser, url, desktop.private_dir(artel_home() / "app-profile")))
+    else:
+        desktop.open_default(url)
+        print("Окно приложения нужно Chrome, Edge, Chromium, Яндекс Браузер или Brave; панель открыта в браузере "
+              "по умолчанию.")
     return 0
 
 
@@ -1089,6 +1136,14 @@ def main(argv=None) -> int:
     w.add_argument("--host", help="bind address in remote mode (default: config web.host, 0.0.0.0)")
     w.add_argument("--provider", choices=["anthropic", "openai_compat", "scripted"])
     w.set_defaults(fn=cmd_web)
+
+    ap_ = sub.add_parser("app", help="открыть панель в отдельном окне приложения (запускает artel web, если не запущен)")
+    ap_.add_argument("--port", type=int, default=8765, help="порт панели (по умолчанию 8765)")
+    ap_.add_argument("--no-start", action="store_true", help="не запускать панель, только открыть окно")
+    ap_.add_argument("--print", action="store_true", help="только напечатать адрес панели")
+    ap_.add_argument("--install-shortcut", action="store_true", help="создать ярлык Artel в меню приложений")
+    ap_.add_argument("--remove-shortcut", action="store_true", help="удалить ярлык")
+    ap_.set_defaults(fn=cmd_app)
 
     sk = sub.add_parser("skills")
     sk.add_argument("action", choices=["list", "view", "import", "curate", "pin", "unpin", "ledger", "rollback",

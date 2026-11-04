@@ -218,6 +218,12 @@ class ScriptedProvider:
         return [_text("Diagnosing."), _use("diagnosis_report", cause=cause, who=who,
                                            steps=["шаг из сценарного провайдера"], evidence="scripted", confidence=0.7)]
 
+    def _chat(self, messages, system):
+        from .. import chat
+
+        reply = chat.scripted_reply(_first_text(messages), self.knobs.get("chat_actions") or [])
+        return [_use("chat_reply", **reply)]
+
     def _replan(self, messages, system):
         brief = _first_text(messages)
         if 'failure_class="environment"' in brief:  # the check cannot run here: keep its tail, drop the missing tool

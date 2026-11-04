@@ -1,12 +1,13 @@
 /* Artel service worker: caches only the app shell (page, fonts, icons) so the installed app opens fast and
    shows its frame offline. Live data is never cached: /api/* (JSON and the SSE event stream), the login
    endpoints and any non-GET request always go straight to the network. */
-const SHELL = 'artel-shell-v1';
+const SHELL = 'artel-shell-v3';
 const ASSETS = [
   '/',
   '/manifest.webmanifest',
   '/static/favicon.svg',
   '/static/mark.svg',
+  '/static/desk.js',
   '/static/fonts/fonts.css',
   '/static/fonts/Onest-cyrillic-dea2c9.woff2',
   '/static/fonts/Onest-latin-f5814c.woff2',
@@ -47,6 +48,12 @@ self.addEventListener('fetch', e => {
       }
       return r;
     }).catch(() => caches.match('/')));
+    return;
+  }
+  if (url.pathname.startsWith('/static/') && url.pathname.endsWith('.js')) {
+    // shell scripts: network first, so an update never runs a stale helper; the cached copy only when offline
+    e.respondWith(caches.open(SHELL).then(c => fetch(req).then(r => { if (r.ok) c.put(req, r.clone()); return r; })
+      .catch(() => c.match(req).then(hit => hit || Promise.reject(new Error('offline'))))));
     return;
   }
   if (url.pathname.startsWith('/static/') || url.pathname === '/manifest.webmanifest') {

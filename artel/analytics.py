@@ -11,7 +11,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Optional
 
-from .humanize import block_question
+from .humanize import block_ask_id, block_question
 from .project import Project, artel_home
 from .runtimes import runtime_for
 
@@ -200,10 +200,15 @@ def project_stats(project: Project, live: bool = False) -> dict:
     last = next((e for e in reversed(events) if e["kind"] not in ("llm/response", "tool/result", "agent/start",
                                                                        "manager/job_started", "manager/job_finished")),
                 None)
-    attention = [{"task_id": t["id"], "title": t["title"], "reason": "нужен человек" if t["needs_human"] else
-                  "заблокирована", "assignee": t["assignee"],
-                  "question": block_question(project.board.comments(t["id"])) if t["needs_human"] else ""}
-                 for t in work if t["status"] == "blocked"]
+    attention = []
+    for t in work:
+        if t["status"] != "blocked":
+            continue
+        ask = t["needs_human"]
+        comments = project.board.comments(t["id"]) if ask else []
+        attention.append({"task_id": t["id"], "title": t["title"], "reason": "нужен человек" if ask else "заблокирована",
+                          "assignee": t["assignee"], "question": block_question(comments),
+                          "asked": block_ask_id(comments)})
     nw = meta.get("network_wait") or {}
     if nw.get("escalated"):  # a long outage the owner may be able to fix (proxy, VPN); the project resumes by itself
         hours = max(1, round((time.time() - nw.get("since", time.time())) / 3600))

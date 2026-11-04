@@ -70,18 +70,29 @@ def ru(text):
     return text
 
 
+def _block_ask(comments: list[dict]) -> tuple[str, object] | None:
+    for c in reversed(comments or []):
+        if c.get("author") == "human":
+            return None
+        body = (c.get("body") or "").strip()
+        if body.startswith("BLOCKED:"):
+            return body[len("BLOCKED:"):].split("\nEvidence:", 1)[0].strip(), c.get("id")
+        if c.get("author") == "manager" and ASKS.match(body):
+            return body, c.get("id")
+    return None
+
+
 def block_question(comments: list[dict]) -> str:
     """What the stuck worker asks the owner: the reason of its latest block, without the evidence dump.
     Empty once a human has answered after it."""
-    for c in reversed(comments or []):
-        if c.get("author") == "human":
-            return ""
-        body = (c.get("body") or "").strip()
-        if body.startswith("BLOCKED:"):
-            return body[len("BLOCKED:"):].split("\nEvidence:", 1)[0].strip()
-        if c.get("author") == "manager" and ASKS.match(body):
-            return body
-    return ""
+    ask = _block_ask(comments)
+    return ask[0] if ask else ""
+
+
+def block_ask_id(comments: list[dict]):
+    """The id of the comment holding that question: a question asked again (even in the same words) has a new one."""
+    ask = _block_ask(comments)
+    return ask[1] if ask else None
 
 
 def _title(tasks: dict, tid) -> str:

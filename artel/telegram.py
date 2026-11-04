@@ -7,6 +7,7 @@ Security: the bot token comes only from the environment (ARTEL_TELEGRAM_TOKEN) a
 any data until their chat is paired: `/pair CODE` with a one-time code (valid 15 minutes) shown in the terminal and
 on the dashboard's "Подключения" page. Paired chat ids are kept in ARTEL_HOME/telegram.json.
 
+Free text that is not a command goes to the concierge chat (artel/chat.py).
 Commands: /status · /projects · /p N · /new <цель> (or just send the goal text) · /answer N <ответ> · /stop N ·
 /resume N · /update · /unpair · /help. Notifications: a project is done, needs a person, failed or ran out of
 budget; an update of Artel is available.
@@ -24,17 +25,20 @@ from typing import Optional
 
 import httpx
 
+from . import chat as chatmod
+from .chat import STATUS_RU
+
 TOKEN_ENV = "ARTEL_TELEGRAM_TOKEN"
 API = "https://api.telegram.org"
 CODE_TTL_S = 15 * 60
 NOTIFY = {"done": "✅ Цель достигнута", "waiting_human": "🙋 Нужен человек", "error": "⚠️ Ошибка",
           "paused_budget": "⏸ Закончился бюджет"}
-STATUS_RU = {"done": "готово", "running": "в работе", "planning": "планирование", "waiting_human": "ждёт человека",
-             "error": "ошибка", "stopped": "остановлен", "paused_budget": "нет бюджета", "needs_review": "на проверке"}
 HELP = ("Artel на связи.\n"
         "/status — сводка\n/projects — проекты\n/p N — проект подробно\n"
         "/new цель — начать (или просто пришлите текст цели)\n/answer N текст — ответить проекту, который ждёт вас\n"
         "/stop N · /resume N — остановить / продолжить\n/update — обновление Artel\n/unpair — отвязать этот чат")
+
+NO_AUTHORITY = "Действия доступны только владельцу в личном чате с ботом."
 
 
 def token() -> str:
@@ -58,6 +62,7 @@ class Store:
         except (FileNotFoundError, ValueError):
             self.data = {}
         self.data.setdefault("paired", [])
+        self.data.setdefault("users", {})   # chat id -> the user who paired it (absent for old pairings)
         self.data.setdefault("offset", 0)
         self.data.setdefault("notified", {})
 
@@ -74,12 +79,14 @@ class Store:
         self.save()
         return code
 
-    def pair(self, chat_id: int, code: str) -> bool:
+    def pair(self, chat_id: int, code: str, user_id: Optional[int] = None) -> bool:
         p = self.data.get("pair") or {}
         ok = bool(p) and time.time() < p.get("expires", 0) and secrets.compare_digest(p.get("code", ""), code.strip())
         if ok:
             if chat_id not in self.data["paired"]:
                 self.data["paired"].append(chat_id)
+            if user_id is not None:
+                self.data["users"][str(chat_id)] = user_id
             self.data.pop("pair", None)  # single use
             self.save()
         return ok
@@ -96,6 +103,8 @@ class TelegramBot:
         self.pending_goal: dict[int, str] = {}
         self.stop_event = threading.Event()
         self.failed_pairs: dict[int, int] = {}
+        self.chat_busy: dict[int, threading.Lock] = {}   # per chat: one free-text chat call at a time
+        self._busy_guard = threading.Lock()
         self.started_at = time.time()
 
     # --- Telegram API ---------------------------------------------------
@@ -164,20 +173,25 @@ class TelegramBot:
     def handle(self, u: dict) -> None:
         if "callback_query" in u:
             cq = u["callback_query"]
-            chat = cq["message"]["chat"]["id"]
+            chat, user = cq["message"]["chat"]["id"], (cq.get("from") or {}).get("id")
             try:
                 self.call("answerCallbackQuery", callback_query_id=cq["id"])
             except Exception:  # noqa: BLE001
                 pass
-            if chat in self.store.data["paired"]:
-                self.on_button(chat, cq.get("data", ""))
+            data = cq.get("data", "")
+            if chat not in self.store.data["paired"]:
+                return
+            if (data == "go" or data.startswith("chat:")) and not self._may_act(chat, user):
+                return self.send(chat, NO_AUTHORITY)
+            self.on_button(chat, data)
             return
         msg = u.get("message") or {}
         chat, text = (msg.get("chat") or {}).get("id"), (msg.get("text") or "").strip()
+        user = (msg.get("from") or {}).get("id")
         if chat is None or not text:
             return
         if chat not in self.store.data["paired"]:
-            return self.unpaired(chat, text)
+            return self.unpaired(chat, text, user)
         cmd, _, arg = text.partition(" ")
         cmd = cmd.split("@")[0].lower()
         handler = {"/start": self.c_help, "/help": self.c_help, "/status": self.c_status, "/projects": self.c_projects,
@@ -186,18 +200,16 @@ class TelegramBot:
         if handler:
             handler(chat, arg.strip())
         elif not text.startswith("/"):
-            self.pending_goal[chat] = text
-            self.send(chat, f"Начать новую цель?\n\n{text[:500]}", [[{"text": "▶️ Начать", "callback_data": "go"},
-                                                                    {"text": "Отмена", "callback_data": "cancel"}]])
+            self.chat_async(chat, text, self._may_act(chat, user))
         else:
             self.send(chat, HELP)
 
-    def unpaired(self, chat: int, text: str) -> None:
+    def unpaired(self, chat: int, text: str, user: Optional[int] = None) -> None:
         if self.failed_pairs.get(chat, 0) >= 5:
             return  # stop answering a chat that keeps guessing
         cmd, _, code = text.partition(" ")
         if cmd.split("@")[0].lower() == "/pair" and code:
-            if self.store.pair(chat, code):
+            if self.store.pair(chat, code, user):
                 self.send(chat, "Чат привязан к Artel.\n\n" + HELP)
             else:
                 self.failed_pairs[chat] = self.failed_pairs.get(chat, 0) + 1
@@ -219,6 +231,42 @@ class TelegramBot:
         if arg.isdigit() and 1 <= int(arg) <= len(slugs):
             return slugs[int(arg) - 1]
         return next((s for s in slugs if s == arg or s.startswith(arg)), None) if arg else None
+
+    def _may_act(self, chat: int, user: Optional[int]) -> bool:
+        """Actions only in a private chat (id > 0) and from the user who paired it. A pairing without a recorded user
+        (made before this was kept) is trusted in a private chat only."""
+        owner = self.store.data["users"].get(str(chat))
+        return chat > 0 and (owner is None or owner == user)
+
+    def chat_async(self, chat: int, text: str, can_act: bool) -> None:
+        """The model can take minutes: run the chat call in a worker, one per chat, so /stop and buttons stay live."""
+        with self._busy_guard:
+            lock = self.chat_busy.setdefault(chat, threading.Lock())
+        if not lock.acquire(blocking=False):
+            return self.send(chat, "Ещё думаю над прошлым вопросом.")
+
+        def work():
+            try:
+                self.c_chat(chat, text, can_act)
+            except Exception as exc:  # noqa: BLE001
+                self.send(chat, f"Не получилось: {exc}")
+            finally:
+                lock.release()
+        threading.Thread(target=work, daemon=True, name=f"telegram-chat-{chat}").start()
+
+    def c_chat(self, chat: int, text: str, can_act: bool = True) -> None:
+        """Free text goes to the concierge chat (artel/chat.py); the reply can offer to start the text as a goal."""
+        out = chatmod.respond(self.runner, f"telegram-{chat}", text, who=f"telegram:{chat}", can_propose=can_act)
+        lines = [out["reply"], *[f"Предложено: {p['label']}" for p in out["proposed"]]]
+        buttons = [[{"text": f"📂 {r['label'][:30]}", "callback_data": f"p:{r['slug']}"}]
+                   for r in out["refs"] if r["type"] == "project"][:3]
+        for p in out["proposed"]:
+            buttons.append([{"text": f"✅ {p['label'][:40]}", "callback_data": f"chat:confirm:{p['id']}"},
+                            {"text": "✖️ Отмена", "callback_data": f"chat:cancel:{p['id']}"}])
+        if can_act and not out["proposed"]:
+            self.pending_goal[chat] = text
+            buttons.append([{"text": "▶️ Начать как цель", "callback_data": "go"}])
+        self.send(chat, "\n\n".join(lines), buttons)
 
     def c_help(self, chat, arg):
         self.send(chat, HELP)
@@ -331,12 +379,21 @@ class TelegramBot:
 
     def c_unpair(self, chat, arg):
         self.store.data["paired"] = [c for c in self.store.data["paired"] if c != chat]
+        self.store.data["users"].pop(str(chat), None)
         self.store.save()
         self.send(chat, "Чат отвязан.")
 
     def on_button(self, chat: int, data: str) -> None:
         if data == "go" and chat in self.pending_goal:
             self._start_goal(chat, self.pending_goal.pop(chat))
+        elif data.startswith("chat:confirm:"):
+            out = chatmod.confirm(self.runner, f"telegram-{chat}", data[13:], f"telegram:{chat}")
+            self.send(chat, out["label"])
+        elif data.startswith("chat:cancel:"):
+            chatmod.proposals(self.runner).take(f"telegram-{chat}", data[12:])
+            self.send(chat, "Хорошо, не выполняю.")
+        elif data.startswith("p:"):
+            self.c_project(chat, data[2:])
         elif data == "cancel":
             self.pending_goal.pop(chat, None)
             self.send(chat, "Хорошо, не начинаю.")
