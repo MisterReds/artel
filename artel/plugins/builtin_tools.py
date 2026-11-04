@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import itertools
-import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -11,17 +9,13 @@ from pathlib import Path
 from .. import guardian, policy, sandbox
 from ..agent_env import agent_env
 from ..kernel import ToolSpec
-from ..tooling import READONLY_ROLES, ToolContext, ToolError, window_text
+from ..tooling import READONLY_ROLES, ToolContext, ToolError, cap_output, window_text
 from ..tools import shell_env, shell_run
 
 PLUGIN = {"name": "artel.plugins.builtin_tools", "version": "1",
           "provides": ["tool:bash", "tool:read_file", "tool:write_file", "tool:edit_file", "tool:list_files",
                        "tool:memory_write", "tool:search"]}
 MAX_OUT = 20_000
-MAX_LINES = 2000
-MAX_BYTES = 50 * 1024
-SPILL_DIR = ".spill"
-_spill_seq = itertools.count(1)
 EXEC_ROLES = ("worker", "reviewer", "auditor", "evolver", "absorber")
 
 
@@ -33,31 +27,12 @@ def _clip(text: str, limit: int = MAX_OUT) -> str:
 
 
 def spill_output(ctx: ToolContext, text: str, tool: str) -> str:
-    """Return ``text`` unchanged, or spill oversized output to a file and return a preview plus its path.
-
-    Over MAX_LINES lines or MAX_BYTES bytes, the full text goes to <workspace>/.spill/ (hidden, so
-    list_files skips it and it stays out of shared deliverables). Idea adapted from OpenCode
-    packages/opencode/src/tool/truncate.ts (MIT License, Copyright (c) 2025 opencode).
-    """
-    nbytes = len(text.encode())
-    nlines = text.count("\n") + 1
-    if nlines <= MAX_LINES and nbytes <= MAX_BYTES:
-        return text
-    d = Path(ctx.workspace) / SPILL_DIR
-    d.mkdir(parents=True, exist_ok=True)
-    f = d / f"{tool}-{os.getpid()}-{next(_spill_seq)}.txt"
-    while f.exists():
-        f = d / f"{tool}-{os.getpid()}-{next(_spill_seq)}.txt"
-    f.write_text(text, encoding="utf-8")
-    rel = f"{SPILL_DIR}/{f.name}"
-    return (f"{window_text(text, MAX_OUT)}\n\n[output too large ({nlines} lines, {nbytes} bytes); "
-            f"full output saved to {rel}. Use read_file with path={rel} and offset/limit to view parts of it.]")
+    """Bound a tool's own output (the shared cap_output); the loop applies the same function again, harmlessly."""
+    return cap_output(ctx, text, tool)
 
 
 def _bound(ctx: ToolContext, text: str, tool: str) -> str:
-    """Spill oversized output; otherwise apply the plain char clip."""
-    spilled = spill_output(ctx, text, tool)
-    return _clip(text) if spilled == text else spilled
+    return spill_output(ctx, text, tool)
 
 
 def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
@@ -70,6 +45,7 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
         verdict = policy.evaluate(command, ctx.project.root)
     except policy.PolicyError as exc:
         raise ToolError(f"command policy is invalid, bash disabled until fixed: {exc}")
+    policy.note_sudo(ctx.project.log, verdict, command, "bash", actor=ctx.actor, task_id=(ctx.task or {}).get("id"))
     if verdict.decision == "forbidden":
         raise ToolError(f"command blocked by policy ({verdict.rule.id}): {verdict.justification or 'forbidden'}; command: {command}")
     if verdict.decision == "prompt":
@@ -82,19 +58,27 @@ def bash(ctx: ToolContext, command: str, timeout: int = 0) -> str:
     # judges (read-only roles) write only to their own workspace; run_agent's judge_guard undoes the rest
     judge = ctx.role in READONLY_ROLES or not ctx.grants()["write"]
     writable = [ctx.workspace] if judge else [ctx.shared_dir, ctx.workspace]
-    run = sandbox.plan(ctx.kernel.config, command, cwd=ctx.workspace, writable=writable)
+    config = ctx.kernel.config
+    run = sandbox.plan(config, command, cwd=ctx.workspace, writable=writable, project_root=ctx.project.root)
     if run.note and not ctx.state.get("sandbox_noted"):
         ctx.state["sandbox_noted"] = True
         ctx.project.log.append("sandbox/unavailable", actor=ctx.actor, note=run.note)
-    if run.note and sandbox.settings(ctx.kernel.config)["require"]:
-        raise ToolError(f"command NOT run: {run.note.split(';')[0]}, and sandbox.require is set")
+    if sandbox.refusal(run, config):
+        raise ToolError(f"command NOT run: {run.error}")
     try:
-        proc = subprocess.run(run.argv, cwd=ctx.workspace, capture_output=True, text=True, timeout=timeout,
-                              env=shell_env(env), encoding="utf-8", errors="replace")
+        proc, failed = sandbox.execute(run, cwd=ctx.workspace, env=shell_env(env), timeout=timeout)
+        if failed:  # fail closed: the sandbox exists but did not start; never fall back unless the owner said so
+            ctx.project.log.append("sandbox/start_failed", actor=ctx.actor, error=failed)
+            if sandbox.settings(config)["require"]:
+                raise ToolError(f"command NOT run: {failed}")
+            run = sandbox.plan(config, command, cwd=ctx.workspace, writable=writable, mode="off")
+            run.note = f"{failed.split(';')[0]}; sandbox.require is off, so the command ran WITHOUT a sandbox"
+            run.unisolated = failed.split(";")[0]
+            proc, _ = sandbox.execute(run, cwd=ctx.workspace, env=shell_env(env), timeout=timeout)
     except subprocess.TimeoutExpired as exc:
         raise ToolError(f"timed out after {timeout}s; partial output:\n{_clip(str(exc.stdout or ''), 4000)}")
     out = (proc.stdout or "") + (("\n[stderr]\n" + proc.stderr) if proc.stderr else "")
-    note = f"[note: {run.note}]\n" if run.note else ""
+    note = (f"[note: {run.note}]\n" if run.note else "") + (f"{run.line}\n" if run.line else "")
     result = f"[exit {proc.returncode}]\n{note}{_bound(ctx, out, 'bash')}"
     ctx.outputs.append(f"$ {command}\n{window_text(result, 3000)}")
     return result

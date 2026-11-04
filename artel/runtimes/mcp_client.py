@@ -420,6 +420,7 @@ def _tool_fn(srv: "McpServer", tool: str, full: str):
             verdict = policy.evaluate(cmd, ctx.project.root)
         except policy.PolicyError as exc:
             raise ToolError(f"command policy is invalid, MCP tools disabled until fixed: {exc}")
+        policy.note_sudo(ctx.project.log, verdict, cmd, "mcp", actor=ctx.actor)
         if verdict.decision == "forbidden":
             raise ToolError(f"MCP call blocked by policy ({verdict.rule.id}): {verdict.justification or 'forbidden'}")
         if verdict.decision == "prompt":

@@ -44,6 +44,8 @@ CREATE TABLE IF NOT EXISTS tasks (
     no_progress   INTEGER NOT NULL DEFAULT 0,
     backoff_until REAL NOT NULL DEFAULT 0,
     needs_human   INTEGER NOT NULL DEFAULT 0,
+    checks_confirm TEXT NOT NULL DEFAULT '[]',       -- JSON list: why the reviewer must confirm the rewritten checks
+    checks_pending TEXT NOT NULL DEFAULT '[]',       -- JSON list: a rewrite waiting for the owner's confirmation
     revision      INTEGER NOT NULL DEFAULT 1,
     created_by    TEXT,
     created_at    REAL NOT NULL,
@@ -94,6 +96,10 @@ class Board:
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA journal_mode=WAL")
         self._db.executescript(SCHEMA)
+        tcols = {r[1] for r in self._db.execute("PRAGMA table_info(tasks)")}
+        for col in ("checks_confirm", "checks_pending"):
+            if col not in tcols:  # boards created before the confirmation lived on the row
+                self._db.execute(f"ALTER TABLE tasks ADD COLUMN {col} TEXT NOT NULL DEFAULT '[]'")
         cols = {r[1] for r in self._db.execute("PRAGMA table_info(runs)")}
         if "cost_usd" not in cols:  # boards created before cost tracking
             self._db.execute("ALTER TABLE runs ADD COLUMN cost_usd REAL NOT NULL DEFAULT 0")
@@ -107,7 +113,8 @@ class Board:
     def _task(row: sqlite3.Row) -> dict:
         t = dict(row)
         t["criteria"] = json.loads(t["criteria"] or "[]")
-        t["checks"] = json.loads(t["checks"] or "[]")
+        for k in ("checks", "checks_confirm", "checks_pending"):
+            t[k] = json.loads(t.get(k) or "[]")
         return t
 
     def _tx(self):
@@ -211,7 +218,7 @@ class Board:
     def update(self, task_id: str, *, expect_revision: Optional[int] = None, actor: str = "manager",
                **fields: Any) -> dict:
         """CAS update; raises StaleRevision when ``expect_revision`` no longer matches."""
-        for k in ("criteria", "checks"):
+        for k in ("criteria", "checks", "checks_confirm", "checks_pending"):
             if k in fields and not isinstance(fields[k], str):
                 fields[k] = json.dumps(fields[k], ensure_ascii=False)
         fields["updated_at"] = time.time()

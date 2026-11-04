@@ -24,7 +24,7 @@ PRICES = {
 }
 
 STAGES = ("planning", "execution", "review", "audit", "done", "waiting_human", "stopped", "paused_budget",
-          "needs_review", "error")
+          "needs_review", "error", "network_wait")
 
 _cache: dict = {}
 
@@ -51,6 +51,8 @@ def _events(project: Project) -> list[dict]:
 
 def stage_of(project: Project, tasks: list[dict]) -> str:
     status = project.meta["status"]
+    if status in ("running", "planning") and project.meta.get("network_wait"):
+        return "network_wait"      # nothing runs until the proxy/provider answers again
     if status != "running":
         return status
     work = [t for t in tasks if t["kind"] == "work"]
@@ -106,7 +108,8 @@ def task_timelines(events: list[dict]) -> dict[str, list]:
 
 # how the last event of a project reads on its card (for people, not for log readers)
 PROJECT_STATUS = {"done": "цель достигнута", "running": "в работе", "waiting_human": "ждёт человека", "stopped": "остановлен",
-                  "error": "ошибка", "paused_budget": "бюджет исчерпан", "needs_review": "нужна проверка"}
+                  "error": "ошибка", "paused_budget": "бюджет исчерпан", "needs_review": "нужна проверка",
+                  "network_wait": "нет сети / прокси недоступен, жду"}
 TASK_STATUS = {"todo": "ожидает", "ready": "готова к работе", "running": "в работе", "review": "на ревью",
                "done": "принята", "blocked": "заблокирована", "cancelled": "отменена"}
 PURPOSE = {"plan": "план", "work": "задача", "review": "ревью", "audit": "аудит цели", "test": "тесты",
@@ -206,6 +209,19 @@ def project_stats(project: Project, live: bool = False) -> dict:
         attention.append({"task_id": t["id"], "title": t["title"], "reason": "нужен человек" if ask else "заблокирована",
                           "assignee": t["assignee"], "question": block_question(comments),
                           "asked": block_ask_id(comments)})
+    nw = meta.get("network_wait") or {}
+    if nw.get("escalated"):  # a long outage the owner may be able to fix (proxy, VPN); the project resumes by itself
+        hours = max(1, round((time.time() - nw.get("since", time.time())) / 3600))
+        attention.append({"kind": "network_wait", "task_id": "", "title": "Нет сети", "reason": "нужно внимание владельца",
+                          "assignee": "", "since": nw.get("since"),
+                          "question": f"Нет сети или недоступен прокси уже около {hours} ч ({nw.get('reason', '')[:120]}). "
+                                      "Проверьте подключение; проект продолжится сам, когда сеть появится."})
+    if meta.get("proxy_down"):  # gates were judged although the loopback proxy stayed dead: only the owner can fix it
+        pd = meta["proxy_down"]
+        attention.append({"kind": "network_wait", "task_id": "", "title": "Прокси недоступен",
+                          "reason": "нужно внимание владельца", "assignee": "", "since": pd.get("since"),
+                          "question": f"Локальный прокси не отвечает ({pd.get('reason', '')[:120]}); проверки задач "
+                                      "оценены с этой пометкой. Запустите прокси или уберите его из окружения."})
     return {
         "slug": project.slug, "name": meta["name"], "goal": meta["goal"], "status": meta["status"],
         "stage": stage_of(project, tasks), "live": live, "created_at": meta["created_at"],

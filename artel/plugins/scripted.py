@@ -5,6 +5,9 @@ Knobs (config["scripted"]):
     review_failures: int    reject the first N reviews (exercises the retry path)
     audit_missing: int      first N audits report missing work (exercises re-planning)
     delay_s: float          sleep per call (demos: watch projects run live)
+    bad_check_tool: str     the build task's check starts with this (missing) program; a plan sent back with
+                            <missing_tools> drops it unless bad_check_persists
+    bad_check_persists: bool  keep the missing program even when the plan is sent back (exercises the replan path)
     idle_task: str          on attempt 1 of the task with this title, only talk (continuation -> stalled)
 """
 
@@ -93,6 +96,10 @@ class ScriptedProvider:
 
     def _plan(self, messages, system):
         goal = re.search(r"<goal>\s*(.*?)\s*</goal>", _first_text(messages), re.S).group(1)
+        bad = self.knobs.get("bad_check_tool")
+        if bad and "<missing_tools>" in _first_text(messages) and not self.knobs.get("bad_check_persists"):
+            bad = None
+        build_check = f"{bad} deliverable.md && test -s deliverable.md" if bad else "test -s deliverable.md"
         return [_text("Planning the project."), _use(
             "submit_plan", project_name=goal[:60],
             workers=[
@@ -107,7 +114,7 @@ class ScriptedProvider:
                  "criteria": ["shared/notes.md exists and outlines the approach"], "checks": ["test -s notes.md"]},
                 {"key": "build", "title": "Build the deliverable", "assignee": "Linus", "depends_on": ["research"],
                  "body": "Produce shared/deliverable.md from the outline.",
-                 "criteria": ["shared/deliverable.md exists"], "checks": ["test -s deliverable.md"]},
+                 "criteria": ["shared/deliverable.md exists"], "checks": [build_check]},
                 {"key": "verify", "title": "Integrate and verify", "assignee": "Ada", "depends_on": ["build"],
                  "body": "Write shared/report.md confirming the deliverable; include the word VERIFIED.",
                  "criteria": ["report.md states VERIFIED"], "checks": ["grep -q VERIFIED report.md"]},
@@ -148,7 +155,8 @@ class ScriptedProvider:
         if n <= int(self.knobs.get("review_failures", 0)):
             return [_use("review_verdict", passed=False, feedback="Add more detail to the deliverable.",
                          failed_criteria=["detail"])]
-        return [_use("review_verdict", passed=True, feedback="All criteria verified against the files.")]
+        return [_use("review_verdict", passed=True, feedback="All criteria verified against the files.",
+                     checks_cover_criteria="checks_cover_criteria" in _first_text(messages))]
 
     def _audit(self, messages, system):
         n = self._count("audit")
@@ -217,6 +225,13 @@ class ScriptedProvider:
         return [_use("chat_reply", **reply)]
 
     def _replan(self, messages, system):
+        brief = _first_text(messages)
+        if 'failure_class="environment"' in brief:  # the check cannot run here: keep its tail, drop the missing tool
+            block = re.search(r"<checks>\n(.*?)\n</checks>", brief, re.S)
+            checks = [c[2:].split(" && ", 1)[-1] if " && " in c else "true"
+                      for c in (block.group(1).splitlines() if block else [])]
+            return [_use("replan_decision", action="retry", rationale="the check uses a tool this machine lacks",
+                         guidance="The work is fine; the check is rewritten.", checks=checks)]
         return [_use("replan_decision", action="retry", rationale="transient failure",
                      guidance="Re-read the criteria and verify each with a command.")]
 

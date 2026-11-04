@@ -18,7 +18,7 @@ from .codex_support import (DEFAULTS, SANDBOX_BROKEN, _catalog_cache, _sandbox_m
 NAME, LABEL = "codex", "codex"
 INSTALL_HINT = "Codex CLI не установлен: «Подключения» → «Установить» или `artel providers install codex`"
 NO_SESSION = "codex produced no thread"
-OK_EXIT, TRACK_STOP, LOG_ROLE, TRACK_MISSING_USAGE, STRIP_STDERR = (0, None, -15), True, False, True, True
+OK_EXIT, TRACK_STOP, LOG_ROLE, STRIP_STDERR = (0, None, -15), True, False, True
 GATE_TOOL, SHELL_TOOL = None, "shell"
 TERMINAL_GRACE_S = 10.0  # after a terminal tool: the longest we wait for the turn's closing usage event
 
@@ -154,9 +154,10 @@ def parse(line: str) -> list:
         return [AgentEvent("session", {"id": ev.get("thread_id") or ""})]
     if typ == "turn.completed":
         u = ev.get("usage") or {}
-        return [AgentEvent("usage", {"input_tokens": int(u.get("input_tokens") or 0), "cost_usd": 0.0,
-                                     "output_tokens": int(u.get("output_tokens") or 0),
-                                     "cached": int(u.get("cached_input_tokens") or 0)})]
+        cached = int(u.get("cached_input_tokens") or 0)
+        # Codex's input_tokens includes the cached part: report the uncached rest as "in", as every runtime does
+        return [AgentEvent("usage", {"input_tokens": max(int(u.get("input_tokens") or 0) - cached, 0), "cost_usd": 0.0,
+                                     "output_tokens": int(u.get("output_tokens") or 0), "cached": cached})]
     if typ in ("turn.failed", "error"):
         err = ev.get("error") or {}
         msg = (err.get("message") if isinstance(err, dict) else err) or ev.get("message")

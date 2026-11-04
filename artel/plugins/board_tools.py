@@ -70,11 +70,13 @@ def task_block(ctx: ToolContext, reason: str, evidence: str, needs_human: bool =
     return _terminal(ctx, "task_block", {"reason": reason, "evidence": evidence, "needs_human": bool(needs_human)})
 
 
-def review_verdict(ctx: ToolContext, passed: bool, feedback: str, failed_criteria: list = None) -> str:
+def review_verdict(ctx: ToolContext, passed: bool, feedback: str, failed_criteria: list = None,
+                   checks_cover_criteria: bool = False) -> str:
     if not passed and not feedback.strip():
         raise ToolError("a failing verdict needs actionable feedback")
     return _terminal(ctx, "review_verdict", {"passed": bool(passed), "feedback": feedback,
-                                             "failed_criteria": failed_criteria or []})
+                                             "failed_criteria": failed_criteria or [],
+                                             "checks_cover_criteria": bool(checks_cover_criteria)})
 
 
 def audit_verdict(ctx: ToolContext, complete: bool, summary: str, missing: list = None, run: dict = None) -> str:
@@ -105,7 +107,7 @@ def diagnosis_report(ctx: ToolContext, cause: str, who: str, steps: list, eviden
 
 
 def replan_decision(ctx: ToolContext, action: str, rationale: str, guidance: str = "", assignee: str = "",
-                    new_worker: dict = None, subtasks: list = None) -> str:
+                    new_worker: dict = None, subtasks: list = None, checks: list = None) -> str:
     if action not in ("retry", "reassign", "split", "cancel", "escalate"):
         raise ToolError("action must be retry | reassign | split | cancel | escalate")
     if action == "split" and not subtasks:
@@ -114,7 +116,7 @@ def replan_decision(ctx: ToolContext, action: str, rationale: str, guidance: str
         raise ToolError("reassign needs assignee or new_worker")
     return _terminal(ctx, "replan_decision", {"action": action, "rationale": rationale, "guidance": guidance,
                                               "assignee": assignee, "new_worker": new_worker or {},
-                                              "subtasks": subtasks or []})
+                                              "subtasks": subtasks or [], "checks": [str(c) for c in checks or []]})
 
 
 def validate_plan(workers: list, tasks: list) -> None:
@@ -243,7 +245,10 @@ def setup(kernel) -> None:
     kernel.register_tool(ToolSpec(
         "review_verdict", "Deliver the review verdict. Pass only if every criterion is verifiably met.",
         {**S, "properties": {"passed": {"type": "boolean"}, "feedback": {"type": "string"},
-                             "failed_criteria": {"type": "array", "items": {"type": "string"}}},
+                             "failed_criteria": {"type": "array", "items": {"type": "string"}},
+                             "checks_cover_criteria": {"type": "boolean", "description": "only when the brief has "
+                                                       "<checks_rewritten> asking for confirmation: true = the new checks "
+                                                       "verify the criteria; without it the task cannot be accepted"}},
          "required": ["passed", "feedback"]}, review_verdict, roles=("reviewer",), terminal=True))
     kernel.register_tool(ToolSpec(
         "audit_verdict", "Deliver the goal audit. If anything required by the goal is missing or weak, set "
@@ -268,7 +273,10 @@ def setup(kernel) -> None:
         {**S, "properties": {
             "action": {"type": "string", "enum": ["retry", "reassign", "split", "cancel", "escalate"]},
             "rationale": {"type": "string"}, "guidance": {"type": "string"}, "assignee": {"type": "string"},
-            "new_worker": WORKER_ITEM, "subtasks": {"type": "array", "items": TASK_ITEM}},
+            "new_worker": WORKER_ITEM, "subtasks": {"type": "array", "items": TASK_ITEM},
+            "checks": {"type": "array", "items": {"type": "string"},
+                       "description": "New shell checks for the task; honoured only when its gates failed because "
+                                      "of the environment (a missing tool, sandbox or proxy), never for bad work."}},
          "required": ["action", "rationale"]}, replan_decision, roles=("manager",), terminal=True))
     L = {"type": "array", "items": {"type": "string"}}
     kernel.register_tool(ToolSpec(

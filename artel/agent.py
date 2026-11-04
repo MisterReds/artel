@@ -19,9 +19,11 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
+from .contracts import REQUIRED_FIELDS, Event
+from .contracts._base import ContractError
 from .plugins.llm_providers import LLMError
 from .prompts import CONTINUATION
-from .tooling import ToolContext, ToolError
+from .tooling import ToolContext, ToolError, present_output
 
 NO_PROGRESS_CAP = 3
 TOOL_LOOP_THRESHOLD = 5      # identical consecutive tool calls that count as a loop
@@ -189,13 +191,27 @@ class LoopDetector:
         return "warn"
 
 
+def journal_agent_event(log, kind: str, **payload: Any) -> Optional[dict]:
+    """Append an agent event to the journal only if it satisfies the Event contract (artel/contracts/events.py).
+    An invalid event is never written: a ``contract/violation`` (event_kind, missing fields, problem, actor) takes its
+    place and the run goes on. Returns the written event, or None when it was rejected."""
+    try:
+        Event.from_dict({"seq": 0, "ts": 0.0, "kind": kind, **payload})
+    except ContractError as exc:
+        missing = [f for f in REQUIRED_FIELDS.get(kind, ()) if f not in payload]
+        log.append("contract/violation", actor=payload.get("actor"), event_kind=kind, missing=missing,
+                   problem=str(exc)[:300])
+        return None
+    return log.append(kind, **payload)
+
+
 @dataclass
 class Outcome:
     status: str                      # terminal | stalled | turn_limit | refused | error | budget | stopped
     terminal: Optional[tuple] = None
     turns: int = 0
     tool_calls: int = 0
-    usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0})
+    usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0, "cached": 0})
     digest: list = field(default_factory=list)
     error: str = ""
     cost_usd: float = 0.0
@@ -249,6 +265,9 @@ def execute_tool(kernel, ctx: ToolContext, name: str, args: dict) -> tuple[str, 
     spec = kernel.tools.get(name)
     if spec is None or ctx.role not in spec.roles:
         return f"unknown tool {name!r} for role {ctx.role}", True
+    if "_invalid_json" in args:   # the provider could not parse the model's arguments: the tool never sees them
+        return (f"tool-call arguments were not valid JSON ({_short(str(args['_invalid_json']), 200)}); "
+                f"the call was NOT run. Send it again with valid JSON arguments."), True
     missing = [k for k in spec.input_schema.get("required", []) if k not in args]
     if missing:
         return f"missing required arguments: {missing}", True
@@ -279,10 +298,11 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
     task_id = (ctx.task or {}).get("id")
     out = Outcome(status="turn_limit")
     messages: list[dict] = [{"role": "user", "content": first_user}]
-    project.log.append("agent/start", actor=actor, role=role, purpose=purpose, task_id=task_id, model=model,
+    journal_agent_event(project.log, "agent/start", actor=actor, role=role, purpose=purpose, task_id=task_id, model=model,
                        effort=effort, system=system, user=first_user, tools=[t["name"] for t in tools])
     seen_comments = len(project.board.comments(task_id)) if task_id else 0
     idle_turns = 0
+    usage_missing = False
     detector = LoopDetector()
 
     def loop_event(loop_kind: str, stage: str, **details: Any) -> None:
@@ -324,17 +344,20 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
             resp = kernel.waterfall("llm/request", req, lambda c: llm.chat(**c))
         except LLMError as exc:
             out.status, out.error = "error", str(exc)
-            project.log.append("llm/error", actor=actor, task_id=task_id, error=str(exc))
+            journal_agent_event(project.log, "llm/error", actor=actor, task_id=task_id, error=str(exc))
             break
         out.turns = turn
-        for k in ("input_tokens", "output_tokens"):
-            out.usage[k] += resp.usage.get(k, 0)
+        for k in ("input_tokens", "output_tokens", "cached"):
+            out.usage[k] = out.usage.get(k, 0) + resp.usage.get(k, 0)
+        if not resp.usage:  # the provider reported nothing for this response: the totals are incomplete
+            usage_missing = True
         from .analytics import cost_usd as _price
 
         cost = _price(resp.model, resp.usage.get("input_tokens", 0), resp.usage.get("output_tokens", 0)) or 0.0
         out.cost_usd += cost
-        project.add_usage(resp.usage.get("input_tokens", 0), resp.usage.get("output_tokens", 0), cost_usd=cost)
-        project.log.append("llm/response", actor=actor, role=role, task_id=task_id, turn=turn, model=resp.model,
+        project.add_usage(resp.usage.get("input_tokens", 0), resp.usage.get("output_tokens", 0), cost_usd=cost,
+                          cached=resp.usage.get("cached", 0))
+        journal_agent_event(project.log, "llm/response", actor=actor, role=role, task_id=task_id, turn=turn, model=resp.model,
                            stop_reason=resp.stop_reason, usage=resp.usage, blocks=resp.blocks)
         if ctx.run_id:
             project.board.heartbeat(ctx.run_id, turns=turn, tool_calls=out.tool_calls,
@@ -360,6 +383,19 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
             break
 
         uses = [b for b in resp.blocks if b["type"] == "tool_use"]
+        if uses and resp.stop_reason == "max_tokens":
+            # cut mid-response: the call's arguments may be incomplete, so none of them runs. Each tool_use still
+            # gets its tool_result (the API rejects an unanswered one), then the model is asked to finish.
+            project.log.append("agent/truncated_tools", actor=actor, task_id=task_id, turn=turn,
+                               tools=[b["name"] for b in uses])
+            messages.append({"role": "user", "content": [
+                {"type": "tool_result", "tool_use_id": b["id"], "is_error": True,
+                 "content": "NOT run: your response was truncated at the token limit, so this call may be "
+                            "incomplete."} for b in uses] + [
+                {"type": "text", "text": "\n\n".join(
+                    ["Your output was cut off at the token limit and the tool calls in it were not run. Continue "
+                     "and repeat the call(s); put large content into files in smaller pieces."] + notes)}]})
+            continue
         if uses:
             idle_turns = 0
             results = []
@@ -371,14 +407,15 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
                         break
                     notes.append(LOOP_NOTE.format(what=f"identical {b['name']} calls"))
                 out.tool_calls += 1
-                project.log.append("tool/call", actor=actor, task_id=task_id, tool=b["name"], input=b["input"],
+                journal_agent_event(project.log, "tool/call", actor=actor, task_id=task_id, tool=b["name"], input=b["input"],
                                    call_id=b["id"])
                 text, is_error = execute_tool(kernel, ctx, b["name"], b["input"])
-                project.log.append("tool/result", actor=actor, task_id=task_id, tool=b["name"], call_id=b["id"],
+                journal_agent_event(project.log, "tool/result", actor=actor, task_id=task_id, tool=b["name"], call_id=b["id"],
                                    is_error=is_error, output=text[:4000])
                 out.digest.append(f"TOOL {b['name']}({_short(b['input'])}) -> {'ERROR ' if is_error else ''}"
                                   f"{_short(text, 300)}")
-                results.append({"type": "tool_result", "tool_use_id": b["id"], "content": text, "is_error": is_error})
+                results.append({"type": "tool_result", "tool_use_id": b["id"],
+                                "content": present_output(ctx, b["name"], text), "is_error": is_error})
             if out.error:
                 break
             content: list[dict] = results
@@ -408,8 +445,9 @@ def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: T
         project.log.append("agent/continuation", actor=actor, task_id=task_id, idle_turns=idle_turns)
         messages.append({"role": "user", "content": "\n\n".join([CONTINUATION] + notes)})
 
-    project.log.append("agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
-                       terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage, error=out.error)
+    journal_agent_event(project.log, "agent/end", actor=actor, role=role, purpose=purpose, task_id=task_id, status=out.status,
+                       terminal=out.name, turns=out.turns, tool_calls=out.tool_calls, usage=out.usage, error=out.error,
+                       **({"usage_missing": True} if usage_missing else {}))
     return out
 
 

@@ -42,6 +42,22 @@ def cacheable(system: str, tools: list) -> tuple[Any, list]:
     return blocks, marked
 
 
+def anthropic_usage(u) -> dict:
+    """The one usage shape: input_tokens = input not served from the cache (Anthropic reports it that way already;
+    cache-creation tokens are fresh input being written, so they count there), cached = cache reads."""
+    g = lambda name: getattr(u, name, None) or 0  # noqa: E731
+    return {"input_tokens": g("input_tokens") + g("cache_creation_input_tokens"), "output_tokens": g("output_tokens"),
+            "cached": g("cache_read_input_tokens")}
+
+
+def openai_usage(u: dict) -> dict:
+    """prompt_tokens includes the cached part (prompt_tokens_details.cached_tokens): input_tokens is the rest."""
+    u = u or {}
+    cached = int((u.get("prompt_tokens_details") or {}).get("cached_tokens") or 0)
+    return {"input_tokens": max(int(u.get("prompt_tokens") or 0) - cached, 0),
+            "output_tokens": int(u.get("completion_tokens") or 0), "cached": cached}
+
+
 class AnthropicProvider:
     name = "anthropic"
 
@@ -92,7 +108,7 @@ class AnthropicProvider:
                 blocks.append({"type": "text", "text": b.text})
             elif b.type == "tool_use":
                 blocks.append({"type": "tool_use", "id": b.id, "name": b.name, "input": b.input})
-        usage = {"input_tokens": resp.usage.input_tokens or 0, "output_tokens": resp.usage.output_tokens or 0}
+        usage = anthropic_usage(resp.usage)
         return LLMResponse(blocks=blocks, raw_content=resp.content, stop_reason=resp.stop_reason or "end_turn",
                            usage=usage, model=resp.model)
 
@@ -183,8 +199,7 @@ class OpenAICompatProvider:
         stop = {"tool_calls": "tool_use", "length": "max_tokens", "content_filter": "refusal"}.get(finish, "end_turn")
         u = data.get("usage") or {}
         return LLMResponse(blocks=blocks, raw_content=blocks, stop_reason=stop,
-                           usage={"input_tokens": u.get("prompt_tokens", 0),
-                                  "output_tokens": u.get("completion_tokens", 0)},
+                           usage=openai_usage(u),
                            model=data.get("model", model))
 
 

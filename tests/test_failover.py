@@ -180,12 +180,12 @@ def test_a_goal_audit_that_hits_a_limit_waits_for_the_reset_instead_of_looping(t
     m.on_audit(Outcome(status="error", error="claude code failed: You've hit your session limit · resets 11:20am (UTC)"))
     assert m.audit_backoff_until > time.time() + 60 and not m.audit_blocked
     assert project.meta.get("audit_rounds", 0) == 0  # a failed audit is not a round
-    m.on_audit(Outcome(status="error", error="connection reset by peer"))
+    m.on_audit(Outcome(status="error", error="model returned no verdict"))
     first = m.audit_backoff_until - time.time()
-    m.on_audit(Outcome(status="error", error="connection reset by peer"))
+    m.on_audit(Outcome(status="error", error="model returned no verdict"))
     assert m.audit_backoff_until - time.time() > first  # the delay grows
     for _ in range(MAX_AUDIT_FAILURES):
-        m.on_audit(Outcome(status="error", error="connection reset by peer"))
+        m.on_audit(Outcome(status="error", error="model returned no verdict"))
     assert m.audit_blocked
     m2 = Manager(new_kernel(cfg), project)
     m2.ask_doctor = lambda *a, **kw: None

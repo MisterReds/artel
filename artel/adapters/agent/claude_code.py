@@ -17,7 +17,7 @@ NAME, LABEL = "claude_code", "claude code"
 INSTALL_HINT = ("Claude Code CLI не установлен: «Подключения» → «Установить» "
                 "или `artel providers install claude`")
 NO_SESSION = "claude code produced no session"
-OK_EXIT, TRACK_STOP, LOG_ROLE, TRACK_MISSING_USAGE, STRIP_STDERR = (0, None), False, True, False, False
+OK_EXIT, TRACK_STOP, LOG_ROLE, STRIP_STDERR = (0, None), False, True, False
 GATE_TOOL = SHELL_TOOL = "Bash"  # roles that judge or plan must not edit what they judge: WRITE_TOOLS
 BUILTIN_TOOLS = ["Bash", "Read", "Write", "Edit", "MultiEdit", "Glob", "Grep", "LS", "TodoWrite", "WebFetch",
                  "WebSearch"]
@@ -191,10 +191,12 @@ def parse(line: str) -> list:
         return out
     if typ == "result":
         u = ev.get("usage") or {}
-        tin = (u.get("input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0) + \
-            (u.get("cache_read_input_tokens") or 0)
-        return [AgentEvent("session", {"id": ev.get("session_id") or ""}),
-                AgentEvent("usage", {"input_tokens": tin, "output_tokens": u.get("output_tokens") or 0,
-                                     "cost_usd": float(ev.get("total_cost_usd") or 0.0)}),
+        # one shape for every runtime: input_tokens = input that was not served from a cache. Cache *creation* is fresh
+        # input being written to the cache (billed as input), so it counts there; cache *reads* are "cached".
+        tin = (u.get("input_tokens") or 0) + (u.get("cache_creation_input_tokens") or 0)
+        usage = [AgentEvent("usage", {"input_tokens": tin, "output_tokens": u.get("output_tokens") or 0,
+                                      "cached": u.get("cache_read_input_tokens") or 0,
+                                      "cost_usd": float(ev.get("total_cost_usd") or 0.0)})] if "usage" in ev else []
+        return [AgentEvent("session", {"id": ev.get("session_id") or ""}), *usage,
                 AgentEvent("end", {"is_error": bool(ev.get("is_error")), "detail": str(ev.get("result") or "")})]
     return []

@@ -218,3 +218,41 @@ def test_windows_reinstall_uses_only_create_new_console(monkeypatch):
     monkeypatch.setattr(subprocess, "Popen", lambda cmd, **kw: seen.update(kw) or object())
     cli._spawn_windows_reinstall(["powershell"], {})
     assert seen["creationflags"] == 0x10
+
+
+def _fake_root(tmp_path, env, **extra):
+    wrapper, sudoers = tmp_path / "artel-root", tmp_path / "sudoers-artel"
+    wrapper.write_text("#!/bin/sh\n")
+    sudoers.write_text("rule\n")
+    return wrapper, sudoers, {**env, "ARTEL_ROOT_WRAPPER": str(wrapper), "ARTEL_ROOT_SUDOERS": str(sudoers),
+                              "ARTEL_SUDO": "",
+                              "ARTEL_ROOT_CONF": str(tmp_path / "artel-root.conf"), **extra}
+
+
+@posix_only
+@pytest.mark.skipif(sys.platform != "linux", reason="the root wrapper is Linux only")
+def test_reinstall_keeps_the_root_wrapper_the_owner_consented_to(box):
+    tmp_path, ah, env = box
+    assert run_sh(env).returncode == 0
+    wrapper, sudoers, renv = _fake_root(tmp_path, env)          # no ARTEL_ALLOW_ROOT, no terminal: no new question
+    out = run_sh(renv, "--reinstall")
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert wrapper.exists() and sudoers.exists()
+    conf = (tmp_path / "artel-root.conf").read_text().splitlines()     # the allowlist: apt names of tools.yaml, no more
+    assert "allow=ripgrep" in conf and "allow=jq" in conf and "allow=openssh-server" not in conf
+    assert all(l.startswith(("#", "allow=", "deny=")) for l in conf)
+    (tmp_path / "artel-root.conf").write_text("deny=ffmpeg\nallow=evil\n")
+    assert run_sh(renv, "--reinstall").returncode == 0
+    again = (tmp_path / "artel-root.conf").read_text().splitlines()
+    assert "deny=ffmpeg" in again and "allow=evil" not in again and "allow=ripgrep" in again
+
+
+@posix_only
+@pytest.mark.skipif(sys.platform != "linux", reason="the root wrapper is Linux only")
+def test_reinstall_removes_the_root_wrapper_when_the_owner_says_no(box):
+    tmp_path, ah, env = box
+    assert run_sh(env).returncode == 0
+    wrapper, sudoers, renv = _fake_root(tmp_path, env, ARTEL_ALLOW_ROOT="0")
+    out = run_sh(renv, "--reinstall")
+    assert out.returncode == 0, out.stdout + out.stderr
+    assert not wrapper.exists() and not sudoers.exists()

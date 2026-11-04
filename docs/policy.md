@@ -51,3 +51,10 @@ credential files `~/.ssh/id_*`, `.aws/credentials`, `.env*` (prompt).
   is also checked and a `prompt` verdict ends the run as needs_human.
 - Codex: has no pre-execution hook, so the command is seen when it starts (`item.started`) and the process is
   terminated immediately. This is best-effort: a very fast command may already have run.
+
+## Protected configuration
+
+The built-in rule `protected-config` forbids commands that write `policy.yaml`, `artel.yaml` or the skills library
+(`ARTEL_HOME` and the project): redirection, `tee`, `cp`/`install`/`ln` onto them, `mv`/`rm`/`sed -i`, also through
+`$ARTEL_HOME`, `~/.artel` or `../`. Reading stays allowed. The same paths are outside every write grant, refused by
+the file tools and read-only inside the OS sandbox.

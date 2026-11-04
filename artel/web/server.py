@@ -477,9 +477,11 @@ def make_handler(runner: Runner, auth=None):
                     self._json(tg_status(runner.config))
                 elif parts == ["api", "ready"]:
                     from ..runtimes import detect_runtime
+                    from ..sandbox import status as sandbox_status
 
                     usage = chat.usage_total()
                     self._json({"runtime": detect_runtime(runner.config),
+                                "unisolated": sandbox_status(runner.config)["unisolated"],
                                 "concierge": {"tokens": usage["tokens"], "usd": usage["usd"]}})
                 elif parts == ["api", "providers"]:
                     from ..providers import overview

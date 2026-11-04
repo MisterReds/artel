@@ -17,18 +17,25 @@ human stop, or every remaining path waiting on a human.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import re
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
+from pathlib import Path
 from typing import Any, Optional
 
-from . import prompts
+from . import netprobe, prompts
 from .agent import Outcome
+from .failures import classify
 from . import guardian, policy
+from .agent_env import agent_env, missing_programs, tool_inventory
+from .failures import gate_failure_class
 from .runtimes import run_agent
 from .snapshot import Snapshot
 from .tools import shell_env, shell_run
@@ -48,6 +55,13 @@ AUDIT_RESULT_CHARS = 1200
 MANAGER_BRIEF_CHARS = 3200
 
 TICK_S = 0.5
+NETWORK_PROBE_S = 30.0         # first probe after a network failure; doubles up to the max
+NETWORK_PROBE_MAX_S = 600.0
+VET_TIMEOUT_S = 120            # one vetting run of a rewritten check
+PROXY_HOLDS_MAX = 3            # a failing gate next to a dead loopback proxy is held this many times (or this long)
+PROXY_HOLD_S = 1800.0
+PROXY_HOLD = "network: cannot connect to proxy: "
+NETWORK_ESCALATE_S = 3600.0     # a wait this long also raises a needs-human notice
 BACKOFF_BASE_S = 10
 BACKOFF_CAP_S = 600
 REFINE_EVERY_FAILURES = 3
@@ -86,6 +100,8 @@ class Manager:
         self.snapshots: dict[str, str] = {}  # task id -> tree hash of shared/ before the pending attempt
         self.snapper = Snapshot(project.root / "snapshot.git", project.shared)
         self.last_refine = 0.0
+        self.proxy_holds: dict[str, dict] = {}  # task id -> {"n", "since"}: gate results held for a dead loopback proxy
+        self.net_wait: Optional[dict] = None  # proxy/provider unreachable: nothing new starts until a probe succeeds
         self.audit_backoff_until = 0.0  # a failed goal audit waits (provider limit reset, growing delay) before the next
         self.audit_failures = 0         # consecutive audits that ended without a verdict
         self.audit_blocked: Optional[str] = None  # why the audit cannot run without a person (setup, repeated failures)
@@ -203,7 +219,7 @@ class Manager:
                 "differ. Plan so every success criterion is covered by a task's criteria or checks; nothing out of "
                 "scope is planned; assumptions stand unless the goal says otherwise.\n" if contract else "")
         user = (f"<goal>\n{self.project.goal}\n</goal>\n{spec}\nSkill library index:\n{skills.index(query=self.project.goal, config=self.cfg) or '(empty)'}\n\n"
-                "Plan the project now.")
+                f"{self.tools_brief()}\n\nPlan the project now.")
         ctx = ToolContext(self.kernel, self.project, role="planner", workspace=self.project.shared)
         from .runtimes import runtime_for
 
@@ -212,7 +228,30 @@ class Manager:
                        max_turns=12, purpose="plan", stop_event=self.stop)
         if out.name != "submit_plan":
             raise RuntimeError(f"planning failed: {out.status} {out.error}")
-        self.apply_plan(out.payload)
+        plan = out.payload
+        missing = self.plan_missing_tools(plan)
+        if missing:  # a check nobody can run is the planner's mistake: back to the planner once, the owner is not asked
+            self.note("plan_checks_unavailable", tools=missing)
+            again = run_agent(self.kernel, self.project, role="planner",
+                              system=self._with_instructions(prompts.PLANNER, "planner"), ctx=ctx, max_turns=12,
+                              purpose="plan", stop_event=self.stop, first_user=(
+                                  f"{user}\n\n<missing_tools>{', '.join(missing)}</missing_tools>\nYour previous plan has "
+                                  "checks whose first program is not installed on this machine. Plan again; write checks "
+                                  "only with the tools listed as available."))
+            if again.name == "submit_plan":
+                plan = again.payload
+                missing = self.plan_missing_tools(plan)
+            if missing:  # still unavailable: the gate will fail as an environment failure and the replanner rewrites it
+                self.note("plan_checks_unresolved", tools=missing)
+        self.apply_plan(plan)
+
+    def tools_brief(self) -> str:
+        have, missing = tool_inventory(self.cfg)
+        return (f"<tools_available>{' '.join(have)}</tools_available>\n<tools_missing>{' '.join(missing)}</tools_missing>\n"
+                "Write checks only with available tools.")
+
+    def plan_missing_tools(self, plan: dict) -> list:
+        return missing_programs([c for t in plan.get("tasks", []) for c in t.get("checks", [])], self.cfg)
 
     def apply_plan(self, plan: dict) -> None:
         for w in plan["workers"]:
@@ -282,6 +321,20 @@ class Manager:
             goal=self.project.goal, attempt=task["attempts"] + 1)
 
     # --- jobs -----------------------------------------------------------
+    def _ensure_worktree(self, task_id: str) -> Path:
+        """The task's worktree; the commit its branch started from is journaled once, when the task is first
+        claimed. That record (the project log, which no worker writes) is the baseline for vetting rewritten checks."""
+        wt = self.iso.ensure(task_id)
+        if not self._task_base(task_id):
+            sha = self.iso.claim_base(task_id)
+            if sha:
+                self.note("task_base", task_id=task_id, sha=sha)
+        return wt
+
+    def _task_base(self, task_id: str) -> str:
+        return next((e.get("sha", "") for e in self.project.log.read(kinds={"manager/task_base"})
+                     if e.get("task_id") == task_id), "")
+
     def job_work(self, task: dict) -> tuple[Outcome, ToolContext]:
         persona = self.project.persona(task["assignee"])
         run_id = self.board.start_run(task["id"], persona.name)
@@ -293,7 +346,7 @@ class Manager:
         seq0 = self.project.log.seq
         if self.iso is not None:  # the worker writes into its own worktree; shared/ changes only on acceptance
             try:
-                ctx.deliverables = self.iso.ensure(task["id"])
+                ctx.deliverables = self._ensure_worktree(task["id"])
             except IsolationError as exc:
                 out = Outcome(status="error", error=f"isolation: {exc}")
                 self.board.finish_run(run_id, "error", out.error)
@@ -332,26 +385,44 @@ class Manager:
         except Exception as exc:  # noqa: BLE001 - the guardian must never break a run
             self.note("guardian_error", task_id=task["id"], error=repr(exc))
 
-    def run_gates(self, task: dict, cwd=None) -> list[dict]:
-        """Run the task's shell checks in ``cwd`` (the task worktree under isolation, else shared/)."""
+    def _gate_env(self, cwd) -> dict:
+        # gates observe, they must not change the deliverable (bytecode / pytest caches made reviewers reject
+        # work that had been cleaned up before the gate ran)
+        return agent_env("native", {"PYTHONDONTWRITEBYTECODE": "1", "ARTEL_SHARED": str(cwd),
+                                    "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()},
+                         self.cfg)
+
+    def run_gates(self, task: dict, cwd=None, checks=None, record: bool = True, vet: bool = False) -> list[dict]:
+        """Run the task's shell checks in ``cwd`` (the task worktree under isolation, else shared/).
+        ``record=False``: the runs are not journaled as the task's gate results. ``vet``: a vetting run of checks
+        nobody has accepted yet: sandboxed whenever a backend exists, network off, only ``cwd`` (a temporary copy)
+        writable, ``VET_TIMEOUT_S``, and nothing is installed for it."""
         from . import sandbox
 
         results = []
         cwd = cwd or self.project.shared
-        # gates observe, they must not change the deliverable (bytecode / pytest caches made reviewers reject
-        # work that had been cleaned up before the gate ran)
-        from .agent_env import agent_env
+        checks = task["checks"] if checks is None else checks
+        env = self._gate_env(cwd)
 
-        env = agent_env("native", {"PYTHONDONTWRITEBYTECODE": "1", "ARTEL_SHARED": str(cwd),
-                                   "PYTEST_ADDOPTS": (os.environ.get("PYTEST_ADDOPTS", "") + " -p no:cacheprovider").strip()},
-                        self.cfg)
-        sb = sandbox.settings(self.cfg)
-        for cmd in task["checks"]:
+        def emit(res: dict) -> None:
+            if record:
+                self.project.log.append("gate/result", task_id=task["id"], **res)
+
+        cfg = self.cfg
+        if vet:
+            cfg = self._vet_cfg()
+        sb = sandbox.settings(cfg)
+        if not vet and (self.cfg.get("provision") or {}).get("auto", True):
+            from . import provision
+
+            provision.prepare_checks(checks, self.cfg, self.project.log.append)  # missing first programs
+        for cmd in checks:
             # a check is a shell command like any other: the command policy applies (nobody to ask: prompt = fail)
             reason = None
             if str((self.cfg.get("gates") or {}).get("policy", "enforce")).lower() != "off":
                 try:
                     verdict = policy.evaluate(cmd, self.project.root)
+                    policy.note_sudo(self.project.log, verdict, cmd, "gate", task_id=task["id"])
                     if verdict.decision != "allow":
                         reason = (f"blocked by policy ({verdict.decision}): "
                                   f"{verdict.rule.id}: {verdict.justification or verdict.decision}")
@@ -361,19 +432,46 @@ class Manager:
                 res = {"command": cmd, "exit": -1,
                        "output": f"{reason}; task checks cannot ask for approval — change the check or the policy"}
                 results.append(res)
-                self.project.log.append("gate/result", task_id=task["id"], **res)
+                emit(res)
                 continue
             # gates run unsandboxed unless `sandbox.gates` asks for it (then writable: the gate cwd + temp)
-            run = sandbox.plan(self.cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off")
+            run = sandbox.plan(cfg, cmd, cwd=cwd, writable=[cwd], mode=None if sb["gates"] else "off",
+                               project_root=self.project.root)
+            if vet and not run.sandboxed:  # vetting never executes unreviewed checks without isolation
+                run.error = run.error or run.note or "sandbox is off"
+            if sandbox.refusal(run, cfg):  # demanded backend missing: the check does not run unsandboxed
+                res = {"command": cmd, "exit": -1, "output": f"command NOT run: {run.error}", "env": "sandbox"}
+                results.append(res)
+                emit(res)
+                continue
             try:
-                p = subprocess.run(run.argv, cwd=cwd, capture_output=True, text=True, encoding="utf-8", errors="replace",
-                                   timeout=int(self.cfg.get("gate_timeout_s", 900)), env=shell_env(env))
-                res = {"command": cmd, "exit": p.returncode, "output": window_text(p.stdout + p.stderr, 3000)}
+                genv = shell_env(env)
+                p, failed = sandbox.execute(run, cwd=cwd, env=genv,
+                                            timeout=VET_TIMEOUT_S if vet else int(self.cfg.get("gate_timeout_s", 900)))
+                failed = failed if sb["require"] else ""
+                res = {"command": cmd, "exit": p.returncode if not failed else -1,
+                       "output": window_text(p.stdout + p.stderr, 3000) if not failed else f"command NOT run: {failed}"}
+                if run.line and not failed:
+                    res["output"] += f"\n{run.line}"
+                cause = "sandbox" if failed else self._gate_env_cause(cmd, p.returncode, genv)
+                if cause:
+                    res["env"] = cause
             except subprocess.TimeoutExpired:
                 res = {"command": cmd, "exit": -1, "output": "timed out"}
             results.append(res)
-            self.project.log.append("gate/result", task_id=task["id"], **res)
+            emit(res)
         return results
+
+    @staticmethod
+    def _gate_env_cause(cmd: str, returncode: int, genv: dict) -> str:
+        """Why a failed check says nothing about the work, from the machine alone ('' = it does): the shell could not
+        find or run the check's first program (exit 126/127) and that program is absent from the gate's PATH. Nothing
+        else is an environment failure; the sandbox sentinel is decided by the caller."""
+        from . import provision
+
+        if returncode in (126, 127) and provision.leading_absent(cmd, genv.get("PATH") or os.defpath):
+            return "missing_tool"
+        return ""
 
     def job_review(self, task: dict) -> tuple[list, Outcome]:
         wt, changed = None, ""
@@ -391,11 +489,32 @@ class Manager:
             files = self.iso.changed_files(task["id"])
             changed = f"<changed_files vs shared>\n{_fmt_list(files[:200])}\n</changed_files>\n\n"
         gates = self.run_gates(task, cwd=wt)
-        gate_text = window_text("\n".join(f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], GATE_OUTPUT_CHARS)}"
-                                         for g in gates) or "(no automated gates)", REVIEW_GATES_CHARS)
-        user = (f"{self.task_card(task)}\n\n<submission by=\"{task['assignee']}\">\n<summary>\n{window_text(task['result'] or '', REVIEW_SUMMARY_CHARS)}\n"
-                f"</summary>\n<evidence>\n{window_text(task['evidence'] or '', REVIEW_EVIDENCE_CHARS)}\n</evidence>\n</submission>\n\n"
-                f"{changed}<gate_results>\n{gate_text}\n</gate_results>\n\nReview it now.")
+        down = (netprobe.loopback_proxy_down(self._gate_env(wt or self.project.shared))
+                if any(g["exit"] != 0 for g in gates) else "")
+        if down:
+            # a failing check next to a dead loopback proxy is not judged at first: hold it, wait until the proxy
+            # itself answers, re-run; a proxy that stays dead (3 holds or 30 min) is told to the owner and judged
+            now = time.time()
+            h = self.proxy_holds.setdefault(task["id"], {"n": 0, "since": now})
+            if h["n"] < PROXY_HOLDS_MAX and now - h["since"] < PROXY_HOLD_S:
+                h["n"] += 1
+                return [], Outcome(status="error", error=PROXY_HOLD + down)
+            gates = [{**g, "output": g["output"] + "\nпрокси недоступен: " + down} if g["exit"] != 0 else g for g in gates]
+            if not self.project.meta.get("proxy_down"):
+                self.project.set_meta(proxy_down={"since": now, "reason": down[:300]})
+                self.note("proxy_unavailable", task_id=task["id"], holds=h["n"], reason=down[:300])
+        else:
+            self.proxy_holds.pop(task["id"], None)
+            if self.project.meta.get("proxy_down"):
+                self.project.set_meta(proxy_down=None)
+        if gate_failure_class(gates) == "environment":  # the gates cannot judge the work: no reviewer tokens spent
+            return gates, Outcome(status="environment")
+        gate_text = prompts.neutralise(window_text("\n".join(
+            f"$ {g['command']}  -> exit {g['exit']}\n{window_text(g['output'], GATE_OUTPUT_CHARS)}"
+            for g in gates) or "(no automated gates)", REVIEW_GATES_CHARS))
+        user = (f"{self.task_card(task)}\n\n<submission by=\"{task['assignee']}\">\n<summary>\n{prompts.neutralise(window_text(task['result'] or '', REVIEW_SUMMARY_CHARS))}\n"
+                f"</summary>\n<evidence>\n{prompts.neutralise(window_text(task['evidence'] or '', REVIEW_EVIDENCE_CHARS))}\n</evidence>\n</submission>\n\n"
+                f"{changed}{self._rewritten_brief(task['id'])}<gate_results>\n{gate_text}\n</gate_results>\n\nReview it now.")
         ctx = ToolContext(self.kernel, self.project, role="reviewer", workspace=wt or self.project.shared, task=task,
                           deliverables=wt)
         out = run_agent(self.kernel, self.project, role="reviewer", system=self._with_instructions(prompts.REVIEWER, "reviewer"), first_user=user, ctx=ctx,
@@ -424,10 +543,27 @@ class Manager:
         near = [*self.board.deps_of(task["id"]), *self.board.dependents_of(task["id"])][:7]
         runs = self.board.runs(task["id"])[-2:]
         comments = self.board.comments(task["id"])[-3:]
+        history = self._failure_history(task["id"])
+        env = bool(history) and self._env_failure(task["id"])
+        failure = premise = tools = ""
+        if history:
+            cls, evidence = history[-1]
+            failure = f"<failure failure_class=\"{cls}\">\n{window_text(evidence, 700)}\n</failure>"
+        if len(history) >= 2 and history[-1][0] == history[-2][0]:  # attack the premise: same class twice
+            cls, evidence = history[-1]
+            claim = ("the ENVIRONMENT is broken (the checks cannot run on this machine); the worker is not at fault. "
+                     "Rewrite the check with an available tool, or fix the environment" if cls == "environment" else
+                     "the WORK is bad. Two attempts failed alike: check that premise directly (is the check itself right, "
+                     "is the task possible?) before sending the worker back")
+            premise = (f"<premise>The last two failures of this task are both \"{cls}\" failures. The premise to test "
+                       f"first: {claim}.\nEvidence: {window_text(evidence, 400)}</premise>")
+        if env:
+            tools = self.tools_brief()
         return self._brief([
             f"<goal>{window_text(self.project.goal, 500)}</goal>",
             f"<task id=\"{task['id']}\" status=\"{task['status']}\" attempts=\"{task['attempts']}\" "
             f"assignee=\"{task['assignee']}\">{task['title']}\ncriteria:\n{_fmt_list(task['criteria'][:5])}</task>",
+            f"<checks>\n{_fmt_list(task['checks'][:8])}\n</checks>", failure, premise, tools,
             "<last_runs>\n" + "\n".join(f"- {r['worker']}: {r['status']} after {r['turns']} turns — "
                                          f"{window_text(r['summary'] or '', 300)}" for r in runs) + "\n</last_runs>",
             "<last_comments>\n" + "\n".join(f"[{c['author']}] {window_text(c['body'], 300)}" for c in comments)
@@ -463,8 +599,11 @@ class Manager:
         roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster()[:12])
         user = f"{self.manager_brief(task)}\n\n<roster>\n{roster}\n</roster>\n\nDecide now."
         ctx = ToolContext(self.kernel, self.project, role="manager", workspace=self.project.shared, task=task)
-        return run_agent(self.kernel, self.project, role="manager", system=prompts.MANAGER, first_user=user, ctx=ctx,
+        out = run_agent(self.kernel, self.project, role="manager", system=prompts.MANAGER, first_user=user, ctx=ctx,
                         max_turns=6, purpose="replan", stop_event=self.stop)
+        if out.name == "replan_decision" and out.payload.get("checks") and self._env_failure(task["id"]):
+            out.payload["_vet"] = self._vet_rewrite(task, [str(c) for c in out.payload["checks"]])  # in the pool
+        return out
 
     def job_audit(self) -> Outcome:
         roster = "\n".join(f"- {p.name}: {p.role}" for p in self._roster()[:12])
@@ -497,6 +636,55 @@ class Manager:
                                 edits=ctx.state.get("harness_edits", []))
 
     # --- outcome handling ----------------------------------------------
+    def _enter_network_wait(self, reason: str, cause: str = "provider") -> None:
+        """The proxy or the provider's network is down: not the work's fault. Stop starting jobs, probe with backoff
+        (``network_probe_s`` doubling up to ``network_probe_max_s``) and carry on by itself when it answers."""
+        if self.net_wait is not None:
+            return
+        base = float(self.cfg.get("network_probe_s", NETWORK_PROBE_S))
+        now = time.time()
+        self.net_wait = {"since": now, "delay": base, "next": now + base, "reason": reason[:300], "escalated": False,
+                         "cause": cause}  # "proxy": only the loopback proxy answering ends it, not the provider
+        self.project.set_meta(network_wait={"since": now, "reason": reason[:300], "next_probe": now + base})
+        self.note("network_wait", reason=reason[:300], next_probe=now + base)
+
+    def _escalate_network_wait(self, w: dict, now: float) -> None:
+        """A wait longer than ``network_wait_escalate_s`` also tells the owner (an attention item for the dashboard
+        and a Telegram message, both derived from the project meta); probing carries on and the notice goes away
+        with the wait."""
+        if w["escalated"] or now - w["since"] < float(self.cfg.get("network_wait_escalate_s", NETWORK_ESCALATE_S)):
+            return
+        w["escalated"] = True
+        self.project.set_meta(network_wait={"since": w["since"], "reason": w["reason"], "next_probe": w["next"],
+                                            "escalated": True})
+        self.note("network_wait_escalated", waited_s=round(now - w["since"], 1), reason=w["reason"])
+
+    def _network_tick(self) -> bool:
+        """Probe when due; True while the network is still down."""
+        w = self.net_wait
+        if w is None:
+            return False
+        now = time.time()
+        self._escalate_network_wait(w, now)
+        if now < w["next"]:
+            return True
+        if w.get("cause") == "proxy":
+            where = netprobe.loopback_proxy_down(self._gate_env(self.project.shared))
+            ok, where = not where, where or "loopback proxy"
+        else:
+            ok, where = netprobe.reachable(self.cfg)
+        if ok:
+            self.net_wait = None
+            self.project.set_meta(network_wait=None)
+            self.note("network_back", probe=where, waited_s=round(now - w["since"], 1))
+            return False
+        w["delay"] = min(float(self.cfg.get("network_probe_max_s", NETWORK_PROBE_MAX_S)), w["delay"] * 2)
+        w["next"] = now + w["delay"]
+        self.project.set_meta(network_wait={"since": w["since"], "reason": w["reason"], "next_probe": w["next"],
+                                            "escalated": w["escalated"]})
+        self.note("network_probe_failed", probe=where, next_probe=w["next"])
+        return True
+
     def _retry_later(self, task: dict, reason: str, count_attempt: bool = True) -> None:
         attempts = task["attempts"] + (1 if count_attempt else 0)
         no_prog = task["no_progress"] + 1
@@ -544,6 +732,10 @@ class Manager:
         from .failures import classify, retry_at
 
         kind = classify(reason)
+        if kind == "network":  # nobody's attempt: the task goes back as it was and waits for the network with the rest
+            self.board.update(task["id"], status="ready", backoff_until=0, actor="manager")
+            self._enter_network_wait(reason)
+            return
         if kind == "setup":  # missing CLI, no login, bad key: every retry fails the same way
             self.board.update(task["id"], status="blocked", needs_human=1, actor="manager")
             self.board.comment(task["id"], "manager", f"Нужна настройка, повтор не поможет: {reason}")
@@ -577,7 +769,15 @@ class Manager:
             self._merge_conflict(task, out.payload.get("conflicts") or [], out.error, stage="before review")
             return
         gates_ok = all(g["exit"] == 0 for g in gates)
+        if gate_failure_class(gates) == "environment":
+            self.review_retries.pop(task_id, None)
+            self.snapshots.pop(task_id, None)
+            self._environment_failure(task, gates)
+            return
         if out.name != "review_verdict":
+            if out.status == "error" and classify(out.error) == "network":
+                self._enter_network_wait(out.error, "proxy" if out.error.startswith(PROXY_HOLD) else "provider")
+                return  # still in review; schedule() re-submits it once the network is back
             n = self.review_retries.get(task_id, 0) + 1
             self.review_retries[task_id] = n
             if out.status in ("stopped", "budget"):
@@ -589,6 +789,9 @@ class Manager:
         else:
             passed = bool(out.payload["passed"]) and gates_ok
             feedback = out.payload["feedback"]
+            if out.payload["passed"] and self._needs_checks_confirmation(task_id) and not out.payload.get("checks_cover_criteria"):
+                passed, feedback = False, ("The rewritten checks were not confirmed to cover the criteria "
+                                           "(checks_cover_criteria): " + feedback)
             if out.payload["passed"] and not gates_ok:
                 feedback = "Automated gates failed:\n" + "\n".join(
                     f"$ {g['command']} -> exit {g['exit']}\n{window_text(g['output'], 800)}" for g in gates if g["exit"] != 0)
@@ -638,6 +841,31 @@ class Manager:
             else:
                 self.board.update(task_id, status="ready", attempts=attempts, actor="reviewer")
 
+    def _environment_failure(self, task: dict, gates: list) -> None:
+        """The gates failed because of this machine (missing tool, sandbox, proxy), not because of the work: the
+        attempt is not counted against the worker; the replanner gets the classification and may rewrite the check."""
+        task_id = task["id"]
+        evidence = "\n".join(f"$ {g['command']} -> exit {g['exit']}\n{window_text(g['output'], 400)}"
+                             for g in gates if g["exit"] != 0)
+        self.project.log.append("review/verdict", task_id=task_id, passed=False, failure_class="environment",
+                                feedback="Environment failure, not the work:\n" + evidence,
+                                gates=[{"command": g["command"], "exit": g["exit"]} for g in gates])
+        self.board.comment(task_id, "manager", "ENVIRONMENT failure (not the worker's fault, the attempt is not "
+                                               "counted): the checks cannot run on this machine.\n" + evidence)
+        self.note("environment_failure", task_id=task_id)
+        self.board.update(task_id, status="blocked", actor="manager")
+
+    def _failure_history(self, task_id: str) -> list:
+        """(failure class, feedback) of the task's rejected reviews, oldest first."""
+        return [(e.get("failure_class") or "work", e.get("feedback") or "")
+                for e in self.project.log.read(kinds={"review/verdict"})
+                if e.get("task_id") == task_id and not e.get("passed")]
+
+    def _env_failure(self, task_id: str) -> bool:
+        """The task's latest verdict was an environment failure."""
+        verdicts = [e for e in self.project.log.read(kinds={"review/verdict"}) if e.get("task_id") == task_id]
+        return bool(verdicts) and verdicts[-1].get("failure_class") == "environment"
+
     def _merge_conflict(self, task: dict, conflicts: list, error: str, stage: str) -> None:
         """Surface a merge conflict as a task comment and send the task back for a retry on the updated base."""
         task_id = task["id"]
@@ -666,16 +894,19 @@ class Manager:
             except IsolationError as exc:
                 self.note("worktree_error", task_id=task_id, error=str(exc))
 
-    def _replans(self, task_id: str) -> int:
-        return sum(1 for e in self.project.log.read() if e["kind"] == "manager/decision" and e.get("task_id") == task_id)
+    def _replans(self, task_id: str, env: bool = False) -> int:
+        """Replans of a task; environment ones are counted apart from replans of bad work."""
+        return sum(1 for e in self.project.log.read() if e["kind"] == "manager/decision" and e.get("task_id") == task_id
+                   and bool(e.get("env")) == env)
 
     def on_replan(self, task_id: str, out: Outcome) -> None:
         task = self.board.get(task_id)
-        limit = int(self.b.get("max_replans", 3))
-        if out.status not in ("stopped", "budget") and self._replans(task_id) >= limit:
+        env = self._env_failure(task_id)
+        limit = int(self.b.get("max_env_replans" if env else "max_replans", 3))
+        if out.status not in ("stopped", "budget") and self._replans(task_id, env) >= limit:
             # the same task keeps failing after re-planning: stop circling, hand it to a person with the history
             self.board.update(task_id, status="blocked", needs_human=1, actor="manager")
-            self.board.comment(task_id, "manager", f"Перепланирование {limit} раз не помогло — нужна помощь человека. "
+            self.board.comment(task_id, "manager", f"Перепланирование {limit} раз не помогло{' (среда не чинится правкой проверок)' if env else ''} — нужна помощь человека. "
                                                     f"Последняя причина: {window_text(task.get('result') or '', 300)}")
             self.note("escalated", task_id=task_id, rationale=f"{limit} replans without progress")
             self.ask_doctor(task_id, f"Задача не сдвинулась после {limit} перепланирований: "
@@ -684,16 +915,28 @@ class Manager:
         if out.name != "replan_decision":
             if out.status in ("stopped", "budget"):
                 return
+            if out.status == "error" and classify(out.error) == "network":
+                self._enter_network_wait(out.error)
+                return  # stays blocked; schedule() re-submits the replan once the network is back
             self.note("decision", task_id=task_id, action="retry", rationale=f"no decision ({out.status}); default retry")
-            self.board.update(task_id, status="ready", attempts=0,
+            self.board.update(task_id, status="review" if env else "ready", attempts=0,
                               backoff_until=time.time() + float(self.cfg.get("backoff_base_s", BACKOFF_BASE_S)))
             return
         d = out.payload
-        self.note("decision", task_id=task_id, **d)
+        vet = d.pop("_vet", None)
+        self.note("decision", task_id=task_id, env=env, **d)
         action = d["action"]
         if d.get("guidance"):
             self.board.comment(task_id, "manager", f"Guidance: {d['guidance']}")
-        if action == "retry":
+        if d.get("checks"):  # only an environment failure lets the manager rewrite the checks
+            if env:
+                if self._rewrite_checks(task, [str(c) for c in d["checks"]], vet):
+                    return  # waits for the owner
+            else:
+                self.board.comment(task_id, "manager", "Checks are not changed: the failure was not an environment one.")
+        if action == "retry" and env:  # the work was never judged: straight back to the review, no rework
+            self.board.update(task_id, status="review", attempts=0, no_progress=0, backoff_until=0, needs_human=0)
+        elif action == "retry":
             self.board.update(task_id, status="ready", attempts=0, no_progress=0, backoff_until=0, needs_human=0)
         elif action == "reassign":
             name = d.get("assignee")
@@ -719,6 +962,128 @@ class Manager:
             self.note("escalated", task_id=task_id, rationale=d["rationale"])
             self.ask_doctor(task_id, f"Менеджер передал задачу человеку: {d['rationale']}")
 
+    @contextlib.contextmanager
+    def _baseline(self, task_id: str):
+        """A directory holding the task's baseline: the work directory as it was before the task started (the base
+        commit of its worktree under isolation, else the snapshot of shared/ taken at claim time). None when there is
+        no baseline for this task."""
+        with tempfile.TemporaryDirectory(prefix="artel-baseline-") as tmp:
+            ok = False
+            if self.iso is not None:
+                base = self._task_base(task_id)
+                ok = bool(base) and self.iso.exists(task_id) and self.iso.export_base(task_id, tmp, base)
+            else:
+                trees = [e.get("tree") for e in self.project.log.read(kinds={"manager/snapshot"})
+                         if e.get("task_id") == task_id and e.get("tree")]
+                ok = bool(trees) and self.snapper.export(trees[0], tmp)
+            yield Path(tmp) if ok else None
+
+    def _rewrite_checks(self, task: dict, new: list, vet: Optional[dict]) -> bool:
+        """Accept a rewrite of the checks that was vetted by ``_vet_rewrite`` (in the job pool): a problem refuses
+        it; reasons for confirmation are journaled with the evidence and the reviewer must confirm them. The task
+        goes through review, whose brief carries the old and the new checks. Without a sandbox a weak rewrite was not
+        vetted: it waits for the owner (True) and the checks stay as they are."""
+        task_id, old = task["id"], list(task["checks"])
+        problem = "the rewrite was not vetted" if vet is None else vet["problem"]
+        if problem:
+            self.project.log.append("check/rejected", task_id=task_id, old=old, new=new, reason=problem)
+            self.board.comment(task_id, "manager", f"Checks are not changed: the rewrite was refused ({problem}).")
+            return False
+        if vet.get("owner"):
+            self.board.update(task_id, status="blocked", needs_human=1, checks_pending=new, actor="manager")
+            self.project.log.append("check/pending", task_id=task_id, old=old, new=new, confirm=vet["confirm"])
+            self.board.comment(task_id, "manager", (
+                "Подтвердите замену проверки: изоляции нет, поэтому новые проверки не запускались, а замена слабее прежней.\n"
+                f"Было:\n{_fmt_list(old)}\nСтало:\n{_fmt_list(new)}\nПочему нужно ваше решение:\n"
+                + "\n".join(f"- {r}" for r in vet["confirm"]) + "\nОтветьте «да», чтобы заменить; иначе проверки останутся прежними."))
+            return True
+        self.board.update(task_id, checks=new, checks_confirm=list(vet["confirm"]))  # the requirement lives on the row
+        self.project.log.append("check/rewritten", task_id=task_id, old=old, new=new, confirm=vet["confirm"],
+                                evidence=vet["evidence"])
+        self.board.comment(task_id, "manager", "Checks rewritten after an environment failure:\n" + _fmt_list(new)
+                           + ("\nThe reviewer must confirm that they cover the criteria." if vet["confirm"] else ""))
+        return False
+
+    def _vet_rewrite(self, task: dict, new: list) -> dict:
+        """Judge a rewrite of the checks: ``{problem, confirm, evidence}``. Cheap syntactic refusals first, then the
+        baseline run (the commit recorded at claim time), then the result run only for the checks that failed the
+        baseline. Runs are sandboxed, offline, in temporary copies, and nothing is provisioned for them."""
+        from . import checks, provision
+
+        old = list(task["checks"])
+        path = agent_env("native", None, self.cfg).get("PATH") or os.defpath
+        res = {"problem": checks.rewrite_problem(old, new, provision.absent_programs(new, path)), "confirm": [],
+               "evidence": []}
+        if res["problem"]:
+            return res
+        if not self._can_vet():  # no isolation: nothing of the worker's is executed by vetting
+            res["confirm"] = checks.confirmation_reasons(old, new, {p for p in (provision.leading_program(c) for c in old)
+                                                                  if p and not shutil.which(p, path=path)})
+            res["owner"] = bool(res["confirm"])  # a weak rewrite is the owner's call; a plain one passes on the reviewer
+            return res
+        with self._baseline(task["id"]) as base:
+            if base is None:
+                res["problem"] = ("база задачи изменена" if self._base_moved(task["id"]) else
+                                  "the task has no baseline (no worktree base commit or claim-time snapshot) to compare the checks against")
+                return res
+            on_base = self.run_gates(task, cwd=base, checks=new, record=False, vet=True)
+        guard = checks.guards(new, on_base)
+        todo = [c for c in new if c not in guard]
+        on_result = []
+        if todo:  # a baseline that passes everything leaves nothing to ask of the result
+            src = self.iso.path(task["id"]) if self.iso is not None else self.project.shared
+            with tempfile.TemporaryDirectory(prefix="artel-result-") as tmp:
+                copy = Path(tmp) / "tree"
+                shutil.copytree(src, copy, symlinks=True, ignore=shutil.ignore_patterns(".git"), dirs_exist_ok=True)
+                ran = dict(zip(todo, self.run_gates(task, cwd=copy, checks=todo, record=False, vet=True)))
+            on_result = [ran.get(c) for c in new]
+        else:
+            on_result = [None] * len(new)
+        res["problem"] = checks.discrimination_problem(new, on_base, on_result)
+        absent_old = {p for p in (provision.leading_program(c) for c in old) if p and not shutil.which(p, path=path)}
+        res["confirm"] = checks.confirmation_reasons(old, new, absent_old) + [
+            f"`{c}` passes on the baseline: a guard, it says nothing about the task" for c in guard]
+        tail = lambda r: None if r is None else {"exit": r["exit"], "tail": str(r.get("output", ""))[-300:]}  # noqa: E731
+        res["evidence"] = [{"command": c, "baseline": tail(b), "result": tail(r)} for c, b, r in zip(new, on_base, on_result)]
+        return res
+
+    def _vet_cfg(self) -> dict:
+        """The settings for vetting: the owner's sandbox mode, never required away, offline, the temporary tree only."""
+        return {**self.cfg, "sandbox": {**(self.cfg.get("sandbox") or {}), "network": False, "require": True,
+                                        "gates": True, "writable": []}}
+
+    def _can_vet(self) -> bool:
+        """Vetting executes unreviewed checks: only inside a working sandbox."""
+        from . import sandbox
+
+        cfg = self._vet_cfg()
+        return sandbox.plan(cfg, "true", cwd=str(self.project.root), writable=[], mode=None).sandboxed
+
+    def _base_moved(self, task_id: str) -> bool:
+        base = self._task_base(task_id)
+        return bool(self.iso is not None and base and self.iso.exists(task_id) and not self.iso.base_intact(task_id, base))
+
+    def _needs_checks_confirmation(self, task_id: str) -> bool:
+        return bool(self.board.get(task_id)["checks_confirm"])  # the board, not the journal: a worker can append to that
+
+    def _rewritten_brief(self, task_id: str) -> str:
+        ev = [e for e in self.project.log.read(kinds={"check/rewritten"}) if e.get("task_id") == task_id]
+        if not ev:
+            return ""
+        last = ev[-1]
+        shown = "\n".join(
+            f"$ {e['command']}\n  baseline: " + (f"exit {e['baseline']['exit']}  {e['baseline']['tail'][-150:]!r}" if e["baseline"] else "not run")
+            + "\n  result: " + (f"exit {e['result']['exit']}  {e['result']['tail'][-150:]!r}" if e["result"] else "not run")
+            for e in last.get("evidence") or [])
+        why = prompts.neutralise("\n".join(f"- {r}" for r in self.board.get(task_id)["checks_confirm"]))
+        ask = (f"These need your explicit confirmation:\n{why}\nPass only if the new checks verify the criteria, "
+               "and then set checks_cover_criteria=true in review_verdict; otherwise the review fails.\n" if why else "")
+        n = prompts.neutralise
+        return (f"<checks_rewritten>\n<old>\n{n(_fmt_list(ev[0]['old']))}\n</old>\n<new>\n{n(_fmt_list(last['new']))}\n</new>\n"
+                f"<vetting>\n{n(shown)}\n</vetting>\n"
+                "These checks were rewritten after an environment failure. Confirm that the new checks verify the "
+                f"same criteria as the old ones; if they verify less, the review fails.\n{ask}</checks_rewritten>\n\n")
+
     def _audit_failed(self, reason: str) -> None:
         """An audit that ended without a verdict is retried the way a task is: after the provider's limit resets
         (or on another executor), after a growing delay for other errors, and never for a setup problem — a run
@@ -728,6 +1093,9 @@ class Manager:
         from .runtimes import runtime_for
 
         kind = classify(reason)
+        if kind == "network":
+            self._enter_network_wait(reason)
+            return
         self.audit_failures += 1
         if kind == "limit":
             alt = runtime_for(self.cfg, "auditor")
@@ -816,6 +1184,8 @@ class Manager:
 
     def schedule(self) -> None:
         now = time.time()
+        if self._network_tick():
+            return
         busy_workers = {self.board.get(k.partition(":")[2])["assignee"] for k in self.jobs if k.startswith("work:")}
         n_work = sum(1 for k in self.jobs if k.startswith("work:"))
         for t in self.board.list(status=["ready"]):
@@ -872,15 +1242,24 @@ class Manager:
             self.project.log.append("plugin/failed", plugin=plugin, error=error)
         self.kernel.emit("project_start", project=self.project, resumed=bool(self.root_id))
         if not self.root_id:
-            for _attempt in range(4):  # a provider limit during planning moves planning to the next executor
+            attempt = 0
+            while attempt < 4:  # a provider limit during planning moves planning to the next executor
+                attempt += 1
                 try:
                     self.plan()
                     exc = None
                     break
                 except Exception as e:  # noqa: BLE001
                     exc = e
+                    if classify(str(e)) == "network":  # wait for the network, then plan again; not an attempt
+                        self._enter_network_wait(str(e))
+                        while self._network_tick() and not self.stop.is_set():
+                            self.stop.wait(min(TICK_S, max(0.01, self.net_wait["next"] - time.time())))
+                        attempt -= 1
+                        if self.stop.is_set():
+                            break
+                        continue
                     from . import limits
-                    from .failures import classify
                     from .runtimes import runtime_for
 
                     alt = runtime_for(self.cfg, "planner")
@@ -888,9 +1267,12 @@ class Manager:
                     if classify(str(e)) != "limit" or not out or alt == "none" or alt.split(":")[0] in out:
                         break
                     self.note("provider_switch", to=alt, reason=str(e)[:300])
+            if exc is not None and self.stop.is_set():  # the owner stopped it while planning waited: not a failure
+                self.project.set_meta(status="stopped", network_wait=None)
+                self.project.log.append("project/status", status="stopped")
+                self.kernel.emit("project_end", project=self.project, status="stopped", usage=self.project.meta["usage"])
+                return "stopped"
             if exc is not None:  # a project that cannot start must say why, not crash
-                from .failures import classify
-
                 reason = str(exc)
                 kind = classify(reason)
                 status = "waiting_human" if kind in ("setup", "limit") else "error"
@@ -900,7 +1282,7 @@ class Manager:
                 self.project.log.append("project/status", status=status)
                 self.kernel.emit("project_end", project=self.project, status=status, usage=self.project.meta["usage"])
                 return status
-        self.project.set_meta(status="running")
+        self.project.set_meta(status="running", network_wait=None)
         final = "running"
         while True:
             if self.stop.is_set():
@@ -959,12 +1341,33 @@ class Manager:
         return final
 
 
+_YES = re.compile(r"\s*(да|ок|окей|подтвержда\w*|согласен|согласна|yes|y|ok|okay|confirm\w*)\b", re.I)
+
+
+def _answer_checks(project: Project, task: dict, body: str) -> dict:
+    """The owner's answer to «подтвердите замену проверки»: a yes puts the pending checks in place and the task goes
+    back to review (the work was never judged); anything else keeps the old checks and the task goes on."""
+    tid, new, old = task["id"], task["checks_pending"], task["checks"]
+    yes = bool(_YES.match(body))
+    if yes:
+        project.board.update(tid, checks=new, checks_pending=[], checks_confirm=[], status="review", needs_human=0,
+                             attempts=0, no_progress=0, backoff_until=0, actor="human")
+        project.log.append("check/rewritten", task_id=tid, old=old, new=new, confirm=[], evidence=[], owner_confirmed=True)
+    else:
+        project.board.update(tid, checks_pending=[], status="ready", needs_human=0, attempts=0, no_progress=0,
+                             backoff_until=0, actor="human")
+        project.log.append("check/rejected", task_id=tid, old=old, new=new, reason="the owner did not confirm")
+    return project.board.get(tid)
+
+
 def human_comment(project: Project, task_id: str, body: str) -> dict:
     """A human message on a task. Unblocks tasks waiting on a human."""
     task = project.board.get(task_id)
     if task is None:
         raise KeyError(task_id)
     project.board.comment(task_id, "human", body)
+    if task["status"] == "blocked" and task["needs_human"] and task["checks_pending"]:
+        return _answer_checks(project, task, body)
     if task["status"] == "blocked" and task["needs_human"]:
         project.board.update(task_id, status="ready", needs_human=0, attempts=0, no_progress=0, backoff_until=0,
                              actor="human")
@@ -1004,7 +1407,7 @@ def continue_after_human(project: Project) -> list:
     reopened = []
     for t in project.board.list(status=["blocked"]):
         if t["needs_human"]:
-            project.board.update(t["id"], status="ready", needs_human=0, attempts=0, no_progress=0, backoff_until=0,
+            project.board.update(t["id"], status="ready", needs_human=0, checks_pending=[], attempts=0, no_progress=0, backoff_until=0,
                                  actor="human")
             project.board.comment(t["id"], "human", "Продолжено человеком.")
             reopened.append(t["id"])

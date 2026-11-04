@@ -69,7 +69,7 @@ def test_readonly_role_and_protected(env):
     assert "reviewer" in READONLY_ROLES
     with pytest.raises(ToolError, match="not in write grants"):
         ctx_for(env, "reviewer").resolve("shared/x", write=True)
-    with pytest.raises(ToolError, match="managed by the harness"):
+    with pytest.raises(ToolError, match="protected"):
         ToolContext(env[0], env[1], role="worker", workspace=env[1].root).resolve("board.db", write=True)
 
 

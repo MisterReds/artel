@@ -610,3 +610,12 @@ def test_pairing_remembers_who_paired(bot):
     tg.msg(55, f"/pair {code}", user=55)
     b.poll_once(timeout=0)
     assert b.store.data["paired"] == [55] and b.store.data["users"] == {"55": 55}
+
+
+def test_concierge_usage_counts_cache_reads_apart_and_is_a_read_only_role(world):
+    from artel.tooling import READONLY_ROLES
+
+    assert "concierge" in READONLY_ROLES
+    chat.record_usage("cheap", {"input_tokens": 600, "output_tokens": 50, "cached": 400}, 0.01)
+    t = chat.usage_total()
+    assert t["tokens"] == 650 and t["tiers"]["cheap"]["cached"] == 400

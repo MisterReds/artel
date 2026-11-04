@@ -1,0 +1,245 @@
+"""A dead proxy or provider network is an environment failure: the project waits, probes, and resumes by itself."""
+
+import socket
+import threading
+import time
+
+import pytest
+
+from artel.analytics import stage_of
+from artel.failures import classify
+from artel.manager import Manager, new_kernel
+from artel.plugins.llm_providers import LLMError
+from artel.project import DEFAULT_CONFIG, Project, deep_merge
+
+
+@pytest.mark.parametrize("text", [
+    "error: openai_compat failed: ConnectError: [Errno 111] Connection refused",
+    "error: ProxyError('Cannot connect to proxy.', NewConnectionError('Connection refused'))",
+    "error: APIConnectionError: Connection error.",
+    "error: [Errno -2] Name or service not known",
+    "error: ReadTimeout: timed out",
+    "error: Network is unreachable",
+])
+def test_network_failures_are_classified(text):
+    assert classify(text) == "network"
+
+
+def test_other_failures_keep_their_class():
+    assert classify("HTTP 429: rate limit") == "limit"
+    assert classify("not logged in") == "setup"
+    assert classify("stalled: 3 consecutive turns without tool use") == "work"
+
+
+class ProxyDownProvider:
+    """The real scripted provider behind a proxy: while nothing listens on the proxy port every call fails."""
+
+    def __init__(self, real, port):
+        self.real, self.port, self.refused = real, port, 0
+
+    def chat(self, **kw):
+        try:
+            socket.create_connection(("127.0.0.1", self.port), timeout=1).close()
+        except OSError as exc:
+            self.refused += 1
+            raise LLMError(f"openai_compat failed: ConnectError: {exc}") from exc
+        return self.real.chat(**kw)
+
+
+def test_dead_proxy_waits_and_resumes_without_replanning(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()                                          # the "proxy" is down: connection refused
+    monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{port}")
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05, "network_probe_s": 0.05,
+                                      "network_probe_max_s": 0.2})
+    k = new_kernel(cfg)
+    fake = ProxyDownProvider(k.get("llm") or k.get("llm_factory")(), port)
+    k.provide("llm:scripted", fake)
+    project = Project.create("write hello.txt containing hello", cfg, name="net", workdir=str(tmp_path / "wd"))
+    proxy = socket.socket()
+    stages, up = [], threading.Event()
+
+    def bring_proxy_back():  # the outage lasts until the manager has noticed it (a refused connect is slow on Windows)
+        deadline = time.time() + 60
+        while time.time() < deadline and "manager/network_wait" not in [e["kind"] for e in project.log.read()]:
+            time.sleep(0.05)
+        time.sleep(0.3)
+        proxy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        proxy.bind(("127.0.0.1", port))
+        proxy.listen(50)
+        up.set()
+
+    def watch():
+        while not up.is_set():
+            stages.append(stage_of(project, project.board.list()))
+            time.sleep(0.05)
+
+    threading.Thread(target=bring_proxy_back, daemon=True).start()
+    threading.Thread(target=watch, daemon=True).start()
+    try:
+        status = Manager(k, project).run()
+    finally:
+        proxy.close()
+    kinds = [e["kind"] for e in project.log.read()]
+    assert status == "done" and fake.refused >= 1
+    assert "manager/network_wait" in kinds and "manager/network_back" in kinds
+    assert "network_wait" in stages
+    assert not {"manager/escalated", "manager/replan", "manager/doctor_asked"} & set(kinds)
+    assert project.meta.get("network_wait") in (None, {})
+    assert all(t["attempts"] == 0 for t in project.board.list())      # the outage is nobody's attempt
+
+
+def test_dashboard_names_the_wait():
+    from pathlib import Path
+
+    import artel.web
+    from artel.analytics import PROJECT_STATUS
+
+    html = (Path(artel.web.__file__).parent / "index.html").read_text(encoding="utf-8")
+    assert "network_wait:'нет сети / прокси недоступен, жду'" in html
+    assert PROJECT_STATUS["network_wait"] == "нет сети / прокси недоступен, жду"
+
+
+def test_stop_during_planning_network_wait_ends_stopped(tmp_path, monkeypatch):
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()                                          # nothing listens: the wait never ends by itself
+    monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{port}")
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "backoff_base_s": 0.05, "network_probe_s": 0.05,
+                                      "network_probe_max_s": 0.2})
+    k = new_kernel(cfg)
+    k.provide("llm:scripted", ProxyDownProvider(k.get("llm") or k.get("llm_factory")(), port))
+    project = Project.create("write hello.txt containing hello", cfg, name="net", workdir=str(tmp_path / "wd"))
+    m = Manager(k, project)
+    threading.Timer(0.6, m.stop.set).start()
+    assert m.run() == "stopped"
+    assert project.meta["status"] == "stopped"
+
+
+def _waiting_manager(tmp_path, monkeypatch, escalate_s):
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "network_probe_s": 0.01, "network_probe_max_s": 0.02,
+                                      "network_wait_escalate_s": escalate_s})
+    project = Project.create("g", cfg, name="long", workdir=str(tmp_path / "wd"))
+    mgr = Manager(new_kernel(cfg), project)
+    from artel import netprobe
+
+    state = {"up": False}
+    monkeypatch.setattr(netprobe, "reachable", lambda config, timeout=5.0: (state["up"], "proxy:1"))
+    mgr._enter_network_wait("ConnectError: refused")
+    return project, mgr, state
+
+
+def test_long_network_wait_raises_a_needs_human_notice_and_keeps_probing(tmp_path, monkeypatch):
+    from artel.analytics import project_stats
+
+    project, mgr, state = _waiting_manager(tmp_path, monkeypatch, escalate_s=0.15)
+    deadline = time.time() + 5
+    while time.time() < deadline and not project.log.read(kinds={"manager/network_wait_escalated"}):
+        mgr._network_tick()
+        time.sleep(0.02)
+    ev = project.log.read(kinds={"manager/network_wait_escalated"})
+    assert len(ev) == 1                                   # once, however long the wait lasts
+    for _ in range(5):
+        mgr._network_tick()
+        time.sleep(0.03)
+    assert len(project.log.read(kinds={"manager/network_wait_escalated"})) == 1
+    assert len(project.log.read(kinds={"manager/network_probe_failed"})) >= 2 and mgr.net_wait is not None  # still probing
+    stats = project_stats(Project.open(project.slug, mgr.cfg), live=True)
+    notice = [a for a in stats["attention"] if a.get("kind") == "network_wait"]
+    assert notice and "сет" in notice[0]["question"].lower() and stats["stage"] == "network_wait"
+    state["up"] = True                                    # the network is back: the notice goes away by itself
+    time.sleep(0.05)
+    mgr._network_tick()
+    assert mgr.net_wait is None
+    assert not [a for a in project_stats(Project.open(project.slug, mgr.cfg), live=True)["attention"]
+                if a.get("kind") == "network_wait"]
+
+
+def test_short_network_wait_does_not_escalate(tmp_path, monkeypatch):
+    project, mgr, state = _waiting_manager(tmp_path, monkeypatch, escalate_s=3600)
+    for _ in range(5):
+        mgr._network_tick()
+        time.sleep(0.03)
+    assert not project.log.read(kinds={"manager/network_wait_escalated"})
+
+
+# --- a dead loopback proxy holds the gate; it is never judged ---------------------------------------------------
+
+def _dead_port():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def test_gate_is_held_while_the_loopback_proxy_is_down_and_rerun_when_it_is_back(tmp_path, monkeypatch):
+    from artel import manager as manager_mod
+    from artel.agent import Outcome
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    port = _dead_port()
+    monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{port}")
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "network_probe_s": 0.01, "network_probe_max_s": 0.05})
+    project = Project.create("g", cfg, name="held", workdir=str(tmp_path / "wd"))
+    mgr = Manager(new_kernel(cfg), project)
+    tid = mgr.board.add_task("T", "b", assignee="x", criteria=["c"], checks=["exit 1"], created_by="planner")
+    mgr.board.update(tid, status="review")
+    reviewed = []
+    monkeypatch.setattr(manager_mod, "run_agent", lambda *a, **k: reviewed.append(1) or Outcome(status="error"))
+
+    result = mgr.job_review(mgr.board.get(tid))
+    mgr.on_review(tid, result)
+    assert not reviewed                                        # nothing was judged, no reviewer tokens spent
+    assert mgr.net_wait is not None                            # the existing network wait took over
+    assert mgr.board.get(tid)["status"] == "review" and mgr.board.get(tid)["attempts"] == 0
+    assert not project.log.read(kinds={"review/verdict"})      # no verdict of any class
+
+    proxy = socket.socket()                                    # the proxy is back: the gate runs again, for real
+    proxy.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    proxy.bind(("127.0.0.1", port))
+    proxy.listen(5)
+    try:
+        time.sleep(0.05)
+        assert mgr._network_tick() is False and mgr.net_wait is None
+        gates, _ = mgr.job_review(mgr.board.get(tid))
+        assert gates and gates[0]["exit"] == 1 and "env" not in gates[0]
+        assert reviewed                                        # now the reviewer sees the real failure
+    finally:
+        proxy.close()
+
+
+def test_dead_loopback_proxy_with_a_local_provider_holds_a_bounded_number_of_times(tmp_path, monkeypatch):
+    """A provider that answers (local) must not clear a wait caused by the dead proxy: the wait ends when the
+    proxy answers; after three holds the gates are judged with a note and the owner is told."""
+    from artel import manager as manager_mod, netprobe
+    from artel.agent import Outcome
+    from artel.analytics import project_stats
+
+    monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("HTTPS_PROXY", f"http://127.0.0.1:{_dead_port()}")
+    monkeypatch.setattr(netprobe, "reachable", lambda config, timeout=5.0: (True, "local provider"))
+    cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted", "network_probe_s": 0.0, "network_probe_max_s": 0.0})
+    project = Project.create("g", cfg, name="bounded", workdir=str(tmp_path / "wd"))
+    mgr = Manager(new_kernel(cfg), project)
+    tid = mgr.board.add_task("T", "b", assignee="x", criteria=["c"], checks=["exit 1"], created_by="planner")
+    mgr.board.update(tid, status="review")
+    reviewed = []
+    monkeypatch.setattr(manager_mod, "run_agent", lambda *a, **k: reviewed.append(1) or Outcome(status="error"))
+
+    for _ in range(3):
+        result = mgr.job_review(mgr.board.get(tid))
+        mgr.on_review(tid, result)
+        assert mgr.net_wait is not None and not reviewed
+        assert mgr._network_tick() is True and mgr.net_wait is not None   # the local provider answering is not enough
+    gates, _ = mgr.job_review(mgr.board.get(tid))                         # the fourth time it is judged
+    assert reviewed and gates[0]["exit"] == 1 and "прокси недоступен" in gates[0]["output"]
+    notice = [a for a in project_stats(Project.open(project.slug, mgr.cfg), live=True)["attention"]
+              if a.get("kind") == "network_wait"]
+    assert notice and "прокси" in notice[0]["question"].lower()

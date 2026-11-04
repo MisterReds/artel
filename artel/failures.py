@@ -17,6 +17,10 @@ SETUP = re.compile(r"не установлен|not installed|command not found|n
                    r"invalid api key|authentication_error|authentication failed|unauthorized|\b401\b|"
                    r"api key .*not set|missing api key|no api key|MISSING_CREDENTIAL|INVALID_CREDENTIAL|"
                    r"sandbox cannot start commands|bwrap: .*Operation not permitted", re.I)
+NETWORK = re.compile(r"connection refused|connection reset|connect ?error|connect ?timeout|read ?timeout|timed out|"
+                     r"proxy ?error|cannot connect to proxy|api ?connection ?error|connection error|"
+                     r"name or service not known|temporary failure in name resolution|getaddrinfo failed|"
+                     r"network is unreachable|no route to host|remote ?protocol ?error|server disconnected", re.I)
 
 
 def retry_at(text: str) -> Optional[float]:
@@ -36,9 +40,27 @@ def retry_at(text: str) -> Optional[float]:
 
 
 def classify(text: str) -> str:
-    """'limit' (wait for the provider), 'setup' (a person must fix the environment) or 'work' (retry may help)."""
+    """'limit' (wait for the provider), 'network' (proxy/provider unreachable: wait and probe), 'setup' (a person
+    must fix the environment) or 'work' (retry may help)."""
     if LIMIT.search(text or ""):
         return "limit"
+    if NETWORK.search(text or ""):
+        return "network"
     if SETUP.search(text or ""):
         return "setup"
     return "work"
+
+
+# A gate that cannot run here says nothing about the work. That is decided from the machine, never from text the
+# checked command printed (it can print anything): the manager marks a failed gate ``env`` when its first program
+# is absent from the gate's PATH and the shell exited 126/127, or the sandbox launcher reported that the command
+# never started. Everything else is a work failure (a dead proxy holds the gate instead, see Manager.job_review).
+
+
+def gate_failure_class(gates: list) -> Optional[str]:
+    """None when every gate passed; 'environment' when every failing gate carries a machine-side ``env`` mark;
+    otherwise 'work'."""
+    failing = [g for g in gates if g.get("exit") != 0]
+    if not failing:
+        return None
+    return "environment" if all(g.get("env") for g in failing) else "work"

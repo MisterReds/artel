@@ -18,7 +18,7 @@ def shape(events):
 def test_codex_thread_and_usage():
     assert shape(codex.parse(L(type="thread.started", thread_id="th-1"))) == [("session", {"id": "th-1"})]
     u = L(type="turn.completed", usage={"input_tokens": 1000, "cached_input_tokens": 400, "output_tokens": 200})
-    assert shape(codex.parse(u)) == [("usage", {"input_tokens": 1000, "output_tokens": 200, "cached": 400,
+    assert shape(codex.parse(u)) == [("usage", {"input_tokens": 600, "output_tokens": 200, "cached": 400,
                                                 "cost_usd": 0.0})]
     assert codex.parse(L(type="turn.started")) == []
 
@@ -98,7 +98,7 @@ def test_claude_tool_results_and_result():
             usage={"input_tokens": 10, "cache_creation_input_tokens": 5, "cache_read_input_tokens": 20,
                    "output_tokens": 7})
     assert shape(claude_code.parse(res)) == [
-        ("session", {"id": "s-1"}), ("usage", {"input_tokens": 35, "output_tokens": 7, "cost_usd": 0.5}),
+        ("session", {"id": "s-1"}), ("usage", {"input_tokens": 15, "output_tokens": 7, "cached": 20, "cost_usd": 0.5}),
         ("end", {"is_error": False, "detail": "done"})]
 
 

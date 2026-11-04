@@ -160,6 +160,9 @@ def _prefix_hit(prefix: list, seg: list[str]) -> bool:
 
 
 _SH = r"(?:ba|z|da)?sh"
+# A command word at command position: after a separator, a subshell, a quote opening `sh -c`, or a launcher prefix.
+_AT_CMD = (r"(?:^|[;&|(`\n]|\$\(|\b(?:then|do|else|env|exec|command|nohup|time|xargs|nice|timeout|stdbuf|setsid|watch|"
+           rf"busybox)\b|\b{_SH}\s+(?:-\S+\s+)*[\"']|\beval\s+[\"']?)\s*(?:(?:-\S+|\w+=\S*|\d+)\s+)*(?:\S*/)?")
 _CRED = (r"(?:~|\$HOME|/home/[^/\s]+|/root)/\.ssh/(?:id_\S*|authorized_keys)|\.aws/credentials|"
          r"(?:^|[\s/='\"<>])\.env(?:\.[\w.-]+)?(?=$|[\s'\"|;&<>])")
 DEFAULT_RULES = [
@@ -184,11 +187,49 @@ DEFAULT_RULES = [
      "match": ["git push --force origin main", "git push -f origin master", "git push origin +main",
                "git push --force-with-lease origin HEAD:main"],
      "not_match": ["git push origin main", "git push --force origin feature", "git push -f origin my-main-fix"]},
+    {"id": "privilege-escalation", "regex": rf"{_AT_CMD}(?:sudo|doas|pkexec|su)(?=\s|$|[;&|)\"'`])",
+     "decision": "forbidden", "justification": "Agents never escalate privileges; Artel itself installs approved "
+     "tools through its own root wrapper.",
+     "match": ["sudo -n /usr/local/sbin/artel-root apt-install x", "env sudo ls", "/usr/bin/sudo id", "doas id",
+               "pkexec id", "ls && sudo id", "sh -c 'sudo id'", "env -i FOO=1 sudo -n id", "timeout 5 sudo id",
+               "echo x | sudo tee f", "(sudo id)", "$(sudo id)"],
+     "not_match": ["echo use sudo here", "git commit -m 'fix sudo docs'", "ls sudoers.txt", "pseudo -x", "cat sudo.md",
+                   "python -c 'import sudo'"]},
+    {"id": "root-wrapper", "regex": r"(?<![\w.-])(?:\S*/)?artel-root(?!\.sh)(?=\s|$|[;&|)\"'`])",
+     "decision": "forbidden", "justification": "The root wrapper is called only by Artel's own harness process, never "
+     "from an agent's shell.",
+     "match": ["/usr/local/sbin/artel-root apt-install x", "artel-root apparmor-bwrap", "ls && artel-root x"],
+     "not_match": ["cat artel/data/artel-root.sh", "echo artel-rooted", "ls my-artel-root"]},
     {"id": "credential-files", "regex": _CRED, "decision": "prompt",
      "justification": "Touches credential files (SSH keys, AWS credentials, .env); a person must approve.",
      "match": ["cat ~/.ssh/id_rsa", "cp .aws/credentials /tmp/x", "cat .env", "echo K=1 >> .env.local"],
      "not_match": ["cat ~/.ssh/config", "ls .envrc", "cat environment.txt", "cat my.envfile"]},
 ]
+
+
+def protected_rule(project_dir=None) -> dict:
+    """Forbid commands that write the owner's configuration: ARTEL_HOME/{policy.yaml,artel.yaml,skills}, the same
+    names in the project, via a literal path, $ARTEL_HOME, ~/.artel or ../ (best effort; the OS sandbox is the
+    boundary: the same paths are read-only there). Reading them stays allowed."""
+    homes = [re.escape(str(artel_home())), r"\$\{?ARTEL_HOME\}?", r"~/\.artel", r"\$HOME/\.artel", r"\$\{HOME\}/\.artel"]
+    if project_dir:
+        homes.append(re.escape(str(project_dir)))
+    tgt = rf"(?:(?:{'|'.join(homes)})/(?:policy\.yaml|artel\.yaml|skills\b)|(?:\.\./)+(?:policy|artel)\.yaml)"
+    quote = r"[\"']?"
+    any_arg = (r"(?:tee|mv|rm|truncate|touch|chmod|chown|shred|"
+               r"(?:sed|perl|ruby)\s+(?:-\S+\s+)*-\S*i\S*)")        # these change the path wherever it appears
+    last_arg = r"(?:cp|install|ln|rsync)"                            # these change only their destination
+    end = r"(?=\s*(?:$|[;&|)\n]))"
+    rx = (rf">\|?\s*{quote}{tgt}"                                   # redirection onto the path
+          rf"|\b{any_arg}\b[^;&|\n]*{tgt}"
+          rf"|\b{last_arg}\b[^;&|\n]*\s{quote}{tgt}\S*?{quote}{end}"
+          rf"|\bdd\b[^;&|\n]*\bof={quote}{tgt}"
+          rf"|\w+={quote}{tgt}[^\n]*(?:;|&&|\|\||\n)[^\n]*(?:>>?\s*{quote}\$\{{?\w+|\b(?:{any_arg}|{last_arg})\b[^;&|\n]*\$\{{?\w+)")
+    return {"id": "protected-config", "regex": rx, "decision": "forbidden",
+            "justification": "policy.yaml, artel.yaml and the skills library belong to the owner; agents never write "
+            "them (use skill_manage for your own skills).",
+            "match": ["echo x > ~/.artel/policy.yaml", "cp a $ARTEL_HOME/artel.yaml", "sed -i s/a/b/ ../../policy.yaml"],
+            "not_match": ["cat ~/.artel/policy.yaml", "echo x > notes/policy.yaml.txt", "cp ~/.artel/artel.yaml /tmp/c"]}
 
 
 def _examples(rule_id: str, key: str, raw) -> list[str]:
@@ -266,7 +307,7 @@ class Policy:
 
 def load_policy(project_dir=None) -> Policy:
     """Built-in defaults, then ARTEL_HOME/policy.yaml, then <project_dir>/policy.yaml; same id = override."""
-    raws = [(r, "defaults") for r in DEFAULT_RULES]
+    raws = [(r, "defaults") for r in DEFAULT_RULES] + [(protected_rule(project_dir), "defaults")]
     for base in (artel_home(), Path(project_dir) if project_dir else None):
         if base is not None and (base / "policy.yaml").is_file():
             raws += _read(base / "policy.yaml")
@@ -286,6 +327,16 @@ def _stamp(path: Path):
         return (str(path), st.st_mtime_ns, st.st_size)
     except OSError:
         return (str(path), None, None)
+
+
+SUDO_RULES = ("privilege-escalation", "root-wrapper")
+
+
+def note_sudo(log, verdict: Decision, command: str, where: str, **ctx) -> None:
+    """Journal an attempt at ``sudo`` / the root wrapper as ``policy/sudo``. These rules are a lint that catches
+    honest mistakes, not the security boundary (that is the wrapper's allowlist); the trace shows who tried."""
+    if verdict.decision != "allow" and verdict.rule is not None and verdict.rule.id in SUDO_RULES:
+        log.append("policy/sudo", rule=verdict.rule.id, where=where, command=command[:500], **ctx)
 
 
 def evaluate(command: str, project_dir=None) -> Decision:

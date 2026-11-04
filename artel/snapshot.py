@@ -9,11 +9,27 @@ The work tree's own .git is never touched. Every method degrades to None/False i
 
 from __future__ import annotations
 
+import io
 import subprocess
+import tarfile
 from pathlib import Path
 from typing import Optional
 
 EXCLUDES = [".git", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"]  # tool caches are not work
+
+
+def extract_tar(data: bytes, dest) -> bool:
+    """Unpack a ``git archive`` tar into ``dest`` (regular files and directories only, nothing outside ``dest``)."""
+    dest = Path(dest).resolve()
+    try:
+        with tarfile.open(fileobj=io.BytesIO(data)) as tf:
+            for m in tf.getmembers():
+                target = (dest / m.name).resolve()
+                if (m.isfile() or m.isdir()) and (target == dest or dest in target.parents):
+                    tf.extract(m, dest)
+        return True
+    except (OSError, tarfile.TarError):
+        return False
 
 
 class Snapshot:
@@ -61,6 +77,17 @@ class Snapshot:
             return None
         out = self._git("write-tree")
         return out.strip() or None if out is not None else None
+
+    def export(self, tree: str, dest) -> bool:
+        """Write the files of ``tree`` into the empty directory ``dest`` (the work tree is not touched)."""
+        if not tree or not self._init():
+            return False
+        try:
+            p = subprocess.run(["git", f"--git-dir={self.git_dir}", "archive", "--format=tar", tree],
+                               capture_output=True, timeout=120)
+        except (OSError, subprocess.SubprocessError):
+            return False
+        return p.returncode == 0 and extract_tar(p.stdout, dest)
 
     def _tree_files(self, tree: str) -> Optional[set[str]]:
         out = self._git("ls-tree", "-r", "-z", "--name-only", tree)

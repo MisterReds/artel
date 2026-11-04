@@ -434,6 +434,16 @@ class TelegramBot:
                     self.listing[chat] = [slug] + [s for s in self.listing.get(chat, []) if s != slug]
                     self.send(chat, text + ("\nОтветить: /answer 1 текст" if st == "waiting_human" else "\nПодробно: /p 1"))
                 sent += 1
+        for p in self._portfolio():  # a long network outage: one message per wait, not per tick
+            note = next((a for a in p.get("attention") or [] if a.get("kind") == "network_wait"), None)
+            key = f"{p['slug']}#net"
+            if note and seen.get(key) != note.get("since"):
+                seen[key] = note.get("since")
+                for chat in paired:
+                    self.send(chat, f"📡 Нет сети: {p.get('name') or p['slug']}\n{note['question']}")
+                sent += 1
+            elif not note:
+                seen.pop(key, None)
         upd = getattr(self.runner.updater, "_last", None) or {}
         if upd.get("available") and seen.get("_update") != upd.get("remote"):
             seen["_update"] = upd.get("remote")
