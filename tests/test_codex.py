@@ -23,8 +23,8 @@ def fake_codex(tmp_path) -> str:
     return str(shim)
 
 
-FAKE_CODEX_VARS = ["FAKE_CODEX_CMD", "FAKE_CODEX_LAZY", "FAKE_CODEX_LIMIT", "FAKE_CODEX_LOG", "FAKE_CODEX_NO_USAGE",
-                   "FAKE_CODEX_SANDBOX", "FAKE_CODEX_BADLINES", "FAKE_CODEX_STDERR_KB", "FAKE_CODEX_USAGE_DELAY", "FAKE_CODEX_WRITE"]
+FAKE_CODEX_VARS = ["FAKE_CODEX_CMD", "FAKE_CODEX_LAZY", "FAKE_CODEX_LIMIT", "FAKE_CODEX_LOG", "FAKE_CODEX_NO_USAGE", "FAKE_CODEX_NO_RESUBMIT",
+                   "FAKE_CODEX_SANDBOX", "FAKE_CODEX_BADLINES", "FAKE_CODEX_STDERR_KB", "FAKE_CODEX_USAGE_DELAY", "FAKE_CODEX_WRITE", "FAKE_CODEX_FLOOD"]
 
 
 @pytest.fixture
@@ -251,6 +251,33 @@ def test_codex_usage_arriving_after_the_terminal_tool_is_recorded(env, monkeypat
     assert not end.get("usage_missing")
 
 
+def test_codex_submit_judged_before_artel_read_the_output_lines_still_counts_usage_once(env, monkeypatch):
+    """The CLI prints its command result and calls the terminal tool back to back; Artel's guard ("you ran nothing")
+    reads state fed by the stdout lines, so on a loaded machine the first submit can be judged before they are read.
+    Artel must wait until it has read everything the CLI already printed before judging the submit: it is accepted on
+    the FIRST call (the fake does not repeat a rejected one), the run is one attempt, its usage counted once."""
+    from artel.adapters.agent import loop
+
+    real = loop.Run._tool_result
+
+    def slow(self, e):
+        time.sleep(0.4)  # the reader lags behind the CLI's output (its events together stay under the bridge's drain cap)
+        real(self, e)
+
+    monkeypatch.setattr(loop.Run, "_tool_result", slow)
+    monkeypatch.setenv("FAKE_CODEX_USAGE_DELAY", "1")
+    monkeypatch.setenv("FAKE_CODEX_NO_RESUBMIT", "1")
+    cfg, project, _ = env
+    out, ctx = _run(cfg, project)
+    assert out.status == "terminal" and out.name == "task_submit", out.error
+    submits = [e for e in project.log.read() if e["kind"] == "tool/result" and e.get("tool") == "task_submit"
+              and e.get("runtime") == "codex"]
+    assert [e["is_error"] for e in submits] == [False], submits
+    assert not [e for e in project.log.read() if e["kind"] == "bridge/reader_lag"]
+    assert out.usage["input_tokens"] == 1000 and out.usage["output_tokens"] == 200
+    assert not [e for e in project.log.read() if e["kind"] == "agent/continuation"]
+
+
 def test_codex_killed_without_usage_is_flagged_not_silently_zero(env, monkeypatch):
     from artel.adapters.agent import codex
 
@@ -284,3 +311,107 @@ def test_codex_agent_satisfies_the_agent_port_and_runs(env):
                                        "capability": "executor", "reversible": True, "depends_on": []})
     res = agent.run(contract, str(project.shared), ["task_submit"])
     assert res.status == "done" and res.usage.in_ > 0
+
+
+def test_stdout_reader_yields_whole_lines_and_is_drained_only_when_the_pipe_is_empty():
+    from artel.adapters.agent.loop import StdoutReader
+
+    r_fd, w_fd = os.pipe()
+    r, w = os.fdopen(r_fd, "r"), os.fdopen(w_fd, "wb", buffering=0)
+    reader = StdoutReader(r)
+    got = []
+    t = __import__("threading").Thread(target=lambda: got.extend(reader.lines()), daemon=True)
+    t.start()
+    assert reader.wait_drained(5)  # nothing written: caught up
+    w.write("héllo\r\nwor".encode()[:3])  # a multi-byte character split across writes, no newline yet
+    assert reader.wait_drained(5) and got == []
+    w.write("héllo\r\nwor".encode()[3:])
+    assert reader.wait_drained(5) and got == ["héllo\n"]
+    w.close()
+    t.join(5)
+    assert got == ["héllo\n", "wor"] and reader.wait_drained(0.1)
+    r.close()
+
+
+def _read_chunks(chunks):
+    """Feed the chunks to a StdoutReader one by one (each fully processed before the next) and return its lines."""
+    import threading
+    from artel.adapters.agent.loop import StdoutReader
+
+    r_fd, w_fd = os.pipe()
+    r, w = os.fdopen(r_fd, "r"), os.fdopen(w_fd, "wb", buffering=0)
+    reader, got = StdoutReader(r), []
+    t = threading.Thread(target=lambda: got.extend(reader.lines()), daemon=True)
+    t.start()
+    for c in chunks:
+        w.write(c)
+        assert reader.wait_drained(5)
+    w.close()
+    t.join(5)
+    r.close()
+    return got
+
+
+def test_stdout_reader_crlf_split_across_chunks_is_one_line_break():
+    assert _read_chunks([b"a\r", b"\nb\n"]) == ["a\n", "b\n"]
+
+
+def test_stdout_reader_lone_cr_is_a_line_break_like_universal_newlines():
+    assert _read_chunks([b"x\ry\n"]) == ["x\n", "y\n"]
+    assert _read_chunks([b"x\r", b"y\n"]) == ["x\n", "y\n"]
+
+
+def test_tool_call_is_judged_after_its_preceding_lines_even_under_continuous_output(env, monkeypatch):
+    monkeypatch.setenv("FAKE_CODEX_FLOOD", "1")  # a backlog before the edit, then output that never stops
+    monkeypatch.setenv("FAKE_CODEX_NO_RESUBMIT", "1")  # a rejected submit would not be retried: the first judgement counts
+    from artel.adapters.agent import codex
+
+    real_parse = codex.parse
+
+    def slow_parse(line):  # a reader that cannot keep up with the CLI's output
+        if '"noise"' in line:
+            end = time.perf_counter() + 0.0001  # a busy wait: time.sleep is too coarse on Windows
+            while time.perf_counter() < end:
+                pass
+        return real_parse(line)
+
+    monkeypatch.setattr(codex, "parse", slow_parse)
+    from artel.adapters.agent.loop import StdoutReader
+
+    real_wait, waited = StdoutReader.wait_drained, []
+
+    def timed_wait(self, timeout):
+        t = time.monotonic()
+        try:
+            return real_wait(self, timeout)
+        finally:
+            waited.append(time.monotonic() - t)
+
+    monkeypatch.setattr(StdoutReader, "wait_drained", timed_wait)
+    cfg, project, _ = env
+    out, ctx = _run(cfg, project)
+    assert out.status == "terminal" and out.name == "task_submit", out.error
+    assert "hello.py" in ctx.edited_files
+    ev = project.log.read()
+    submits = [e for e in ev if e["kind"] == "tool/result" and e.get("tool") == "task_submit" and e.get("runtime") == "codex"]
+    assert [e["is_error"] for e in submits] == [False], submits
+    assert not [e for e in ev if e["kind"] == "bridge/reader_lag"]
+    assert waited and max(waited) < 1.5, waited  # the watermark, not the 2 s cap
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX fd numbers")
+def test_stdout_reader_works_on_a_pipe_whose_fd_is_above_1024():
+    import resource
+
+    soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+    if soft < 1300:
+        resource.setrlimit(resource.RLIMIT_NOFILE, (min(1300, hard), hard))
+    pad = [os.open(os.devnull, os.O_RDONLY) for _ in range(1100)]
+    try:
+        r_fd, w_fd = os.pipe()
+        assert r_fd >= 1024
+        os.close(r_fd), os.close(w_fd)
+        assert _read_chunks([b"a\n", b"b\n"]) == ["a\n", "b\n"]
+    finally:
+        for fd in pad:
+            os.close(fd)
