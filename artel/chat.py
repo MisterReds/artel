@@ -230,10 +230,13 @@ def _read_usage() -> dict:
 
 
 def record_usage(tier: str, usage: dict, cost_usd: float = 0.0) -> None:
+    # stage B usage shape: input_tokens excludes cache reads, which are reported apart as ``cached``
     tokens = int((usage or {}).get("input_tokens") or 0) + int((usage or {}).get("output_tokens") or 0)
+    cached = int((usage or {}).get("cached") or 0)
     with _usage_lock:
         acct = _read_usage()
         t = acct.setdefault("tiers", {}).setdefault(tier or "unknown", {"tokens": 0, "calls": 0, "usd": 0.0})
+        t["cached"] = int(t.get("cached") or 0) + cached
         t["tokens"] += tokens
         t["calls"] += 1
         t["usd"] = round(t["usd"] + (cost_usd or 0.0), 6)

@@ -274,7 +274,7 @@ def test_codex_submit_judged_before_artel_read_the_output_lines_still_counts_usa
               and e.get("runtime") == "codex"]
     assert [e["is_error"] for e in submits] == [False], submits
     assert not [e for e in project.log.read() if e["kind"] == "bridge/reader_lag"]
-    assert out.usage["input_tokens"] == 1000 and out.usage["output_tokens"] == 200
+    assert out.usage["input_tokens"] == 600 and out.usage["output_tokens"] == 200
     assert not [e for e in project.log.read() if e["kind"] == "agent/continuation"]
 
 
