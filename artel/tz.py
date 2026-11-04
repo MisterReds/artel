@@ -5,7 +5,6 @@ import os
 import time
 from datetime import datetime, timezone, tzinfo
 from pathlib import Path
-from typing import Optional
 from zoneinfo import ZoneInfo
 
 
@@ -19,7 +18,7 @@ def valid_zone(name) -> bool:
     return True
 
 
-def configured_zone(config: Optional[dict]) -> str:
+def configured_zone(config: dict | None) -> str:
     z = ((config or {}).get("ui") or {}).get("timezone")
     return z.strip() if isinstance(z, str) and valid_zone(z) else ""
 
@@ -41,20 +40,20 @@ def system_zone() -> str:
     return ""
 
 
-def zone_name(config: Optional[dict] = None) -> str:
+def zone_name(config: dict | None = None) -> str:
     return configured_zone(config) or system_zone() or time.tzname[0] or "UTC"
 
 
-def get_zone(config: Optional[dict] = None) -> tzinfo:
+def get_zone(config: dict | None = None) -> tzinfo:
     z = configured_zone(config) or system_zone()
     if z:
         return ZoneInfo(z)
     return datetime.now().astimezone().tzinfo or timezone.utc
 
 
-def fmt_ts(ts: float, fmt: str = "%Y-%m-%d %H:%M", config: Optional[dict] = None) -> str:
+def fmt_ts(ts: float, fmt: str = "%Y-%m-%d %H:%M", config: dict | None = None) -> str:
     return datetime.fromtimestamp(ts, get_zone(config)).strftime(fmt)
 
 
-def info(config: Optional[dict] = None) -> dict:
+def info(config: dict | None = None) -> dict:
     return {"configured": configured_zone(config), "effective": zone_name(config)}

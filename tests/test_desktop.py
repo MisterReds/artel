@@ -12,7 +12,6 @@ import pytest
 
 from artel import cli, desktop
 
-
 # ---------- browser discovery ----------
 
 def fake_fs(*present):

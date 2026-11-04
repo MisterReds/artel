@@ -28,7 +28,6 @@ import shutil
 import subprocess
 import threading
 from pathlib import Path
-from typing import Optional
 
 from .snapshot import EXCLUDES, extract_tar
 
@@ -45,7 +44,7 @@ def isolation_enabled(config: dict) -> bool:
 
 
 class Isolation:
-    def __init__(self, project, git_dir: Optional[Path] = None, base_dir: Optional[Path] = None):
+    def __init__(self, project, git_dir: Path | None = None, base_dir: Path | None = None):
         self.project = project
         self.shared = Path(project.shared)
         self.git_dir = Path(git_dir or project.root / "isolation.git")
@@ -88,7 +87,7 @@ class Isolation:
             raise IsolationError(f"task {task_id}: its worktree is not registered in isolation.git")
         return self._run([f"--git-dir={admin}", f"--work-tree={wt}", *args], wt, check)
 
-    def _admin(self, task_id: str) -> Optional[Path]:
+    def _admin(self, task_id: str) -> Path | None:
         """isolation.git/worktrees/<name> of this task's worktree (found by its recorded path, not the .git file)."""
         want = self.path(task_id).resolve()  # the directory, not .git: the worker may replace .git with a link
         for d in sorted((self.git_dir / "worktrees").glob("*")):
@@ -106,7 +105,7 @@ class Isolation:
     def branch(task_id: str) -> str:
         return f"task/{task_id}"
 
-    def _rev(self, ref: str) -> Optional[str]:
+    def _rev(self, ref: str) -> str | None:
         p = self._repo("rev-parse", "--verify", "-q", f"{ref}^{{commit}}", check=False)
         return p.stdout.strip() or None if p.returncode == 0 else None
 

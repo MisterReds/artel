@@ -21,7 +21,6 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
 PROMPT = """You are Artel's diagnostician. Something in Artel does not work and a person wants to know why, in plain
 Russian, and what to do. You get the error and the facts Artel collected; you may read the listed log files and
@@ -90,9 +89,8 @@ def _tail(path: Path, n: int = 1500) -> str:
         return ""
 
 
-def facts(config: dict, problem: str, project=None, task_id: Optional[str] = None) -> tuple[str, list[str]]:
+def facts(config: dict, problem: str, project=None, task_id: str | None = None) -> tuple[str, list[str]]:
     """A compact, factual brief for the diagnostician, and the files it may read."""
-    from . import limits
     from .project import artel_home
 
     lines = [f"Проблема: {problem.strip()[:2000]}", "",
@@ -112,7 +110,7 @@ def facts(config: dict, problem: str, project=None, task_id: Optional[str] = Non
         r = routing(config)
         lines.append(f"Рантайм по умолчанию: {r['runtime']} (сейчас {r['auto_resolves_to']}); по ролям: {r['runtime_by_role']}; "
                      f"отключены: {r['disabled_runtimes']}; лимиты: {r['limited'] or '—'}")
-    except Exception as e:  # noqa: BLE001 - facts are best effort
+    except Exception as e:
         lines.append(f"(состояние провайдеров не прочитано: {e!r})")
     readable = []
     log = artel_home() / "tools" / "models" / "llama-server.log"
@@ -141,7 +139,7 @@ def facts(config: dict, problem: str, project=None, task_id: Optional[str] = Non
     return "\n".join(lines), readable
 
 
-def choose_runtime(config: dict, exclude: Optional[str] = None) -> str:
+def choose_runtime(config: dict, exclude: str | None = None) -> str:
     """An available runtime for the diagnostician, preferring one other than the failing one."""
     from . import limits
     from .runtimes import connected_runtimes, detect_runtime
@@ -167,8 +165,8 @@ def _store(report: dict) -> dict:
     return report
 
 
-def diagnose(config: dict, problem: str, project=None, task_id: Optional[str] = None,
-             exclude_runtime: Optional[str] = None, use_model: bool = True) -> dict:
+def diagnose(config: dict, problem: str, project=None, task_id: str | None = None,
+             exclude_runtime: str | None = None, use_model: bool = True) -> dict:
     """Explain a failure: {cause, evidence, who, steps, confidence, by, hints}. Never raises."""
     brief, readable = facts(config, problem, project, task_id)
     rep = _diagnose(config, problem, brief, readable, project, task_id, exclude_runtime, use_model)
@@ -178,7 +176,7 @@ def diagnose(config: dict, problem: str, project=None, task_id: Optional[str] = 
         reports.record("failure", problem.strip().splitlines()[0][:200] if problem.strip() else "сбой",
                        problem + "\n\n--- факты ---\n" + brief, diagnosis=rep, project=getattr(project, "slug", None),
                        task_id=task_id, config=config)
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
     return rep
 
@@ -218,7 +216,7 @@ def _diagnose(config, problem, brief, readable, project, task_id, exclude_runtim
                 if out.name == "diagnosis_report":
                     return _store({**base, **out.payload, "by": rt})
                 base["model_error"] = f"{rt}: {out.status} {out.error}"[:400]
-            except Exception as e:  # noqa: BLE001 - the diagnostician must never become the next failure
+            except Exception as e:
                 base["model_error"] = repr(e)[:400]
         else:
             base["model_error"] = "нет доступной модели"
@@ -238,8 +236,8 @@ class Jobs:
         self.state: dict = {}
         self.lock = threading.Lock()
 
-    def start(self, config: dict, problem: str, project=None, task_id: Optional[str] = None,
-              exclude_runtime: Optional[str] = None) -> dict:
+    def start(self, config: dict, problem: str, project=None, task_id: str | None = None,
+              exclude_runtime: str | None = None) -> dict:
         jid = uuid.uuid4().hex[:10]
         with self.lock:
             self.state[jid] = {"id": jid, "phase": "running", "since": time.time()}
@@ -264,4 +262,4 @@ def format_report(rep: dict) -> str:
             + (f"Доказательство: {rep.get('evidence')}\n" if rep.get("evidence") else "") + f"({by})")
 
 
-__all__ = ["diagnose", "known_causes", "facts", "choose_runtime", "Jobs", "format_report", "PROMPT"]
+__all__ = ["PROMPT", "Jobs", "choose_runtime", "diagnose", "facts", "format_report", "known_causes"]

@@ -13,7 +13,6 @@ import io
 import subprocess
 import tarfile
 from pathlib import Path
-from typing import Optional
 
 EXCLUDES = [".git", "__pycache__", ".pytest_cache", ".ruff_cache", ".mypy_cache"]  # tool caches are not work
 
@@ -40,7 +39,7 @@ class Snapshot:
         self.work_tree = Path(work_tree)
         self.ignores = ignores
 
-    def _git(self, *args: str, check: bool = True) -> Optional[str]:
+    def _git(self, *args: str, check: bool = True) -> str | None:
         cmd = ["git", f"--git-dir={self.git_dir}", f"--work-tree={self.work_tree}",
                "-c", "user.name=artel", "-c", "user.email=artel@localhost",
                "-c", "core.autocrlf=false", "-c", "core.quotepath=false", "-c", "gc.auto=0",
@@ -69,7 +68,7 @@ class Snapshot:
         except OSError:
             return False
 
-    def track(self) -> Optional[str]:
+    def track(self) -> str | None:
         """Snapshot the work tree; return the tree hash, or None on failure."""
         add = ["add", "-A"] if self.ignores else ["add", "-A", "--force", "--", ".",
                                                                *(f":(exclude,glob)**/{x}/**" for x in EXCLUDES)]
@@ -89,7 +88,7 @@ class Snapshot:
             return False
         return p.returncode == 0 and extract_tar(p.stdout, dest)
 
-    def _tree_files(self, tree: str) -> Optional[set[str]]:
+    def _tree_files(self, tree: str) -> set[str] | None:
         out = self._git("ls-tree", "-r", "-z", "--name-only", tree)
         return None if out is None else {f for f in out.split("\0") if f}
 
@@ -125,7 +124,7 @@ class Snapshot:
             except OSError:
                 pass
 
-    def diff_files(self, tree: str) -> Optional[list[str]]:
+    def diff_files(self, tree: str) -> list[str] | None:
         """Files that differ between `tree` and the current work tree (None on failure)."""
         now = self.track()
         if not tree or now is None:

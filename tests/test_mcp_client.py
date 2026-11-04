@@ -5,12 +5,12 @@ from pathlib import Path
 
 import pytest
 
+from artel.adapters.agent.claude_code import mcp_servers_json
+from artel.adapters.agent.codex import build_args
 from artel.agent import execute_tool
 from artel.manager import new_kernel, run_goal
 from artel.project import DEFAULT_CONFIG, deep_merge
 from artel.runtimes import mcp_client
-from artel.adapters.agent.claude_code import mcp_servers_json
-from artel.adapters.agent.codex import build_args
 from artel.tooling import ToolContext
 
 FAKE = str(Path(__file__).parent / "fakes" / "mcp_server")
@@ -112,6 +112,7 @@ def test_http_transport_json_and_sse():
     import json
     import threading
     from http.server import BaseHTTPRequestHandler
+
     from artel.httpd import LocalHTTPServer
 
     class H(BaseHTTPRequestHandler):

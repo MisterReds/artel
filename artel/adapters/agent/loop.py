@@ -31,7 +31,6 @@ import time
 import uuid
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
-from typing import Optional
 
 from ... import policy
 from ...agent import LoopDetector, Outcome, _short, execute_tool, journal_agent_event
@@ -163,7 +162,7 @@ class StdoutReader:
 class ToolBridge:
     """Localhost HTTP endpoint that executes Artel tools for one run."""
 
-    def __init__(self, kernel, project, ctx: ToolContext, role: str, tool_names: Optional[list], actor: str,
+    def __init__(self, kernel, project, ctx: ToolContext, role: str, tool_names: list | None, actor: str,
                  runtime: str = "claude_code"):
         self.kernel, self.project, self.ctx, self.actor, self.runtime = kernel, project, ctx, actor, runtime
         # external MCP servers are handed to the CLI directly (see the codecs), not proxied through the bridge
@@ -180,7 +179,7 @@ class ToolBridge:
         self.token_file = Path(path)
         self.token_arg = "@" + path
         self.calls = 0
-        self.reader: Optional[StdoutReader] = None  # the current attempt's stdout reader (set by run_agent)
+        self.reader: StdoutReader | None = None  # the current attempt's stdout reader (set by run_agent)
         self.lock = threading.Lock()
         bridge = self
 
@@ -196,13 +195,13 @@ class ToolBridge:
                 self.end_headers()
                 self.wfile.write(body)
 
-            def do_GET(self):  # noqa: N802
+            def do_GET(self):
                 if not hmac.compare_digest(self.headers.get("X-Artel-Token") or "", bridge.token):
                     return self._reply({"error": "forbidden"}, 403)
                 self._reply({"tools": [{"name": s.name, "description": s.description, "inputSchema": s.input_schema}
                                        for s in bridge.specs]})
 
-            def do_POST(self):  # noqa: N802
+            def do_POST(self):
                 if not hmac.compare_digest(self.headers.get("X-Artel-Token") or "", bridge.token):
                     return self._reply({"error": "forbidden"}, 403)
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
@@ -271,10 +270,10 @@ class Run:
         self.task_id = (ctx.task or {}).get("id")
         self.out = Outcome(status="stalled")
         self.out.cost_usd = 0.0
-        self.bridge: Optional[ToolBridge] = None
+        self.bridge: ToolBridge | None = None
         self.detector = LoopDetector()
         self.state: dict = {}          # the codec's own, per run
-        self.session: Optional[str] = None
+        self.session: str | None = None
         self.prompt = first_user
         self.system_note = system
         self.model = ""
@@ -431,16 +430,16 @@ class Run:
         self.kill()
 
 
-def _read(run: Run, reader: StdoutReader, proc, grace_s: Optional[float]) -> Optional[threading.Timer]:
+def _read(run: Run, reader: StdoutReader, proc, grace_s: float | None) -> threading.Timer | None:
     """The stdout line loop. Returns the grace timer when one was started (the caller cancels it)."""
-    grace: Optional[threading.Timer] = None
+    grace: threading.Timer | None = None
     ctx, codec = run.ctx, run.codec
     for line in reader.lines():
         if run.stop_event is not None and run.stop_event.is_set():
             run.kill()
         try:
             events = codec.parse(line)
-        except Exception as exc:  # noqa: BLE001 - a malformed CLI line must not end the read loop with the CLI alive
+        except Exception as exc:
             run.log("llm/error", error=f"unparsable {codec.NAME} line: {exc}"[:300])
             events = []
         run.consume(events)
@@ -449,7 +448,7 @@ def _read(run: Run, reader: StdoutReader, proc, grace_s: Optional[float]) -> Opt
             # usage event follows shortly: keep reading until it arrives or the grace passes, but stop at once if the
             # CLI starts anything new.
             if any(e.kind == "usage" or e.data.get("phase") == "start" for e in events) or \
-                    grace is not None and not grace.is_alive():
+                    (grace is not None and not grace.is_alive()):
                 run.stopped = terminate_tree(proc)
             elif grace is None:
                 grace = threading.Timer(grace_s, terminate_tree, (proc,))
@@ -458,8 +457,8 @@ def _read(run: Run, reader: StdoutReader, proc, grace_s: Optional[float]) -> Opt
 
 
 def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str, ctx: ToolContext, max_turns: int,
-              purpose: str, persona=None, stop_event: Optional[threading.Event] = None,
-              tool_names: Optional[list] = None) -> Outcome:
+              purpose: str, persona=None, stop_event: threading.Event | None = None,
+              tool_names: list | None = None) -> Outcome:
     from ...routing import model_for
     from ...tools import resolve
 
@@ -518,7 +517,7 @@ def run_agent(codec, kernel, project, *, role: str, system: str, first_user: str
             killer = threading.Timer(float(cc["timeout_s"]), terminate_tree, (proc, True))
             killer.start()
             run.pending, run.got_usage, run.failed, run.failure, run.blocked, run.stopped = {}, False, False, "", "", False
-            grace: Optional[threading.Timer] = None
+            grace: threading.Timer | None = None
             try:
                 bridge.reader = reader = StdoutReader(proc.stdout)
                 grace = _read(run, reader, proc, getattr(codec, "TERMINAL_GRACE_S", None))

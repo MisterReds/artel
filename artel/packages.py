@@ -47,8 +47,9 @@ import sys
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 ENTRY_POINT_GROUP = "artel.plugins"
 TOML_MANIFEST = "artel-plugin.toml"
@@ -118,13 +119,13 @@ def get(name: str) -> dict:
 def disabled_builtins() -> set:
     try:
         return set(load_registry().get("builtin_disabled", []))
-    except Exception:  # noqa: BLE001 - a broken registry must not stop Artel
+    except Exception:
         return set()
 
 
 # --- static inspection (never imports package code) ----------------------------------------------
 
-def module_file(root: Path, module: str) -> Optional[Path]:
+def module_file(root: Path, module: str) -> Path | None:
     base = Path(root, *module.split("."))
     for cand in (base.with_suffix(".py"), base / "__init__.py"):
         if cand.is_file():
@@ -132,7 +133,7 @@ def module_file(root: Path, module: str) -> Optional[Path]:
     return None
 
 
-def static_manifest(path: Optional[Path], fallback_name: str) -> dict:
+def static_manifest(path: Path | None, fallback_name: str) -> dict:
     """``PLUGIN = {...}`` and the docstring of a plugin module, read with ``ast`` (no code runs)."""
     out: dict = {"name": fallback_name}
     if path is None:
@@ -222,7 +223,7 @@ def describe_site(site: Path, entry_points: dict) -> dict:
 GIT_HOSTS = ("github.com/", "gitlab.com/", "bitbucket.org/", "codeberg.org/", "git.sr.ht/")
 
 
-def classify(source: str) -> tuple[str, str, Optional[str]]:
+def classify(source: str) -> tuple[str, str, str | None]:
     """(kind, location, ref): kind is ``path``, ``git`` or ``pip``."""
     s = source.strip()
     if not s:
@@ -244,7 +245,7 @@ def classify(source: str) -> tuple[str, str, Optional[str]]:
     return "pip", s, None
 
 
-def _run(cmd: list, cwd: Optional[Path] = None, timeout: int = 900) -> subprocess.CompletedProcess:
+def _run(cmd: list, cwd: Path | None = None, timeout: int = 900) -> subprocess.CompletedProcess:
     env = {**os.environ, "PIP_DISABLE_PIP_VERSION_CHECK": "1", "PYTHONDONTWRITEBYTECODE": "1"}
     return subprocess.run(cmd, cwd=cwd, capture_output=True, text=True, timeout=timeout, env=env)
 
@@ -275,7 +276,7 @@ def _pip(spec: str, target: Path, runner: Runner, local: bool = False) -> None:
     raise PackageError(f"pip install {spec} не удался:\n{err[-2000:]}")
 
 
-def _git_clone(url: str, ref: Optional[str], dest: Path, runner: Runner) -> str:
+def _git_clone(url: str, ref: str | None, dest: Path, runner: Runner) -> str:
     cmd = ["git", "clone", "--depth", "1", "-q"] + (["--branch", ref] if ref else []) + [url, str(dest)]
     p = runner(cmd)
     if p.returncode != 0 and ref:  # a commit sha cannot be cloned with --branch
@@ -289,12 +290,12 @@ def _git_clone(url: str, ref: Optional[str], dest: Path, runner: Runner) -> str:
     return (rev.stdout or "").strip()[:12]
 
 
-def _build(kind: str, location: str, ref: Optional[str], staging: Path, runner: Runner) -> dict:
+def _build(kind: str, location: str, ref: str | None, staging: Path, runner: Runner) -> dict:
     """Install the source into ``staging``; returns {name, version, entry_points, revision?}."""
     site = staging / "site"
     site.mkdir(parents=True)
     info: dict = {}
-    src: Optional[Path] = None
+    src: Path | None = None
     if kind == "git":
         src = staging / "src"
         info["revision"] = _git_clone(location, ref, src, runner)
@@ -421,7 +422,7 @@ def plugin_ids(entry: dict) -> list[str]:
     return list(entry.get("entry_points", {}).values())
 
 
-def attach(kernel, entry: dict, persist: bool = True) -> Optional[str]:
+def attach(kernel, entry: dict, persist: bool = True) -> str | None:
     """Load an enabled package into ``kernel``. All or nothing: on failure its plugins are rolled back, the package
     is switched off with the error (``persist``) and the error is returned."""
     site = Path(entry["path"])
@@ -439,7 +440,7 @@ def attach(kernel, entry: dict, persist: bool = True) -> Optional[str]:
                 continue
             try:
                 obj = getattr(importlib.import_module(mod_name), attr) if attr else None
-            except (Exception, SystemExit) as exc:  # noqa: BLE001 - untrusted import
+            except (Exception, SystemExit) as exc:
                 kernel.failed[target] = f"{type(exc).__name__}: {exc}"
                 obj = False
             record = kernel.load_plugin_safe(target, obj) if obj is not False else None
@@ -452,7 +453,7 @@ def attach(kernel, entry: dict, persist: bool = True) -> Optional[str]:
     for target in reversed(loaded):
         try:
             kernel.unload_plugin(target)
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
     _forget(site)
     kernel.failed[f"package:{entry['name']}"] = error
@@ -469,7 +470,7 @@ def detach(kernel, entry: dict) -> None:
         if target in kernel.records:
             try:
                 kernel.unload_plugin(target)
-            except Exception:  # noqa: BLE001 - keep unloading
+            except Exception:
                 pass
     _forget(Path(entry["path"]))
 
@@ -479,7 +480,7 @@ def load_enabled(kernel) -> list[str]:
     errors = []
     try:
         packages = list(load_registry()["packages"].values())
-    except Exception as exc:  # noqa: BLE001 - never fatal
+    except Exception as exc:
         kernel.failed["plugins.json"] = repr(exc)
         return [repr(exc)]
     for entry in packages:
@@ -490,7 +491,7 @@ def load_enabled(kernel) -> list[str]:
     return errors
 
 
-def enable(name: str, *, kernel=None, config: Optional[dict] = None) -> dict:
+def enable(name: str, *, kernel=None, config: dict | None = None) -> dict:
     """Switch a package on. With a live ``kernel`` it is loaded there; otherwise it is test-loaded in a fresh
     kernel (setup and teardown run once) so a broken plugin is reported now, not at the next run."""
     entry = _set(name, enabled=True, error=None)
@@ -536,7 +537,7 @@ def set_builtin(dotted: str, enabled: bool, *, kernel=None) -> dict:
 
 # --- overview ------------------------------------------------------------------------------------------
 
-def overview(config: Optional[dict] = None, kernel=None) -> list[dict]:
+def overview(config: dict | None = None, kernel=None) -> list[dict]:
     """Built-in, configured and installed plugins with their state, for ``artel plugins list`` and the dashboard."""
     import importlib.util as iu
 
@@ -566,5 +567,20 @@ def overview(config: Optional[dict] = None, kernel=None) -> list[dict]:
     return rows
 
 
-__all__ = ["install", "update", "remove", "enable", "disable", "set_builtin", "overview", "load_enabled", "attach",
-           "detach", "classify", "static_manifest", "PackageError", "PERMISSIONS", "ENTRY_POINT_GROUP"]
+__all__ = [
+    "ENTRY_POINT_GROUP",
+    "PERMISSIONS",
+    "PackageError",
+    "attach",
+    "classify",
+    "detach",
+    "disable",
+    "enable",
+    "install",
+    "load_enabled",
+    "overview",
+    "remove",
+    "set_builtin",
+    "static_manifest",
+    "update",
+]

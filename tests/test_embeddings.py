@@ -5,14 +5,13 @@ import math
 import threading
 import time
 import zlib
-from pathlib import Path
 from http.server import BaseHTTPRequestHandler
-
-from artel.httpd import LocalHTTPServer
+from pathlib import Path
 
 import pytest
 
 from artel import embeddings
+from artel.httpd import LocalHTTPServer
 from artel.project import DEFAULT_CONFIG, deep_merge
 from artel.retrieval import bm25, chunks, rank, search_files
 
@@ -190,7 +189,7 @@ def test_local_server_survives_concurrent_starts_and_stops(local_server):
             urls.append(embeddings.LocalServer.url(local_server))
         except embeddings.EmbedError:
             pass  # stopped underneath: a clean, catchable failure is fine
-        except Exception as e:  # noqa: BLE001
+        except Exception as e:
             errors.append(repr(e))
 
     threads = [threading.Thread(target=start) for _ in range(4)] + [threading.Thread(target=embeddings.LocalServer.stop)]

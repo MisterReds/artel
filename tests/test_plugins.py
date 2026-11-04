@@ -201,8 +201,8 @@ def test_web_plugins_api(cfg):
     import threading
     import urllib.error
     import urllib.request
-    from artel.httpd import LocalHTTPServer
 
+    from artel.httpd import LocalHTTPServer
     from artel.web.server import Runner, make_handler
 
     runner = Runner(cfg)

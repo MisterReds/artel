@@ -77,8 +77,8 @@ def test_limit_from_a_run_is_recorded_for_the_failover(home):
 
 
 def test_codex_models_come_from_the_cli_and_names_are_normalized(tmp_path, monkeypatch):
-    from artel.providers import model_catalog, save_routing
     from artel.adapters.agent import codex
+    from artel.providers import model_catalog, save_routing
 
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
     codex._catalog_cache.clear()

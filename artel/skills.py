@@ -25,7 +25,7 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -181,7 +181,7 @@ class SkillStore:
         return self.usage().get(name, {"origin": "user", "pinned": False, "state": "active"})
 
     # --- lookup ---------------------------------------------------------
-    def find(self, name: str) -> Optional[Path]:
+    def find(self, name: str) -> Path | None:
         for p in self.root.glob("*/*/SKILL.md"):
             if p.parent.name == name and not p.parent.parent.name.startswith("."):
                 return p.parent
@@ -208,7 +208,7 @@ class SkillStore:
                         "state": u.get("state", "active"), "use_count": u.get("use_count", 0)})
         return out
 
-    def relevant(self, query: str, config: Optional[dict] = None, top: int = 40) -> list[dict]:
+    def relevant(self, query: str, config: dict | None = None, top: int = 40) -> list[dict]:
         """Active skills most relevant to ``query`` (hybrid lexical + embeddings, artel/retrieval.py); pinned skills
         always come first."""
         from .retrieval import rank
@@ -220,7 +220,7 @@ class SkillStore:
                     titles=[s["name"] for s in rest], top=top)
         return pinned + [rest[i] for i, _, _ in hits]
 
-    def index(self, limit: int = 120, query: str = "", config: Optional[dict] = None) -> str:
+    def index(self, limit: int = 120, query: str = "", config: dict | None = None) -> str:
         """Compact skill index for system prompts (name: description). With ``query``, a large library is cut to
         the skills relevant to it instead of the first ``limit`` by name."""
         rows = self.list()
@@ -236,7 +236,7 @@ class SkillStore:
             lines.append(f"- {s['name']}: {desc}")
         return "\n".join(lines)
 
-    def view(self, name: str, file_path: Optional[str] = None) -> str:
+    def view(self, name: str, file_path: str | None = None) -> str:
         d = self.find(name)
         if d is None:
             raise SkillError(f"skill {name!r} not found")
@@ -264,7 +264,7 @@ class SkillStore:
             bp.write_bytes(data)
         return sha
 
-    def _manifest(self, d: Optional[Path]) -> dict:
+    def _manifest(self, d: Path | None) -> dict:
         if d is None or not d.exists():
             return {}
         return {f.relative_to(d).as_posix(): self._blob(f.read_bytes()) for f in sorted(d.rglob("*")) if f.is_file()}
@@ -278,7 +278,7 @@ class SkillStore:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
         return entry_id
 
-    def ledger(self, name: Optional[str] = None) -> list[dict]:
+    def ledger(self, name: str | None = None) -> list[dict]:
         p = self.root / ".ledger.jsonl"
         if not p.exists():
             return []
@@ -406,7 +406,7 @@ class SkillStore:
         self._touch(name, pinned=pinned)
 
     # --- curator (deterministic lifecycle) ------------------------------
-    def curate(self, stale_after_days: float = 30, archive_after_days: float = 90, now: Optional[float] = None) -> list[dict]:
+    def curate(self, stale_after_days: float = 30, archive_after_days: float = 90, now: float | None = None) -> list[dict]:
         now = now or time.time()
         actions = []
         for s in self.list():
@@ -424,8 +424,8 @@ class SkillStore:
         return actions
 
     # --- hub import -----------------------------------------------------
-    def import_from(self, source: str, trust: Optional[str] = None, include: str = "*", force: bool = False,
-                    category: Optional[str] = None) -> dict:
+    def import_from(self, source: str, trust: str | None = None, include: str = "*", force: bool = False,
+                    category: str | None = None) -> dict:
         """Install every skill found under a local path or git URL (``owner/repo`` is GitHub shorthand)."""
         tmp = None
         src_path = Path(source).expanduser()

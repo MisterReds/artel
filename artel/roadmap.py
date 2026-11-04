@@ -12,7 +12,6 @@ from __future__ import annotations
 import re
 import subprocess
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -31,7 +30,7 @@ class Roadmap:
         self.items: list[dict] = self.data.get("items", [])
 
     @classmethod
-    def of_repo(cls, repo: Path) -> "Roadmap":
+    def of_repo(cls, repo: Path) -> Roadmap:
         return cls(Path(repo) / "roadmap.yaml")
 
     def get(self, item_id: str) -> dict:
@@ -44,7 +43,7 @@ class Roadmap:
     def ready(self, it: dict) -> bool:
         return all(self.get(d).get("status") == "done" for d in it.get("after", []))
 
-    def next_items(self, n: int, wave: Optional[int] = None, mode: str = "evolve",
+    def next_items(self, n: int, wave: int | None = None, mode: str = "evolve",
                    skip: tuple = ()) -> list[dict]:
         """Open items whose ``after`` dependencies are done: ``priority: core`` first (gaps against the main
         harnesses), then the lowest wave, in file order."""
@@ -103,7 +102,7 @@ class Roadmap:
         return "\n".join(rows)
 
     # --- donors ---------------------------------------------------------
-    def fetch_source(self, it: dict, sources: Path) -> Optional[Path]:
+    def fetch_source(self, it: dict, sources: Path) -> Path | None:
         """Shallow-clone the donor repo (cached). Returns None when it cannot be fetched."""
         repo = (it.get("source") or {}).get("repo")
         if not repo:
@@ -203,7 +202,7 @@ def add_studied(repo: Path, row: dict) -> None:
         + yaml.safe_dump(rows, sort_keys=False, allow_unicode=True, width=110), encoding="utf-8")
 
 
-def next_to_study(repo: Path, registry: Optional[list] = None, n: int = 1) -> list[dict]:
+def next_to_study(repo: Path, registry: list | None = None, n: int = 1) -> list[dict]:
     """Harnesses to study next: the most significant main harnesses whose code has not been read (harnesses.yaml),
     then the most relevant live ones from the registry.
 
@@ -251,7 +250,7 @@ def _log_scale(x: float, top: float) -> float:
     return 0.0 if not x or x <= 1 else min(1.0, math.log10(x) / math.log10(top))
 
 
-def significance(h: dict, today: Optional[str] = None) -> dict:
+def significance(h: dict, today: str | None = None) -> dict:
     """Score 0..100 with its parts, from the metrics snapshot in harnesses.yaml. Openness is reported separately
     (it decides how deeply Artel can borrow, not how important a harness is)."""
     import datetime as dt

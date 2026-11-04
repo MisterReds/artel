@@ -19,7 +19,6 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -42,7 +41,7 @@ def install_root() -> Path:
 
 
 class Updater:
-    def __init__(self, root: Optional[Path] = None, config: Optional[dict] = None, home: Optional[Path] = None):
+    def __init__(self, root: Path | None = None, config: dict | None = None, home: Path | None = None):
         self.root = Path(root or install_root())
         self.cfg = {**DEFAULTS, **((config or {}).get("update") or {})}
         if home is None:
@@ -50,10 +49,10 @@ class Updater:
 
             home = artel_home()
         self.history_path = Path(home) / "update_history.json"
-        self._last: Optional[dict] = None
+        self._last: dict | None = None
 
     # --- git ------------------------------------------------------------
-    def _git(self, *args: str, check: bool = True, cwd: Optional[Path] = None) -> str:
+    def _git(self, *args: str, check: bool = True, cwd: Path | None = None) -> str:
         p = subprocess.run(["git", *args], cwd=cwd or self.root, capture_output=True, text=True, timeout=600, encoding="utf-8", errors="replace")
         if check and p.returncode != 0:
             raise UpdateError(f"git {' '.join(args)}: {(p.stderr or p.stdout).strip()[-400:]}")

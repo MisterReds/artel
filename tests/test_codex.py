@@ -336,6 +336,7 @@ def test_stdout_reader_yields_whole_lines_and_is_drained_only_when_the_pipe_is_e
 def _read_chunks(chunks):
     """Feed the chunks to a StdoutReader one by one (each fully processed before the next) and return its lines."""
     import threading
+
     from artel.adapters.agent.loop import StdoutReader
 
     r_fd, w_fd = os.pipe()

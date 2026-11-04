@@ -6,11 +6,11 @@ import re
 import threading
 import urllib.error
 import urllib.request
-from artel.httpd import LocalHTTPServer
 from pathlib import Path
 
 import pytest
 
+from artel.httpd import LocalHTTPServer
 from artel.project import DEFAULT_CONFIG, Project, deep_merge
 from artel.web import auth as authmod
 from artel.web.auth import COOKIE, Auth

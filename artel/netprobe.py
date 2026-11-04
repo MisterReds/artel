@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import os
 import socket
-from typing import Any
 from urllib.parse import urlparse
 
 PROXY_VARS = ("HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy")

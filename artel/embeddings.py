@@ -33,7 +33,6 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Optional
 
 DEFAULTS = {"backend": "auto", "dim": 768, "quant": "Q8_0", "url": "", "model": "", "api_key_env": "",
             "prefixes": "auto", "batch": 32, "timeout_s": 120}
@@ -61,7 +60,7 @@ def model_path(quant: str = "Q8_0") -> Path:
     return model_dir() / f"{MODEL_NAME}-{quant}.gguf"
 
 
-def server_binary() -> Optional[str]:
+def server_binary() -> str | None:
     from .tools import EXE, tools_dir
 
     d = tools_dir() / "llama"
@@ -99,7 +98,7 @@ class Cache:
 
     @staticmethod
     def key(model: str, text: str) -> str:
-        return hashlib.sha256(f"{model}\0{text}".encode("utf-8")).hexdigest()
+        return hashlib.sha256(f"{model}\0{text}".encode()).hexdigest()
 
     def get(self, keys: list[str]) -> dict:
         out = {}
@@ -146,7 +145,7 @@ class LocalServer:
     """One llama-server per Artel process, started on first use and stopped at exit."""
 
     _lock = threading.RLock()  # url() and stop() from any thread (dashboard requests, warming, uninstall, exit)
-    _proc: Optional[subprocess.Popen] = None
+    _proc: subprocess.Popen | None = None
     _url = ""
     _model = ""
 
@@ -239,7 +238,7 @@ class Embedder:
             return LocalServer.url(self.config)
         except EmbedError:
             raise
-        except Exception as e:  # noqa: BLE001 - a broken local server means "no embeddings", never a crash
+        except Exception as e:
             raise EmbedError(f"локальный сервер эмбеддингов не запустился: {e!r}") from e
 
     def _call(self, texts: list[str]) -> list[list[float]]:
@@ -272,13 +271,13 @@ class Embedder:
         return DOC_PREFIX.format(title.strip() or "none", text)
 
     def cached(self, texts: list[str], kind: str = "document", task: str = "search",
-               titles: Optional[list[str]] = None) -> list[bool]:
+               titles: list[str] | None = None) -> list[bool]:
         keys = [Cache.key(self.model, self.prepare(t, kind, task, (titles or [""] * len(texts))[i]))
                 for i, t in enumerate(texts)]
         have = self.cache.get(list(dict.fromkeys(keys)))
         return [k in have for k in keys]
 
-    def warm(self, texts: list[str], titles: Optional[list[str]] = None) -> None:
+    def warm(self, texts: list[str], titles: list[str] | None = None) -> None:
         """Embed documents in the background (one warming thread per process), so later searches over them are
         fully semantic without making the current caller wait."""
         with _warm_lock:
@@ -289,7 +288,7 @@ class Embedder:
                 threading.Thread(target=_warm_loop, daemon=True, name="embed-warm").start()
 
     def embed(self, texts: list[str], kind: str = "document", task: str = "search",
-              titles: Optional[list[str]] = None) -> list[list[float]]:
+              titles: list[str] | None = None) -> list[list[float]]:
         prepared = [self.prepare(t, kind, task, (titles or [""] * len(texts))[i]) for i, t in enumerate(texts)]
         keys = [Cache.key(self.model, p) for p in prepared]
         have = self.cache.get(list(dict.fromkeys(keys)))
@@ -340,7 +339,7 @@ def _warm_loop() -> None:
             return
 
 
-def get(config: dict) -> Optional[Embedder]:
+def get(config: dict) -> Embedder | None:
     """The configured embedder, or None (off, not installed, or recently failing — retried after a minute).
     Never raises: callers fall back to lexical search."""
     key = json.dumps(settings(config), sort_keys=True)
@@ -386,5 +385,17 @@ def cosine(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b))  # vectors are normalized
 
 
-__all__ = ["Embedder", "EmbedError", "LocalServer", "get", "status", "settings", "backend", "installed", "cosine",
-           "DIMS", "MODEL_REPO", "MODEL_NAME"]
+__all__ = [
+    "DIMS",
+    "MODEL_NAME",
+    "MODEL_REPO",
+    "EmbedError",
+    "Embedder",
+    "LocalServer",
+    "backend",
+    "cosine",
+    "get",
+    "installed",
+    "settings",
+    "status",
+]

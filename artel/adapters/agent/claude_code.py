@@ -8,7 +8,6 @@ import shlex
 import sys
 import uuid
 from pathlib import Path
-from typing import Optional
 
 from ...contracts import AgentEvent
 from ._common import classify  # noqa: F401 - part of the codec interface
@@ -40,7 +39,7 @@ def settings(config: dict) -> dict:
     return {**DEFAULTS, **(config.get("claude_code") or {})}
 
 
-def child_env(config: Optional[dict] = None, runtime: str = "claude_code") -> dict:
+def child_env(config: dict | None = None, runtime: str = "claude_code") -> dict:
     from ...agent_env import agent_env
     from ...tools import env_with_tools
 
@@ -62,7 +61,7 @@ def mcp_servers_json(external: dict, base: dict) -> dict:
     return out
 
 
-def build_dir_args(grants: Optional[dict]) -> list:
+def build_dir_args(grants: dict | None) -> list:
     """``--add-dir`` for every read and write grant (the workspace is the cwd); no grants: nothing extra."""
     if grants is None:
         return []
@@ -112,8 +111,8 @@ def start_info(run) -> dict:
 
 
 def launch(run) -> dict:
-    from ...tools import resolve
     from ...tooling import READONLY_ROLES
+    from ...tools import resolve
 
     cc, ctx, role = run.cc, run.ctx, run.role
     external = run.state["external"]
@@ -145,7 +144,7 @@ def loop_msg(name: str, inp) -> tuple:
 
 
 # --- stream-json -> AgentEvent -----------------------------------------------------------------------------------
-def _block(b: dict) -> Optional[AgentEvent]:
+def _block(b: dict) -> AgentEvent | None:
     t = b.get("type")
     if t == "text":
         return AgentEvent("text", {"text": b.get("text", "")})

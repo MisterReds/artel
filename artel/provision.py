@@ -23,8 +23,9 @@ import subprocess
 import sys
 import tempfile
 import time
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
+from typing import Optional
 
 from . import tools
 
@@ -68,7 +69,7 @@ def platform_key() -> str:
     return f"{os_}-{cpu.get(m, m)}"
 
 
-def _entry(tool: str) -> Optional[tuple]:
+def _entry(tool: str) -> tuple | None:
     for name, e in catalogue().items():
         if tool in (name, e.get("bin")):
             return name, e
@@ -121,7 +122,7 @@ def _shim_dirs() -> list:
                              h / ".local" / "share" / "mise" / "shims") if p.is_dir()]
 
 
-def _find(tool: str) -> Optional[str]:
+def _find(tool: str) -> str | None:
     found = tools.resolve(tool)
     if found:
         return found
@@ -143,7 +144,7 @@ def _download_tool(tool: str) -> tuple:
         archive = Path(tmp) / url.rsplit("/", 1)[-1]
         try:
             tools._download(url, archive)
-        except Exception as exc:  # noqa: BLE001 - network, proxy, 404: a reason, not a crash
+        except Exception as exc:
             return None, f"download of {name} failed: {str(exc)[:200]}"
         if tools._sha256(archive) != want:
             return None, f"checksum of {name} {e['version']} does not match the pinned sha256; not installed"
@@ -153,7 +154,7 @@ def _download_tool(tool: str) -> tuple:
             out.mkdir()
             try:
                 tools._extract(archive, out)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 return None, f"cannot unpack {name}: {str(exc)[:200]}"
             want_name = plat.get("member") or e["bin"] + tools.EXE
             src = next((p for p in sorted(out.rglob("*")) if p.name == want_name and p.is_file() and not p.is_symlink()), None)
@@ -204,7 +205,7 @@ def _conda(tool: str, cfg: dict, log: Log = None) -> tuple:
 
 
 # --- (d) system ---------------------------------------------------------------------------------------------------
-def _alias(tool: str) -> Optional[str]:
+def _alias(tool: str) -> str | None:
     """A system package may install the program under another name (fd-find: fdfind): link it under the asked name."""
     alias = (packages().get(tool) or {}).get("alias")
     found = shutil.which(alias) if alias else None
@@ -253,7 +254,7 @@ def _system(tool: str, cfg: dict, log: Log = None) -> tuple:
 
 
 # --- entry points -------------------------------------------------------------------------------------------------
-def _record(tool: str, method: str, version: str, path: str, why: str, packages_: Optional[list] = None) -> dict:
+def _record(tool: str, method: str, version: str, path: str, why: str, packages_: list | None = None) -> dict:
     rec = {"method": method, "version": version, "path": path, "why": why, "ts": time.time(),
            "packages": packages_ or []}
     data = installed()
@@ -262,7 +263,7 @@ def _record(tool: str, method: str, version: str, path: str, why: str, packages_
     return rec
 
 
-def ensure(tool: str, why: str = "", log: Log = None, cfg: Optional[dict] = None) -> Optional[str]:
+def ensure(tool: str, why: str = "", log: Log = None, cfg: dict | None = None) -> str | None:
     """Path of ``tool``, installing it if needed; None when every route failed (``last_reason`` says why)."""
     cfg = cfg or {}
     if not valid_name(tool):
@@ -357,7 +358,7 @@ def _segments(cmd) -> list:
     return re.split(r"&&|\|\||[;|\n&]", cmd)
 
 
-def _segment_program(seg: str) -> Optional[str]:
+def _segment_program(seg: str) -> str | None:
     """The program a shell segment starts with; None when it starts with nothing that is one (a loop header, a
     builtin, only assignments)."""
     try:
@@ -378,7 +379,7 @@ def first_programs(checks) -> set:
     return {p for cmd in checks or [] for seg in _segments(cmd) if (p := _segment_program(seg))}
 
 
-def leading_program(cmd) -> Optional[str]:
+def leading_program(cmd) -> str | None:
     """The program whose absence is what a 126/127 exit of ``cmd`` means: the first real program, after leading
     builtins, ``cd`` and variable assignments (``cd sub && rg x`` -> rg). None when it starts with none (a loop
     header) or when the exit status may come from something after it (``;``, ``|``, ``||``, ``&`` follow it)."""
@@ -424,7 +425,7 @@ def leading_absent(cmd, path: str) -> bool:
     return bool(prog) and not shutil.which(prog, path=path)
 
 
-def prepare_checks(checks, cfg: Optional[dict] = None, log: Log = None) -> list:
+def prepare_checks(checks, cfg: dict | None = None, log: Log = None) -> list:
     """Before the gates run: make the missing first programs available. Only names Artel knows how to install (the
     catalogue and the package map) are installed; anything else is returned as missing, never guessed at."""
     known = known_tools()

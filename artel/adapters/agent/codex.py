@@ -12,8 +12,18 @@ from pathlib import Path
 
 from ...contracts import AgentEvent
 from ._common import classify  # noqa: F401 - part of the codec interface
-from .codex_support import (DEFAULTS, SANDBOX_BROKEN, _catalog_cache, _sandbox_mode, build_args,  # noqa: F401
-                            codex_env, model_catalog, normalize_model, sandbox_mode, sandbox_note)
+from .codex_support import (  # noqa: F401
+    DEFAULTS,
+    SANDBOX_BROKEN,
+    _catalog_cache,
+    _sandbox_mode,
+    build_args,
+    codex_env,
+    model_catalog,
+    normalize_model,
+    sandbox_mode,
+    sandbox_note,
+)
 
 NAME, LABEL = "codex", "codex"
 INSTALL_HINT = "Codex CLI не установлен: «Подключения» → «Установить» или `artel providers install codex`"

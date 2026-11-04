@@ -24,7 +24,6 @@ import threading
 import time
 from collections import defaultdict, deque
 from pathlib import Path
-from typing import Optional
 
 from . import prompts
 
@@ -172,7 +171,7 @@ def portfolio_summary(runner) -> list[dict]:
         if p.get("status") in ("waiting_human", "error"):
             try:
                 reason = Project.open(p["slug"], runner.config).meta.get("blocked_reason") or ""
-            except Exception:  # noqa: BLE001 - one broken project must not hide the rest
+            except Exception:
                 pass
         out.append(_summary(p, reason))
     return out
@@ -265,7 +264,7 @@ def spend_summary(runner) -> dict:
             "limited_runtimes": {k: v for k, v in limits.load().items()}}
 
 
-def resolve_project(summaries: list[dict], ref: str) -> Optional[str]:
+def resolve_project(summaries: list[dict], ref: str) -> str | None:
     """A slug from what the owner or the model called a project: exact slug or name, else a unique prefix."""
     ref = (ref or "").strip().lower()
     if not ref:
@@ -278,7 +277,7 @@ def resolve_project(summaries: list[dict], ref: str) -> Optional[str]:
     return hit[0] if len(hit) == 1 else None
 
 
-def resolve_slug(runner, ref: str, ps: Optional[list[dict]] = None) -> Optional[str]:
+def resolve_slug(runner, ref: str, ps: list[dict] | None = None) -> str | None:
     """A project's slug from a reference: the slug itself (any number of projects), else name or unique prefix."""
     from .project import artel_home
 
@@ -367,7 +366,7 @@ def _one(p: dict) -> dict:
     return {"reply": "\n".join(lines), "refs": refs}
 
 
-def _mentioned(ps: list[dict], text: str) -> Optional[dict]:
+def _mentioned(ps: list[dict], text: str) -> dict | None:
     low = text.lower()
     for p in ps:
         for key in (p["slug"], p["name"]):
@@ -519,7 +518,7 @@ class Proposals:
             self.items[pid] = {"channel": channel, "kind": kind, "args": args, "expires": now + PROPOSAL_TTL_S}
         return pid
 
-    def take(self, channel: str, pid: str) -> Optional[dict]:
+    def take(self, channel: str, pid: str) -> dict | None:
         """The proposal, removed from the store; None when unknown, expired, used or from another channel."""
         with self.lock:
             item = self.items.get(pid)
@@ -535,7 +534,7 @@ def proposals(runner) -> Proposals:
     return runner.chat_proposals
 
 
-def propose(runner, channel: str, raw, ps: list[dict]) -> Optional[dict]:
+def propose(runner, channel: str, raw, ps: list[dict]) -> dict | None:
     """Store one action from the model as a proposal: {id, kind, args, label}, or None when it is not valid."""
     kind = str((raw or {}).get("type") or "")
     if kind not in ACTIONS:
@@ -568,7 +567,7 @@ def model_available(config: dict) -> bool:
 
     try:
         return runtime_for(config, "concierge") != "none"
-    except Exception:  # noqa: BLE001 - a broken status check means "no model"
+    except Exception:
         return False
 
 
@@ -600,7 +599,7 @@ def _agent_project(runner):
     return pr
 
 
-def ask_model(runner, message: str, ps: list[dict], history: list[dict]) -> Optional[dict]:
+def ask_model(runner, message: str, ps: list[dict], history: list[dict]) -> dict | None:
     """The concierge agent's chat_reply payload, or None when the model gave none."""
     from .runtimes import run_agent
     from .tooling import ToolContext
@@ -616,7 +615,7 @@ def ask_model(runner, message: str, ps: list[dict], history: list[dict]) -> Opti
 
             record_usage(tier_for(runner.kernel.config, "concierge", pr), getattr(out, "usage", None),
                          getattr(out, "cost_usd", 0.0))
-    except Exception:  # noqa: BLE001 - the chat must answer even when the agent cannot
+    except Exception:
         return None
     return out.payload if out.name == "chat_reply" else None
 
@@ -636,14 +635,14 @@ def _mention_refs(text: str, ps: list[dict]) -> list[dict]:
             and re.search(rf"(?<![\w-]){re.escape(p['slug'])}(?![\w-])", text)]
 
 
-def respond(runner, channel: str, message: str, who: Optional[str] = None, can_propose: bool = True) -> dict:
+def respond(runner, channel: str, message: str, who: str | None = None, can_propose: bool = True) -> dict:
     """Answer one message from the owner: {reply, proposed, refs}. Never raises, never executes an action.
 
     ``can_propose`` False (a group chat, an unknown sender) gives a read-only answer."""
     message = (message or "").strip()[:MAX_MESSAGE]
     try:
         ps = portfolio_summary(runner)
-    except Exception:  # noqa: BLE001
+    except Exception:
         ps = []
     history = context(channel)
     remember(channel, "user", message)

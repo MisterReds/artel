@@ -27,7 +27,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import yaml
 
@@ -144,7 +144,7 @@ def _cap(text: str, limit: int = INSTRUCTIONS_MAX_BYTES) -> str:
     return raw[:limit].decode("utf-8", "ignore") + INSTRUCTIONS_TRUNCATED
 
 
-def _read_instruction(path: Path) -> Optional[str]:
+def _read_instruction(path: Path) -> str | None:
     try:
         if path.is_file():
             return path.read_text(encoding="utf-8", errors="replace")
@@ -157,7 +157,7 @@ def _read_instruction(path: Path) -> Optional[str]:
     return None
 
 
-def find_instructions(workdir: Any, max_bytes: int = INSTRUCTIONS_MAX_BYTES) -> Optional[tuple[Path, str]]:
+def find_instructions(workdir: Any, max_bytes: int = INSTRUCTIONS_MAX_BYTES) -> tuple[Path, str] | None:
     """Nearest project instruction file from ``workdir`` up to the repo root (the dir holding .git; without one,
     only ``workdir`` itself). Per directory the priority is AGENTS.md > CLAUDE.md > GEMINI.md > .clinerules.
     Returns (path, text capped at ``max_bytes`` with a truncation marker) or None."""
@@ -197,7 +197,7 @@ def deep_merge(base: dict, over: dict) -> dict:
     return out
 
 
-def load_config(path: Optional[Path] = None) -> dict:
+def load_config(path: Path | None = None) -> dict:
     cfg = DEFAULT_CONFIG
     for candidate in [artel_home() / "artel.yaml", path]:
         if candidate and Path(candidate).exists():
@@ -217,8 +217,8 @@ class Persona:
     soul: str = ""
     rules: list = field(default_factory=list)
     skills: list = field(default_factory=list)   # skill names to preload into the prompt
-    model: Optional[str] = None
-    effort: Optional[str] = None
+    model: str | None = None
+    effort: str | None = None
 
     @property
     def slug(self) -> str:
@@ -244,8 +244,8 @@ class Project:
 
     # --- lifecycle ------------------------------------------------------
     @classmethod
-    def create(cls, goal: str, config: dict, home: Optional[Path] = None, name: Optional[str] = None,
-               workdir: Optional[Path] = None, refs: tuple = (), seed: Optional[Path] = None) -> "Project":
+    def create(cls, goal: str, config: dict, home: Path | None = None, name: str | None = None,
+               workdir: Path | None = None, refs: tuple = (), seed: Path | None = None) -> Project:
         base = (home or artel_home()) / "projects"
         slug = slugify(name or goal)
         root = base / slug
@@ -272,7 +272,7 @@ class Project:
         return project
 
     @classmethod
-    def open(cls, slug_or_path: str, config: dict, home: Optional[Path] = None) -> "Project":
+    def open(cls, slug_or_path: str, config: dict, home: Path | None = None) -> Project:
         p = Path(slug_or_path)
         if not (p / "project.json").exists():
             p = (home or artel_home()) / "projects" / slug_or_path
@@ -367,7 +367,7 @@ class Project:
                         rules=rules, skills=persona.skills, model=persona.model)
         return d
 
-    def persona(self, name: str) -> Optional[Persona]:
+    def persona(self, name: str) -> Persona | None:
         d = self.worker_dir(name)
         if not (d / "IDENTITY.md").exists():
             return None
@@ -398,7 +398,7 @@ class Project:
         p = self.prompt_notes_path
         return p.read_text(encoding="utf-8") if p.exists() else ""
 
-    def model_for(self, role: str, persona: Optional[Persona] = None) -> str:
+    def model_for(self, role: str, persona: Persona | None = None) -> str:
         if persona and persona.model:
             return persona.model
         models = self.config["models"]
@@ -410,13 +410,13 @@ class Project:
                 return tiered
         return models.get(role, models["default"])
 
-    def effort_for(self, role: str, persona: Optional[Persona] = None) -> str:
+    def effort_for(self, role: str, persona: Persona | None = None) -> str:
         if persona and persona.effort:
             return persona.effort
         return self.config["effort"].get(role, "high")
 
 
-def list_projects(home: Optional[Path] = None) -> list[dict]:
+def list_projects(home: Path | None = None) -> list[dict]:
     base = (home or artel_home()) / "projects"
     out = []
     if base.exists():
@@ -433,4 +433,4 @@ def persona_from_dict(d: dict) -> Persona:
                    skills=list(d.get("skills", [])), model=d.get("model"), effort=d.get("effort"))
 
 
-__all__ = ["Project", "Persona", "load_config", "artel_home", "list_projects", "persona_from_dict", "asdict"]
+__all__ = ["Persona", "Project", "artel_home", "asdict", "list_projects", "load_config", "persona_from_dict"]

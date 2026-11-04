@@ -21,8 +21,9 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Any, Iterable, Optional
+from typing import Any
 
 STATUSES = ("todo", "ready", "running", "review", "done", "blocked", "cancelled")
 OPEN = ("todo", "ready", "running", "review", "blocked")
@@ -141,13 +142,13 @@ class Board:
         body: str = "",
         *,
         kind: str = "work",
-        assignee: Optional[str] = None,
+        assignee: str | None = None,
         criteria: Iterable[str] = (),
         checks: Iterable[str] = (),
         depends_on: Iterable[str] = (),
         priority: int = 0,
         created_by: str = "manager",
-        task_id: Optional[str] = None,
+        task_id: str | None = None,
     ) -> str:
         tid = task_id or "t-" + uuid.uuid4().hex[:8]
         now = time.time()
@@ -197,12 +198,12 @@ class Board:
         with self._lock:
             return [r[0] for r in self._db.execute("SELECT task_id FROM deps WHERE depends_on=?", (task_id,))]
 
-    def get(self, task_id: str) -> Optional[dict]:
+    def get(self, task_id: str) -> dict | None:
         with self._lock:
             row = self._db.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
         return self._task(row) if row else None
 
-    def list(self, status: Optional[Iterable[str]] = None, kind: Optional[str] = None) -> list[dict]:
+    def list(self, status: Iterable[str] | None = None, kind: str | None = None) -> list[dict]:
         sql, args = "SELECT * FROM tasks WHERE 1=1", []
         if status:
             st = list(status)
@@ -215,7 +216,7 @@ class Board:
         with self._lock:
             return [self._task(r) for r in self._db.execute(sql, args)]
 
-    def update(self, task_id: str, *, expect_revision: Optional[int] = None, actor: str = "manager",
+    def update(self, task_id: str, *, expect_revision: int | None = None, actor: str = "manager",
                **fields: Any) -> dict:
         """CAS update; raises StaleRevision when ``expect_revision`` no longer matches."""
         for k in ("criteria", "checks", "checks_confirm", "checks_pending"):
@@ -303,7 +304,7 @@ class Board:
                        (status, summary, time.time(), *counters.values(), run_id))
         self._event("run/finished", run_id=run_id, status=status, summary=summary[:2000], **counters)
 
-    def runs(self, task_id: Optional[str] = None) -> list[dict]:
+    def runs(self, task_id: str | None = None) -> list[dict]:
         with self._lock:
             if task_id:
                 rows = self._db.execute("SELECT * FROM runs WHERE task_id=? ORDER BY id", (task_id,))

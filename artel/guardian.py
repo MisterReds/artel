@@ -15,7 +15,6 @@ from __future__ import annotations
 import re
 import shlex
 from pathlib import Path
-from typing import Optional
 
 HIGH = 0.7
 SENSITIVE_DIRS = ("/etc", "/usr", "/bin", "/sbin", "/boot", "/lib", "/var", "/root", "/dev", "/sys", "/proc")
@@ -85,7 +84,7 @@ def check_command(command: str) -> tuple[float, str]:
         elif name in ("shred", "wipefs") and any(o.startswith("/dev/") for o in operands):
             consider(0.95, f"{name} on a device")
         elif name == "git" and "reset" in args and "--hard" in args:
-            if "-C" in args and any(o in ("/", "~") for o in operands) or re.search(r"\bcd\s+(/|~)\s*(;|&&)", command):
+            if ("-C" in args and any(o in ("/", "~") for o in operands)) or re.search(r"\bcd\s+(/|~)\s*(;|&&)", command):
                 consider(0.9, "git reset --hard on a root directory")
             else:
                 consider(0.4, "git reset --hard discards uncommitted work")
@@ -108,7 +107,7 @@ def check_command(command: str) -> tuple[float, str]:
     return best
 
 
-def _outside_write(path: str, workspace: Optional[Path]) -> Optional[tuple[float, str]]:
+def _outside_write(path: str, workspace: Path | None) -> tuple[float, str] | None:
     p = Path(path)
     posix_abs = path.startswith("/")  # "/etc/x" is absolute for the agent on every OS, though not for Windows' Path
     if not p.is_absolute() and not posix_abs and ".." not in p.parts:
@@ -127,7 +126,7 @@ def _outside_write(path: str, workspace: Optional[Path]) -> Optional[tuple[float
     return 0.4, f"write outside the workspace: {target}"
 
 
-def assess(events: list[dict], workspace: Optional[Path] = None) -> dict:
+def assess(events: list[dict], workspace: Path | None = None) -> dict:
     """Risk of a run's event log: {risk: low|high, score: 0..1, reason}. Deterministic, no model call."""
     best, reason = 0.0, "no risky actions observed"
 
@@ -167,7 +166,7 @@ def latest_risk(events: list[dict]) -> dict[str, dict]:
     return out
 
 
-def blocking_error(command: str) -> Optional[str]:
+def blocking_error(command: str) -> str | None:
     """Message to deny ``command`` under blocking review, or None when it may run."""
     s, why = check_command(command)
     if s >= HIGH:

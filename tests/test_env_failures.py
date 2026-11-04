@@ -1,8 +1,8 @@
 """Stage B items 3 and 8: `python` resolves in agents' shells; a broken environment is not bad work."""
 import os
 import subprocess
-from pathlib import Path
 import sys
+from pathlib import Path
 
 import pytest
 

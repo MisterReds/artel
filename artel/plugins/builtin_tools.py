@@ -10,7 +10,7 @@ from .. import guardian, policy, sandbox
 from ..agent_env import agent_env
 from ..kernel import ToolSpec
 from ..tooling import READONLY_ROLES, ToolContext, ToolError, cap_output, window_text
-from ..tools import shell_env, shell_run
+from ..tools import shell_env
 
 PLUGIN = {"name": "artel.plugins.builtin_tools", "version": "1",
           "provides": ["tool:bash", "tool:read_file", "tool:write_file", "tool:edit_file", "tool:list_files",

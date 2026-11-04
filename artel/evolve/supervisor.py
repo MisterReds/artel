@@ -17,7 +17,6 @@ import sys
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 STALE_S = 180          # no heartbeat for this long and no live process: the generation is orphaned
 BEAT_S = 30
@@ -28,7 +27,7 @@ RESUME_FLAGS = {"--parallel-candidates", "--parallel-bench", "--budget", "--fina
 RESUME_SWITCHES = {"--no-stack", "--no-wait"}
 
 
-def pid_alive(pid: Optional[int]) -> bool:
+def pid_alive(pid: int | None) -> bool:
     if not pid:
         return False
     if sys.platform == "win32":
@@ -47,7 +46,7 @@ def pid_alive(pid: Optional[int]) -> bool:
     return True
 
 
-def evolve_process_running(exclude_supervisors: bool = True, exclude: Optional[int] = None) -> Optional[bool]:
+def evolve_process_running(exclude_supervisors: bool = True, exclude: int | None = None) -> bool | None:
     """Whether any ``artel evolve`` process exists (Linux /proc); None when it cannot be told."""
     proc = Path("/proc")
     if not proc.is_dir():
@@ -91,7 +90,7 @@ def resume_argv(argv: list) -> list:
 class Heartbeat:
     """Kept by a running ``artel evolve`` (a daemon thread); removed on a clean exit."""
 
-    def __init__(self, home: Path, argv: list, cwd: Optional[str] = None):
+    def __init__(self, home: Path, argv: list, cwd: str | None = None):
         self.path = Path(home) / "heartbeat.json"
         self.data = {"pid": os.getpid(), "argv": list(argv), "cwd": cwd or os.getcwd(), "started": time.time(),
                      "artel_home": os.environ.get("ARTEL_HOME", "")}
@@ -103,7 +102,7 @@ class Heartbeat:
         tmp.write_text(json.dumps({**self.data, "at": time.time()}), encoding="utf-8")
         tmp.replace(self.path)
 
-    def start(self) -> "Heartbeat":
+    def start(self) -> Heartbeat:
         self.beat()
 
         def loop():
@@ -140,7 +139,7 @@ class RepoLock:
         common = Path(git(Path(repo), "rev-parse", "--git-common-dir"))
         self.path = (common if common.is_absolute() else Path(repo) / common) / "artel-evolve.lock"
 
-    def holder(self) -> Optional[int]:
+    def holder(self) -> int | None:
         try:
             pid = int(json.loads(self.path.read_text(encoding="utf-8"))["pid"])
         except (OSError, ValueError, KeyError, TypeError):
@@ -149,7 +148,7 @@ class RepoLock:
             return pid
         return None
 
-    def acquire(self) -> "RepoLock":
+    def acquire(self) -> RepoLock:
         pid = self.holder()
         if pid:
             raise AlreadyRunning(f"evolution is already running on this repository (pid {pid})")
@@ -173,7 +172,7 @@ def _read(p: Path) -> dict:
         return {}
 
 
-def orphaned(evo_root: Path, now: Optional[float] = None) -> list[dict]:
+def orphaned(evo_root: Path, now: float | None = None) -> list[dict]:
     """Evolution homes with a generation marked running whose process is gone."""
     now = now or time.time()
     out = []
@@ -190,13 +189,13 @@ def orphaned(evo_root: Path, now: Optional[float] = None) -> list[dict]:
         try:
             if state.get("repo") and RepoLock(Path(state["repo"])).holder():
                 continue  # another process (another ARTEL_HOME) is evolving this repository
-        except Exception:  # noqa: BLE001 - a missing repository: let the resume report it
+        except Exception:
             pass
         out.append({"home": d, "state": state, "heartbeat": hb})
     return out
 
 
-def restart(item: dict, log=print) -> Optional[int]:
+def restart(item: dict, log=print) -> int | None:
     """Start ``artel evolve --resume`` for an orphaned generation; returns the pid (None when restarts are cut off)."""
     home, state, hb = item["home"], item["state"], item["heartbeat"]
     run = state["running"]
@@ -254,7 +253,7 @@ def check(evo_root: Path, log=print) -> list:
     for item in orphaned(evo_root):
         try:
             pid = restart(item, log)
-        except Exception as e:  # noqa: BLE001 - a supervisor problem must never take the dashboard down
+        except Exception as e:
             log(f"evolution {item['home'].name}: auto-resume failed: {e!r}")
             continue
         if pid:
@@ -267,7 +266,7 @@ class Supervisor:
         self.root, self.interval, self.log = Path(evo_root), interval_s, log
         self._stop = threading.Event()
 
-    def start(self) -> "Supervisor":
+    def start(self) -> Supervisor:
         def loop():
             while True:
                 check(self.root, self.log)
@@ -281,4 +280,4 @@ class Supervisor:
         self._stop.set()
 
 
-__all__ = ["Heartbeat", "Supervisor", "check", "orphaned", "restart", "resume_argv", "pid_alive"]
+__all__ = ["Heartbeat", "Supervisor", "check", "orphaned", "pid_alive", "restart", "resume_argv"]

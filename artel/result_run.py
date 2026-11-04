@@ -19,7 +19,6 @@ import time
 from functools import partial
 from http.server import SimpleHTTPRequestHandler
 from pathlib import Path
-from typing import Optional
 
 from . import sandbox
 from .agent_env import agent_env
@@ -72,7 +71,7 @@ def _starts_server(argv: list) -> bool:
     return head == "uvicorn"
 
 
-def _readme_command(d: Path) -> Optional[list]:
+def _readme_command(d: Path) -> list | None:
     for name in ("README.md", "readme.md", "README.txt", "README"):
         f = d / name
         if not f.is_file():
@@ -102,7 +101,7 @@ def spec_display(spec: dict) -> str:
     return cmd if spec.get("cwd", ".") == "." else f"{cmd}  (в {spec['cwd']})"
 
 
-def run_spec(project) -> Optional[dict]:
+def run_spec(project) -> dict | None:
     """How to start the result: {"command": [...], "cwd": rel_dir, "kind": web|static|cli, "source": meta|heuristic}.
     Order: meta, package.json start, server.py/app.py/main.py/manage.py, a static index.html, README (last)."""
     run = project.meta.get("run")
@@ -147,7 +146,7 @@ def run_spec(project) -> Optional[dict]:
     return None
 
 
-def validate_run(run) -> Optional[dict]:
+def validate_run(run) -> dict | None:
     """The auditor's `run` field -> what is stored in project.meta["run"], or raise ValueError."""
     if run in (None, "", {}):
         return None
@@ -192,7 +191,7 @@ def _connects(port: int) -> bool:
         return False
 
 
-def proc_identity(pid: int) -> Optional[dict]:
+def proc_identity(pid: int) -> dict | None:
     """{"create_time", "argv0"} of a live process, or None. Linux: /proc/<pid>/stat field 22 (start time in ticks);
     macOS: `ps -o lstart=`; Windows has no cheap creation time here, so only the image name (`tasklist`)."""
     pid = int(pid)
@@ -273,7 +272,7 @@ def kill_pid(rec: dict, grace_s: float = 2.0) -> bool:
     return True
 
 
-def _read_tail(log: Optional[Path], nbytes: int = TAIL_BYTES) -> str:
+def _read_tail(log: Path | None, nbytes: int = TAIL_BYTES) -> str:
     """The last ``nbytes`` of a log, read by seeking (a log may be megabytes)."""
     try:
         with open(log, "rb") as f:
@@ -316,8 +315,8 @@ def _pump(stream, log: Path) -> None:
 
 
 class _Live:
-    def __init__(self, proc=None, server=None, port=0, url="", spec=None, log: Optional[Path] = None,
-                 pidfile: Optional[Path] = None):
+    def __init__(self, proc=None, server=None, port=0, url="", spec=None, log: Path | None = None,
+                 pidfile: Path | None = None):
         self.proc, self.server, self.port, self.url, self.spec, self.log = proc, server, port, url, spec, log
         self.pidfile = pidfile
         self.answering = False
@@ -326,7 +325,7 @@ class _Live:
 class ResultRunner:
     """One running result per project; a new start replaces the old one."""
 
-    def __init__(self, config: Optional[dict] = None):
+    def __init__(self, config: dict | None = None):
         self.config = config or {}
         self.live: dict[str, _Live] = {}
         self.lock = threading.Lock()
@@ -357,14 +356,14 @@ class ResultRunner:
             return False
         try:
             return sandbox.plan(self.config, "true", cwd=project.shared, writable=[str(project.shared)]).backend != "none"
-        except Exception:  # noqa: BLE001
+        except Exception:
             return False
 
-    def _tail(self, log: Optional[Path]) -> str:
+    def _tail(self, log: Path | None) -> str:
         text = _read_tail(log)
         return redact("\n".join(text.splitlines()[-TAIL_LINES:])) if text else ""
 
-    def _read_pidfile(self, project) -> Optional[dict]:
+    def _read_pidfile(self, project) -> dict | None:
         try:
             rec = json.loads(self._pidfile(project).read_text(encoding="utf-8"))
             return rec if isinstance(rec, dict) else None
@@ -372,7 +371,7 @@ class ResultRunner:
             return None
 
     @staticmethod
-    def _drop_pidfile(path: Path, pid: Optional[int] = None) -> None:
+    def _drop_pidfile(path: Path, pid: int | None = None) -> None:
         try:
             if pid is not None:
                 if int(json.loads(path.read_text(encoding="utf-8")).get("pid", -1)) != pid:
@@ -554,4 +553,4 @@ class _QuietHandler(SimpleHTTPRequestHandler):
         return real
 
 
-__all__ = ["run_spec", "validate_run", "ResultRunner", "free_port", "spec_display"]
+__all__ = ["ResultRunner", "free_port", "run_spec", "spec_display", "validate_run"]

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Optional, Sequence
+from typing import Optional
 
 from ...contracts import ErrorClass, ExecutorResult, ModelCard, TaskContract
 from . import claude_code, codex, loop
@@ -54,7 +55,7 @@ class CliAgent:
     def classify(self, err: BaseException) -> ErrorClass:
         try:
             return self.codec.classify(str(err))
-        except Exception:  # noqa: BLE001 - the port promises classify never raises
+        except Exception:
             return ErrorClass("unknown", False, None)
 
 

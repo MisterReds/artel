@@ -27,9 +27,9 @@ import shutil
 import subprocess
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Callable, Optional
 
 from . import bench as bench_mod
 from . import diagnose as diag_mod
@@ -45,7 +45,7 @@ class InfraError(RuntimeError):
     """The model provider, not the candidate, failed (limits, auth, outage). The generation pauses with its plan
     saved; ``resume`` continues it. ``retry_at`` is a unix time when the provider said the limit resets."""
 
-    def __init__(self, message: str, retry_at: Optional[float] = None):
+    def __init__(self, message: str, retry_at: float | None = None):
         super().__init__(message)
         self.retry_at = retry_at
 
@@ -57,7 +57,7 @@ class AllLimited(InfraError):
 DEFAULT_LIMIT_S = 900.0  # a provider limit without a stated reset time is retried after 15 minutes
 
 
-def infra_problem(text: str) -> Optional[InfraError]:
+def infra_problem(text: str) -> InfraError | None:
     m = INFRA_PATTERNS.search(text or "") or _AUTH.search(text or "")
     if not m:
         return None
@@ -156,7 +156,7 @@ class Hypothesis:
     license_note: str = ""
 
     @classmethod
-    def from_dict(cls, d: dict, **extra) -> "Hypothesis":
+    def from_dict(cls, d: dict, **extra) -> Hypothesis:
         keys = cls.__dataclass_fields__
         return cls(**{k: v for k, v in {**d, **extra}.items() if k in keys})
 
@@ -172,10 +172,10 @@ def journal_path(name: str) -> bool:
 
 
 class Evolution:
-    def __init__(self, repo: Path, home: Path, config: dict, bench_config: dict, tasks: Optional[list] = None,
-                 policy: Optional[Policy] = None, parallel: int = 2,
-                 implement_fn: Optional[Callable] = None, bench_fn: Optional[Callable] = None,
-                 agent_fn: Optional[Callable] = None, runtimes: Optional[list] = None):
+    def __init__(self, repo: Path, home: Path, config: dict, bench_config: dict, tasks: list | None = None,
+                 policy: Policy | None = None, parallel: int = 2,
+                 implement_fn: Callable | None = None, bench_fn: Callable | None = None,
+                 agent_fn: Callable | None = None, runtimes: list | None = None):
         self.repo = Path(repo).resolve()
         self.home = Path(home)
         self.home.mkdir(parents=True, exist_ok=True)
@@ -295,7 +295,7 @@ class Evolution:
             out[f.relative_to(self.home).as_posix()] = f.read_bytes()
         return out
 
-    def sync_journal(self, message: str = "journal") -> Optional[str]:
+    def sync_journal(self, message: str = "journal") -> str | None:
         """Commit the evolution journal to the orphan branch evolve/journal (git plumbing: no checkout, the
         main working tree is untouched) and push it. Returns the commit sha, or None when nothing changed."""
         import os
@@ -332,11 +332,11 @@ class Evolution:
     # --- measurement ----------------------------------------------------
 
     @staticmethod
-    def _baseline_name(sha: str, runtime: Optional[str]) -> str:
+    def _baseline_name(sha: str, runtime: str | None) -> str:
         """Baselines are keyed by (commit, runtime): ``<sha>.json`` without runtimes, ``<sha>@<runtime>.json``."""
         return f"{sha}@{runtime}" if runtime else sha
 
-    def baseline(self, sha: str, runtime: Optional[str] = None) -> dict:
+    def baseline(self, sha: str, runtime: str | None = None) -> dict:
         """The champion's benchmark on ``runtime`` (cached per commit and runtime). A candidate is only ever compared
         with the baseline measured on the runtime it was benchmarked on."""
         with self._base_lock:
@@ -361,7 +361,7 @@ class Evolution:
 
     NON_CODE = ("roadmap.yaml", "studied.yaml", "docs/")
 
-    def _equivalent_baseline(self, sha: str, runtime: Optional[str] = None) -> Optional[Path]:
+    def _equivalent_baseline(self, sha: str, runtime: str | None = None) -> Path | None:
         """A cached baseline, on the same runtime, of a commit that differs from ``sha`` only in non-code files."""
         for f in sorted((self.home / "baseline").glob("*.json"), key=lambda p: -p.stat().st_mtime):
             commit, _, rt = f.stem.partition("@")
@@ -373,7 +373,7 @@ class Evolution:
         return None
 
     # --- runtimes: two subscriptions, so one provider's limit does not stop evolution ------------
-    def _cfg_for(self, config: dict, runtime: Optional[str]) -> dict:
+    def _cfg_for(self, config: dict, runtime: str | None) -> dict:
         """``config`` with every role on ``runtime``. Roles pinned to a runtime outside ``evolve.runtimes`` (e.g.
         native on an API key) keep their pin."""
         if not runtime:
@@ -391,7 +391,7 @@ class Evolution:
                 del limits[rt]
             return limits
 
-    def _pick(self, step: str) -> Optional[str]:
+    def _pick(self, step: str) -> str | None:
         """The preferred runtime that is not limited now (None without ``evolve.runtimes``); AllLimited if none."""
         if not self.runtimes:
             return None
@@ -429,7 +429,7 @@ class Evolution:
                 raise
             except InfraError as e:
                 err = e
-            except Exception as exc:  # noqa: BLE001 - only provider failures switch; anything else propagates
+            except Exception as exc:
                 err = infra_problem(repr(exc))
                 if not err:
                     raise
@@ -440,7 +440,7 @@ class Evolution:
             self._limit(rt, err, step)
 
     @staticmethod
-    def _call_rt(fn: Callable, *args, runtime: Optional[str] = None, **kw):
+    def _call_rt(fn: Callable, *args, runtime: str | None = None, **kw):
         """Call a bench/implement function, passing ``runtime`` only when one is set and the function accepts it."""
         import inspect
 
@@ -453,7 +453,7 @@ class Evolution:
                 kw["runtime"] = runtime
         return fn(*args, **kw)
 
-    def _versus(self, champ: str, code: Path, label: str, tasks: Optional[list] = None):
+    def _versus(self, champ: str, code: Path, label: str, tasks: list | None = None):
         """Benchmark ``code`` and take the champion's baseline on the same runtime: (base, suite, runtime)."""
         def measure(rt):
             base = self.baseline(champ, rt)
@@ -553,7 +553,7 @@ class Evolution:
                 "must include the check "
                 "`python -m pytest -q -x -p no:cacheprovider`.")
 
-    def _implement(self, h: Hypothesis, wt: Path, runtime: Optional[str] = None) -> dict:
+    def _implement(self, h: Hypothesis, wt: Path, runtime: str | None = None) -> dict:
         from ..manager import run_goal
 
         project, status = run_goal(self.implementation_goal(h, wt), self._cfg_for(self.config, runtime),
@@ -571,7 +571,7 @@ class Evolution:
         if err:
             raise err
 
-    def _continue_implementation(self, h: Hypothesis, wt: Path, runtime: Optional[str] = None) -> Optional[dict]:
+    def _continue_implementation(self, h: Hypothesis, wt: Path, runtime: str | None = None) -> dict | None:
         """Resume the interrupted implementation project that worked in ``wt`` (None if there is none), on
         ``runtime`` when given (the other subscription after a limit)."""
         if self.implement_fn != self._implement:
@@ -591,7 +591,7 @@ class Evolution:
                         "cost_usd": project.meta["usage"].get("cost_usd", 0.0)}
         return None
 
-    def _implement_on(self, h: Hypothesis, wt: Path, resume: bool, fresh: bool = True) -> Optional[dict]:
+    def _implement_on(self, h: Hypothesis, wt: Path, resume: bool, fresh: bool = True) -> dict | None:
         """Implement ``h`` in ``wt`` on the preferred runtime. ``resume``: first continue an unfinished project
         there; ``fresh``: otherwise start one. After a limit the same work continues on the next runtime in the
         same worktree."""
@@ -650,7 +650,7 @@ class Evolution:
 
     # --- generation -----------------------------------------------------
     # --- population generation ------------------------------------------
-    def _bench_call(self, code: Path, label: str, tasks: Optional[list] = None, runtime: Optional[str] = None) -> dict:
+    def _bench_call(self, code: Path, label: str, tasks: list | None = None, runtime: str | None = None) -> dict:
         try:
             suite = (self._call_rt(self.bench_fn, code, label, tasks=tasks, runtime=runtime) if tasks
                      else self._call_rt(self.bench_fn, code, label, runtime=runtime))
@@ -661,7 +661,7 @@ class Evolution:
             suite["runtime"] = runtime
         return suite
 
-    def _bench(self, code: Path, label: str, tasks: Optional[list] = None, runtime: Optional[str] = None) -> dict:
+    def _bench(self, code: Path, label: str, tasks: list | None = None, runtime: str | None = None) -> dict:
         out = self.home / "bench" / f"{label}-{int(time.time())}"
         only = tasks or self.tasks
         return bench_mod.run_suite(code, self._cfg_for(self.bench_config, runtime), out,
@@ -669,7 +669,7 @@ class Evolution:
                                    parallel=self.parallel, label=label)
 
     @staticmethod
-    def _subset(suite: dict, ids: Optional[list]) -> dict:
+    def _subset(suite: dict, ids: list | None) -> dict:
         if not ids:
             return suite
         rows = [r for r in suite["results"] if r["id"] in ids]
@@ -705,7 +705,7 @@ class Evolution:
                         self._remove_worktree_locked(wt)
                     git(self.repo, "worktree", "prune", check=False)
                     git(self.repo, "worktree", "add", str(wt), branch)
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             entry.update(accepted=False, reason=f"error: worktree: {exc!r}", stage="error")
             return entry
         entry["worktree"] = str(wt)
@@ -746,7 +746,7 @@ class Evolution:
             entry["stage"] = "tested"
         except InfraError:
             raise
-        except Exception as exc:  # noqa: BLE001 - a broken candidate never stops evolution
+        except Exception as exc:
             err = infra_problem(repr(exc))
             if err:
                 raise err from exc
@@ -763,10 +763,10 @@ class Evolution:
             self.record(kind="paused", generation=run.get("generation"), reason=str(e), retry_at=e.retry_at)
             raise
 
-    def _generation(self, candidates: int = 2, hypotheses: Optional[list] = None, kind: str = "candidate",
-                   parallel: int = 1, screen_tasks: Optional[list] = None, finalists: Optional[int] = None,
-                   budget_usd: Optional[float] = None, stack: bool = True, resume: bool = False,
-                   plan_extra: Optional[dict] = None, repairs: int = 2) -> dict:
+    def _generation(self, candidates: int = 2, hypotheses: list | None = None, kind: str = "candidate",
+                   parallel: int = 1, screen_tasks: list | None = None, finalists: int | None = None,
+                   budget_usd: float | None = None, stack: bool = True, resume: bool = False,
+                   plan_extra: dict | None = None, repairs: int = 2) -> dict:
         """One generation over a population of hypotheses.
 
         The plan (parent commit, hypotheses, candidate branches) is saved in state.json before any work, so a
@@ -1059,7 +1059,7 @@ class Evolution:
         self._push(branch, force=True)
         return wt, included, excluded
 
-    def _confirm(self, code: Path, cmp: dict, label: str, runtime: Optional[str] = None) -> list:
+    def _confirm(self, code: Path, cmp: dict, label: str, runtime: str | None = None) -> list:
         """Re-run regressed tasks once (on the runtime ``cmp`` was measured on); only regressions that repeat count."""
         if not cmp["regressed"]:
             return []
@@ -1068,7 +1068,7 @@ class Evolution:
         return [t for t in cmp["regressed"] if t in still]
 
     def _culprits(self, gen: int, new: list, regressed: list, cmp: dict, round_no: int,
-                  champ: Optional[str] = None) -> list:
+                  champ: str | None = None) -> list:
         """Which items cause the regression: each runs the regressed tasks alone (or the full suite for cost),
         compared with the champion's baseline on the same runtime."""
         culprits = []
@@ -1119,7 +1119,7 @@ class Evolution:
             tests = self.run_tests(wt)
         except InfraError:
             raise
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             e.setdefault("repairs", []).append({"error": repr(exc)[:300]})
             return False
         e.setdefault("repairs", []).append({"implementation": impl, "commit": commit, "tests": tests["summary"]})
@@ -1214,7 +1214,7 @@ class Evolution:
             self._commit_roadmap(f"roadmap: gen {gen} decisions voided — {reason}")
         return plan
 
-    def resume(self, **opts) -> Optional[dict]:
+    def resume(self, **opts) -> dict | None:
         """Finish the generation that was interrupted (None if nothing was running)."""
         if not self.resume_plan_from_ledger():
             return None
@@ -1226,7 +1226,7 @@ class Evolution:
         return [self.generation(candidates, **opts) for _ in range(generations)]
 
     # --- roadmap --------------------------------------------------------
-    def roadmap_generation(self, n: int, wave: Optional[int] = None, ids: Optional[list] = None,
+    def roadmap_generation(self, n: int, wave: int | None = None, ids: list | None = None,
                            resume: bool = False, **opts) -> dict:
         """Implement the next ``n`` evolve items of roadmap.yaml (or exactly ``ids``) as one population;
         mark merged items done."""
@@ -1270,7 +1270,7 @@ class Evolution:
         s["published"] = self.publish()
         return s
 
-    def update_roadmap(self, outcome: dict, gen: int) -> Optional[str]:
+    def update_roadmap(self, outcome: dict, gen: int) -> str | None:
         """Write statuses into roadmap.yaml + docs/ROADMAP.md on the main branch and commit."""
         from ..roadmap import Roadmap
 
@@ -1289,7 +1289,7 @@ class Evolution:
                 git(self.repo, "branch", "-f", f"evolve/gen-{gen}", sha)
             return sha
 
-    def _commit_roadmap(self, message: str) -> Optional[str]:
+    def _commit_roadmap(self, message: str) -> str | None:
         """Re-render docs/ROADMAP.md and commit roadmap.yaml, studied.yaml and the render on the main branch."""
         from ..roadmap import Roadmap
 

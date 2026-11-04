@@ -1,7 +1,6 @@
 """Tool output is capped and fenced before it enters history; truncated or unparsable tool calls never run."""
 
 import copy
-import json
 
 import pytest
 

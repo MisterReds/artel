@@ -7,7 +7,7 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 
 def window_text(text: str, limit: int, head_frac: float = 0.3, marker: str = "\n…[{n} chars cut]…\n") -> str:
@@ -40,7 +40,7 @@ def tool_output_cap(config: Any) -> int:
     return int((config or {}).get("tool_output_cap", TOOL_OUTPUT_CAP))
 
 
-def cap_output(ctx: "ToolContext", text: str, tool: str, limit: Optional[int] = None) -> str:
+def cap_output(ctx: ToolContext, text: str, tool: str, limit: int | None = None) -> str:
     """The one place where tool output is bounded: head + tail within ``limit`` chars, the full text spilled to a file.
 
     The file lives in <workspace>/.spill/ (hidden, so list_files skips it and it stays out of deliverables); the
@@ -67,7 +67,7 @@ def fence(text: str) -> str:
     return _FENCE[0] + _CLOSING.sub(r"\1\\\2", text) + _FENCE[1]
 
 
-def present_output(ctx: "ToolContext", tool: str, text: str) -> str:
+def present_output(ctx: ToolContext, tool: str, text: str) -> str:
     """What the model sees of a tool result: capped, spilled to a file when long, and fenced."""
     return fence(cap_output(ctx, text, tool))
 
@@ -88,8 +88,8 @@ def _paths(project: Any, values: Any) -> list:
     return out
 
 
-def effective_grants(project: Any, role: str, workspace: Optional[Path] = None,
-                     deliverables: Optional[Path] = None) -> dict:
+def effective_grants(project: Any, role: str, workspace: Path | None = None,
+                     deliverables: Path | None = None) -> dict:
     """Resolved path grants as plain string lists: ``{"read": [...], "write": [...]}``.
 
     Defaults: write = the role's workspace + the deliverables (the task's own worktree under isolation, else the
@@ -125,15 +125,15 @@ class ToolContext:
     role: str
     workspace: Path
     persona: Any = None
-    task: Optional[dict] = None
-    run_id: Optional[int] = None
+    task: dict | None = None
+    run_id: int | None = None
     viewed: set = field(default_factory=set)          # (skill, file) pairs read this run: read-before-write
     edited_files: list = field(default_factory=list)
     outputs: list = field(default_factory=list)       # recent command outputs, for evidence checks
-    terminal: Optional[tuple] = None                  # (tool_name, input) once a terminal tool accepted
+    terminal: tuple | None = None                  # (tool_name, input) once a terminal tool accepted
     state: dict = field(default_factory=dict)
     read_stamps: dict = field(default_factory=dict)   # resolved path -> (mtime_ns, size) at last read/write
-    deliverables: Optional[Path] = None               # the task's own worktree of shared/ (isolation), else None
+    deliverables: Path | None = None               # the task's own worktree of shared/ (isolation), else None
 
     @property
     def shared_dir(self) -> Path:

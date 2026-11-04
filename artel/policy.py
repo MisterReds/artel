@@ -21,7 +21,6 @@ import re
 import shlex
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -51,8 +50,8 @@ class Rule:
     id: str
     decision: str
     justification: str = ""
-    prefix: Optional[list] = None          # tokens; a token may be a list of alternatives
-    regex: Optional[re.Pattern] = None
+    prefix: list | None = None          # tokens; a token may be a list of alternatives
+    regex: re.Pattern | None = None
     match: list = field(default_factory=list)
     not_match: list = field(default_factory=list)
 
@@ -68,7 +67,7 @@ class Rule:
 class Decision:
     decision: str
     justification: str = ""
-    rule: Optional[Rule] = None
+    rule: Rule | None = None
 
 
 # Command substitution, subshells and groups start commands of their own: `echo $(x)`, `(x)`, `<(x)`, `{ x; }`.

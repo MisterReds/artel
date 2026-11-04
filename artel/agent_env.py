@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import os
 import re
-import shutil
 import shlex
-from typing import Optional
+import shutil
 
 COMMON = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM", "TZ", "TMPDIR", "TEMP", "TMP",
           "SYSTEMROOT", "COMSPEC", "PATHEXT", "WINDIR", "APPDATA", "LOCALAPPDATA", "USERPROFILE", "PROGRAMDATA",
@@ -36,7 +35,7 @@ _CLOUD_FLAGS = {"CLAUDE_CODE_USE_FOUNDRY": re.compile(r"^ANTHROPIC_FOUNDRY_"), "
 _TRUE = {"1", "true", "yes", "on"}
 
 
-def agent_env(runtime: str, extra: Optional[dict] = None, config: Optional[dict] = None) -> dict:
+def agent_env(runtime: str, extra: dict | None = None, config: dict | None = None) -> dict:
     src = os.environ
     allowed = set(COMMON) | RUNTIME.get(runtime, set())
     allowed |= {str(n) for n in ((config or {}).get("agent_env") or {}).get("pass") or []}
@@ -72,11 +71,11 @@ def with_loopback_bypass(env: dict) -> dict:
     return env
 
 
-def _path_key(env: dict) -> Optional[str]:
+def _path_key(env: dict) -> str | None:
     return next((k for k in env if k.upper() == "PATH"), None)
 
 
-def python_shim_dir() -> Optional[str]:
+def python_shim_dir() -> str | None:
     """ARTEL_HOME/shims with a ``python`` that runs ``python3`` (a machine with only python3: Debian, Ubuntu, macOS).
     Created once, idempotent; None when it cannot be written."""
     from .project import artel_home
@@ -114,7 +113,7 @@ TOOLS = ("python3", "python", "node", "npm", "git", "grep", "rg", "jq", "curl", 
 _inventory: dict = {}
 
 
-def tool_inventory(config: Optional[dict] = None) -> tuple[list, list]:
+def tool_inventory(config: dict | None = None) -> tuple[list, list]:
     """(available, missing) among the tools tasks usually need, probed once per PATH on the agents' PATH (shims
     included) and cached."""
     env = agent_env("native", config=config)
@@ -132,7 +131,7 @@ _NOT_PROGRAMS = {"if", "then", "else", "elif", "fi", "for", "while", "until", "d
 _SEGMENTS = re.compile(r"&&|\|\||;|\||\n|\(|\)|`|\$\(")
 
 
-def missing_programs(checks: list, config: Optional[dict] = None) -> list:
+def missing_programs(checks: list, config: dict | None = None) -> list:
     """First program of every command in the checks that cannot be found (``which`` on the agents' PATH). Only
     plain names count: paths, variables and shell builtins are not looked up."""
     env = agent_env("native", config=config)

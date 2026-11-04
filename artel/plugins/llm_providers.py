@@ -13,7 +13,7 @@ import json
 import os
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 
 class LLMError(Exception):
@@ -167,7 +167,7 @@ class OpenAICompatProvider:
         if tools:
             body["tools"] = [{"type": "function", "function": {"name": t["name"], "description": t["description"],
                                                                "parameters": t["input_schema"]}} for t in tools]
-        last_exc: Optional[Exception] = None
+        last_exc: Exception | None = None
         for attempt in range(5):
             try:
                 r = self.client.post(f"{self.base_url}/chat/completions", json=body)
@@ -177,7 +177,7 @@ class OpenAICompatProvider:
                     raise LLMError(f"HTTP {r.status_code}: {r.text[:500]}")
                 data = r.json()
                 break
-            except Exception as exc:  # noqa: BLE001 - retry transport and 5xx
+            except Exception as exc:
                 last_exc = exc
                 if isinstance(exc, LLMError) and "HTTP 4" in str(exc) and "HTTP 429" not in str(exc):
                     raise

@@ -35,7 +35,7 @@ def _noop(seg: str) -> bool:
         return len(w) == 1 or w[1] == "0"
     if w[0] in ("test", "[", "[["):
         args = [a for a in w[1:] if a not in ("]", "]]")]
-        return len(args) == 1 and (args[0].isdigit() and args[0] != "0" or args[0] in ("1", "true"))
+        return len(args) == 1 and ((args[0].isdigit() and args[0] != "0") or args[0] in ("1", "true"))
     return False
 
 

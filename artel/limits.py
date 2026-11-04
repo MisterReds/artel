@@ -9,7 +9,6 @@ from __future__ import annotations
 import json
 import time
 from pathlib import Path
-from typing import Optional
 
 
 def _path() -> Path:
@@ -27,7 +26,7 @@ def load() -> dict:
     return {k: float(v) for k, v in data.items() if float(v) > now}
 
 
-def mark(runtime: str, until: Optional[float], reason: str = "") -> float:
+def mark(runtime: str, until: float | None, reason: str = "") -> float:
     until = until or time.time() + 900
     data = load()
     data[runtime] = max(until, data.get(runtime, 0))
@@ -39,11 +38,11 @@ def mark(runtime: str, until: Optional[float], reason: str = "") -> float:
     return data[runtime]
 
 
-def until(runtime: str) -> Optional[float]:
+def until(runtime: str) -> float | None:
     return load().get(runtime)
 
 
-def clear(runtime: Optional[str] = None) -> None:
+def clear(runtime: str | None = None) -> None:
     data = {} if runtime is None else {k: v for k, v in load().items() if k != runtime}
     p = _path()
     if p.exists() or data:

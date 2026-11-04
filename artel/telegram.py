@@ -21,7 +21,6 @@ import secrets
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import httpx
 
@@ -54,7 +53,7 @@ def _store_path() -> Path:
 class Store:
     """Paired chats, the pending pairing code, the update offset and what was already notified."""
 
-    def __init__(self, path: Optional[Path] = None):
+    def __init__(self, path: Path | None = None):
         self.path = path or _store_path()
         self.lock = threading.Lock()
         try:
@@ -79,7 +78,7 @@ class Store:
         self.save()
         return code
 
-    def pair(self, chat_id: int, code: str, user_id: Optional[int] = None) -> bool:
+    def pair(self, chat_id: int, code: str, user_id: int | None = None) -> bool:
         p = self.data.get("pair") or {}
         ok = bool(p) and time.time() < p.get("expires", 0) and secrets.compare_digest(p.get("code", ""), code.strip())
         if ok:
@@ -93,7 +92,7 @@ class Store:
 
 
 class TelegramBot:
-    def __init__(self, runner, tok: Optional[str] = None, api_base: Optional[str] = None, store: Optional[Store] = None):
+    def __init__(self, runner, tok: str | None = None, api_base: str | None = None, store: Store | None = None):
         self.runner = runner
         self.tok = tok or token()
         self.base = (api_base or (runner.config.get("telegram") or {}).get("api_base") or API).rstrip("/")
@@ -115,13 +114,13 @@ class TelegramBot:
             raise RuntimeError(f"telegram {method}: {data.get('description', r.status_code)}")
         return data.get("result")
 
-    def send(self, chat_id: int, text: str, buttons: Optional[list] = None) -> None:
+    def send(self, chat_id: int, text: str, buttons: list | None = None) -> None:
         params = {"chat_id": chat_id, "text": text[:4000], "disable_web_page_preview": True}
         if buttons:
             params["reply_markup"] = {"inline_keyboard": buttons}
         try:
             self.call("sendMessage", **params)
-        except Exception:  # noqa: BLE001 - a lost message must not stop the bot
+        except Exception:
             pass
 
     # --- loop -----------------------------------------------------------
@@ -132,7 +131,7 @@ class TelegramBot:
             self.store.data["offset"] = u["update_id"] + 1
             try:
                 self.handle(u)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 chat = ((u.get("message") or {}).get("chat") or {}).get("id")
                 if chat in self.store.data["paired"]:
                     self.send(chat, f"Не получилось: {exc}")
@@ -147,7 +146,7 @@ class TelegramBot:
             try:
                 self.poll_once()
                 backoff = 1.0
-            except Exception:  # noqa: BLE001 - network hiccups: retry with backoff
+            except Exception:
                 time.sleep(backoff)
                 backoff = min(backoff * 2, 60)
 
@@ -160,7 +159,7 @@ class TelegramBot:
         for chat in list(self.store.data["paired"]):
             self.send(chat, reports.telegram_text(rep))
 
-    def start(self) -> "TelegramBot":
+    def start(self) -> TelegramBot:
         from . import reports
 
         reports._listeners.append(self.on_report)
@@ -176,7 +175,7 @@ class TelegramBot:
             chat, user = cq["message"]["chat"]["id"], (cq.get("from") or {}).get("id")
             try:
                 self.call("answerCallbackQuery", callback_query_id=cq["id"])
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
             data = cq.get("data", "")
             if chat not in self.store.data["paired"]:
@@ -204,7 +203,7 @@ class TelegramBot:
         else:
             self.send(chat, HELP)
 
-    def unpaired(self, chat: int, text: str, user: Optional[int] = None) -> None:
+    def unpaired(self, chat: int, text: str, user: int | None = None) -> None:
         if self.failed_pairs.get(chat, 0) >= 5:
             return  # stop answering a chat that keeps guessing
         cmd, _, code = text.partition(" ")
@@ -225,14 +224,14 @@ class TelegramBot:
 
         return portfolio(self.runner.config, live=set(self.runner.active))
 
-    def _pick(self, chat: int, arg: str) -> Optional[str]:
+    def _pick(self, chat: int, arg: str) -> str | None:
         arg = arg.strip().split(" ")[0] if arg else ""
         slugs = self.listing.get(chat) or [p["slug"] for p in self._portfolio()]
         if arg.isdigit() and 1 <= int(arg) <= len(slugs):
             return slugs[int(arg) - 1]
         return next((s for s in slugs if s == arg or s.startswith(arg)), None) if arg else None
 
-    def _may_act(self, chat: int, user: Optional[int]) -> bool:
+    def _may_act(self, chat: int, user: int | None) -> bool:
         """Actions only in a private chat (id > 0) and from the user who paired it. A pairing without a recorded user
         (made before this was kept) is trusted in a private chat only."""
         owner = self.store.data["users"].get(str(chat))
@@ -248,7 +247,7 @@ class TelegramBot:
         def work():
             try:
                 self.c_chat(chat, text, can_act)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self.send(chat, f"Не получилось: {exc}")
             finally:
                 lock.release()
@@ -457,7 +456,7 @@ class TelegramBot:
         while not self.stop_event.is_set():
             try:
                 self.notify_once()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
             self.stop_event.wait(15)
 

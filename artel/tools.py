@@ -23,8 +23,8 @@ import tempfile
 import threading
 import urllib.request
 import zipfile
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 WIN = sys.platform == "win32"
 EXE = ".exe" if WIN else ""
@@ -67,21 +67,21 @@ def with_tool_dirs(path: str) -> str:
     return os.pathsep.join(head + [p for p in parts if p not in head and p not in tail] + tail)
 
 
-def env_with_tools(env: Optional[dict] = None) -> dict:
+def env_with_tools(env: dict | None = None) -> dict:
     env = dict(os.environ if env is None else env)
     env["PATH"] = with_tool_dirs(env.get("PATH", ""))
     return env
 
 
-def resolve(binary: str) -> Optional[str]:
+def resolve(binary: str) -> str | None:
     """Full path of a CLI: Artel's tools first, then the system PATH."""
     if os.path.sep in binary or (WIN and "/" in binary):
         return binary if Path(binary).exists() else None
     return shutil.which(binary, path=env_with_tools().get("PATH"))
 
 
-@functools.lru_cache(maxsize=None)
-def posix_shell() -> Optional[str]:
+@functools.cache
+def posix_shell() -> str | None:
     """bash for agent commands on Windows: ARTEL_BASH, else Git for Windows' bash (its bin/bash.exe sets up PATH
     for coreutils). WSL's System32\\bash.exe is never used: it runs in another file system."""
     if os.environ.get("ARTEL_BASH"):
@@ -106,7 +106,7 @@ def shell_argv(command: str) -> list:
     return ["/bin/sh", "-c", command]
 
 
-def shell_env(env: Optional[dict] = None) -> dict:
+def shell_env(env: dict | None = None) -> dict:
     """Environment for shell commands: on Windows, child Pythons in UTF-8 mode so their output decodes."""
     env = dict(os.environ if env is None else env)
     if WIN:
@@ -258,7 +258,7 @@ def codex_asset(system: str = sys.platform, machine: str = platform.machine()) -
     return f"codex-{cpu}-unknown-linux-musl.tar.gz"
 
 
-def claude_platform(system: str = sys.platform, machine: str = platform.machine(), musl: Optional[bool] = None) -> str:
+def claude_platform(system: str = sys.platform, machine: str = platform.machine(), musl: bool | None = None) -> str:
     arch = _arch(machine)
     if system == "win32":
         return f"win32-{arch}"
@@ -494,7 +494,7 @@ class Installer:
                     from .embeddings import reset
 
                     reset()
-            except Exception as e:  # noqa: BLE001 - shown in the dashboard
+            except Exception as e:
                 st.update(phase="error", error=str(e)[:500] or repr(e)[:500])
 
         threading.Thread(target=run, daemon=True, name=f"install-{name}").start()
