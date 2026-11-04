@@ -109,12 +109,36 @@ def test_mutant_names_split_into_file_class_and_function():
     )
 
 
-def test_mutated_lines_are_located_by_text_inside_the_function():
-    diff = "--- a\n+++ a\n@@ -1,2 +1,2 @@\n def simple(x):\n-    return x + 1\n+    return x - 1\n"
-    assert mutation.function_range(SRC, None, "simple") == (1, 2)
-    assert mutation.function_range(SRC, "K", "method") == (16, 20)
-    assert mutation.function_range(SRC, "K", "nope") is None
-    assert mutation.mutated_lines(diff, SRC, None, "simple") == {2}
+MUTANTS = textwrap.dedent("""\
+    def x_simple__mutmut_orig(x):
+        return x + 1
+
+
+    def x_simple__mutmut_1(x):
+        return x - 1
+
+
+    def x_simple__mutmut_2(x):
+        y = None
+        return x + 1
+""")
+
+
+def test_units_touching_names_the_enclosing_function_or_method():
+    assert mutation.units_touching(SRC, {2}) == {(None, "simple")}
+    assert mutation.units_touching(SRC, {18}) == {("K", "method")}
+    assert mutation.units_touching(SRC, {3, 4}) == set()  # blank lines between functions
+    assert mutation.mutant_glob("artel/m.py", None, "simple") == "artel.m.x_simple__mutmut_*"
+    assert mutation.mutant_glob("artel/m.py", "K", "method") == "artel.m.xǁKǁmethod__mutmut_*"
+
+
+def test_mutated_lines_come_from_comparing_the_mutant_with_the_original_copy():
+    name = "artel.m.x_simple__mutmut_1"
+    assert mutation.mutated_lines(SRC, MUTANTS, name) == {2}  # `return x + 1` is line 2 of the real file
+    # an inserted line is attributed to the line it precedes
+    assert mutation.mutated_lines(SRC, MUTANTS, "artel.m.x_simple__mutmut_2") == {2}
+    # unknown mutant: fall back to the function's first line
+    assert mutation.mutated_lines(SRC, MUTANTS, "artel.m.x_simple__mutmut_9") == {1}
 
 
 def git(repo: Path, *args: str) -> str:
