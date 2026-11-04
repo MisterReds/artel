@@ -49,10 +49,13 @@ def mypy_counts(text: str, root: Path) -> dict[str, int]:
 
 
 def run_tool(cmd: list[str], root: Path) -> str:
-    try:
-        proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, check=False)
-    except FileNotFoundError:
-        sys.exit(f"{cmd[0]} is not installed: pip install -e '.[gates]'")
+    """Run ruff or mypy and return its stdout; a missing or crashed tool is an error, never an empty result."""
+    proc = subprocess.run(cmd, cwd=root, capture_output=True, text=True, check=False)
+    name = cmd[2] if cmd[1] == "-m" else cmd[0]
+    if "No module named" in proc.stderr:
+        sys.exit(f"{name} is not installed: pip install -e '.[gates]'")
+    if proc.returncode > 1:
+        sys.exit(f"{name} failed with exit code {proc.returncode}:\n{proc.stderr.strip() or proc.stdout.strip()}")
     return proc.stdout
 
 

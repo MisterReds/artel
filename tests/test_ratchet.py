@@ -7,6 +7,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import lint_ratchet  # noqa: E402
@@ -58,6 +60,7 @@ def test_mypy_counts_ignore_notes():
 
 
 def test_ruff_gate_end_to_end_on_a_temp_repo(tmp_path):
+    pytest.importorskip("ruff", reason="ruff comes with the gates extra: pip install -e '.[gates]'")
     (tmp_path / "scripts").mkdir()
     (tmp_path / "a.py").write_text("import os\n")
 
@@ -85,3 +88,8 @@ def test_mypy_strict_zone_errors_fail_even_when_baselined(tmp_path, monkeypatch,
     ratchet.dump(tmp_path / "scripts" / "mypy_baseline.json", {"artel/contracts/x.py": 1})
     assert lint_ratchet.main(["mypy", "--root", str(tmp_path)]) == 1
     assert "strict zone" in capsys.readouterr().out
+
+
+def test_a_missing_tool_is_an_error_not_an_empty_result():
+    with pytest.raises(SystemExit, match="is not installed"):
+        lint_ratchet.run_tool([sys.executable, "-m", "no_such_tool_for_the_gate"], Path.cwd())

@@ -52,6 +52,7 @@ def test_function_coverage_counts_statements_inside_the_function_only():
 
 
 def test_functions_of_lists_functions_and_methods_with_complexity():
+    pytest.importorskip("radon", reason="radon comes with the gates extra: pip install -e '.[gates]'")
     got = {name: (first, comp) for name, first, last, comp in cg.functions_of(SRC)}
     assert got["simple"] == (1, 1)
     assert got["branchy"][1] == 5  # three ifs, one boolean operator, plus one
@@ -59,6 +60,7 @@ def test_functions_of_lists_functions_and_methods_with_complexity():
 
 
 def test_crap_report_flags_only_changed_functions_and_uses_coverage():
+    pytest.importorskip("radon", reason="radon comes with the gates extra: pip install -e '.[gates]'")
     changed = {"artel/m.py": {2, 20}}  # a line in `simple` and a line in K.method
     coverage = {
         "files": {"artel/m.py": {"executed_lines": [2], "missing_lines": [6, 7, 9, 10, 11, 12, 17, 18, 19, 20]}}
