@@ -4,18 +4,28 @@ from __future__ import annotations
 import copy
 import hashlib
 import math
-from typing import Any, Callable, Iterator, Mapping, Optional, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from typing import Any
 
-from artel.contracts import (ErrorClass, Event, ExecutorResult, ModelCard, NormRequest, NormResponse,
-                             TaskContract, ToolResult, Usage)
+from artel.contracts import (
+    ErrorClass,
+    Event,
+    ExecutorResult,
+    ModelCard,
+    NormRequest,
+    NormResponse,
+    TaskContract,
+    ToolResult,
+    Usage,
+)
 
 
 class ScriptedLLM:
     """Returns the scripted responses in order; records every request."""
 
-    def __init__(self, responses: Sequence[NormResponse], card: Optional[ModelCard] = None):
+    def __init__(self, responses: Sequence[NormResponse], card: ModelCard | None = None):
         self._script = list(responses)
-        self.requests: list = []
+        self.requests: list[NormRequest] = []
         self._card = card or ModelCard("scripted", "fake", 100_000, (), 0.0, 0.0)
 
     def call(self, req: NormRequest) -> NormResponse:
@@ -24,7 +34,7 @@ class ScriptedLLM:
             raise RuntimeError("scripted LLM has no more responses")
         return self._script.pop(0)
 
-    def stream(self, req: NormRequest) -> Iterator[dict]:
+    def stream(self, req: NormRequest) -> Iterator[dict[str, Any]]:
         yield {"type": "end", "response": self.call(req)}
 
     def count_tokens(self, req: NormRequest) -> int:
@@ -43,9 +53,9 @@ class ScriptedLLM:
 class ScriptedAgent:
     """Returns the scripted results in order; records every contract."""
 
-    def __init__(self, results: Sequence[ExecutorResult], card: Optional[ModelCard] = None):
+    def __init__(self, results: Sequence[ExecutorResult], card: ModelCard | None = None):
         self._script = list(results)
-        self.runs: list = []
+        self.runs: list[tuple[TaskContract, str, tuple[str, ...]]] = []
         self._card = card or ModelCard("scripted-agent", "fake", 100_000, (), 0.0, 0.0)
 
     def run(self, contract: TaskContract, workspace: str, tools: Sequence[str]) -> ExecutorResult:
@@ -65,8 +75,8 @@ class DictMemory:
     """Blobs keyed by content hash; the summary is a dict rendered in key order."""
 
     def __init__(self) -> None:
-        self._blobs: dict = {}
-        self._state: dict = {}
+        self._blobs: dict[str, bytes] = {}
+        self._state: dict[str, Any] = {}
 
     def put(self, blob: bytes) -> str:
         ref = "sha256:" + hashlib.sha256(blob).hexdigest()
@@ -91,7 +101,7 @@ class ListEventLog:
     """Append-only list; sequence numbers start at 1."""
 
     def __init__(self) -> None:
-        self._events: list = []
+        self._events: list[Event] = []
 
     def append(self, event: Event) -> int:
         stored = Event.from_dict({**event.to_dict(), "seq": len(self._events) + 1})
@@ -105,9 +115,9 @@ class ListEventLog:
 class RecordingToolRunner:
     """Records calls; answers with the handler for the tool name, or an error result when none or not granted."""
 
-    def __init__(self, handlers: Optional[Mapping[str, Callable[[Mapping[str, Any]], str]]] = None):
+    def __init__(self, handlers: Mapping[str, Callable[[Mapping[str, Any]], str]] | None = None):
         self._handlers = dict(handlers or {})
-        self.calls: list = []
+        self.calls: list[tuple[str, dict[str, Any], tuple[str, ...]]] = []
 
     def run(self, name: str, args: Mapping[str, Any], grants: Sequence[str]) -> ToolResult:
         self.calls.append((name, copy.deepcopy(dict(args)), tuple(grants)))
@@ -121,7 +131,7 @@ class RecordingToolRunner:
             if not isinstance(out, str):
                 return ToolResult(f"handler returned {type(out).__name__}, not str", True)
             return ToolResult(out, False)
-        except Exception as exc:  # noqa: BLE001 - a failing tool is a result, not a crash
+        except Exception as exc:
             return ToolResult(f"{type(exc).__name__}: {exc}", True)
 
 

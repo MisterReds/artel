@@ -1,14 +1,15 @@
 """AgentEvent: one normalised event of a CLI agent's output stream (what a codec's parse(line) returns)."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping
+from typing import Any
 
 from . import _base as b
 
 AGENT_EVENT_KINDS = ("session", "text", "tool_call", "tool_result", "command", "usage", "end", "error")
 # kind -> required data fields and their accepted types; any other JSON field is allowed and codec-defined
-_REQUIRED = {
+_REQUIRED: dict[str, dict[str, tuple[type, ...]]] = {
     "session": {"id": (str,)},
     "text": {"text": (str,)},
     "tool_call": {"id": (str,), "name": (str,), "input": (Mapping,)},
@@ -23,7 +24,7 @@ _REQUIRED = {
 @dataclass(frozen=True)
 class AgentEvent:
     kind: str
-    data: Mapping
+    data: Mapping[str, Any]
 
     def __post_init__(self) -> None:
         if self.kind not in AGENT_EVENT_KINDS:
@@ -44,11 +45,11 @@ class AgentEvent:
                     raise b.ContractError(f"data.{key}", "must not be negative")
 
     @classmethod
-    def from_dict(cls, d: Any, path: str = "") -> "AgentEvent":
+    def from_dict(cls, d: Any, path: str = "") -> AgentEvent:
         path = b.check_path(path)
         d = b.obj(d, path)
         b.reject_unknown(d, cls, path)
         return cls(b.enum(d, "kind", AGENT_EVENT_KINDS, path), b.mapping(d, "data", path))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"kind": self.kind, "data": b.thaw(self.data)}

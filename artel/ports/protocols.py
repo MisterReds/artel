@@ -1,10 +1,20 @@
 """Port protocols. Each docstring states the contract every adapter and fake must keep."""
 from __future__ import annotations
 
-from typing import Any, Iterator, Mapping, Protocol, Sequence, runtime_checkable
+from collections.abc import Iterator, Mapping, Sequence
+from typing import Any, Protocol, runtime_checkable
 
-from artel.contracts import (ErrorClass, Event, ExecutorResult, ModelCard, NormRequest, NormResponse,
-                             TaskContract, ToolResult, Usage)
+from artel.contracts import (
+    ErrorClass,
+    Event,
+    ExecutorResult,
+    ModelCard,
+    NormRequest,
+    NormResponse,
+    TaskContract,
+    ToolResult,
+    Usage,
+)
 
 
 @runtime_checkable
@@ -14,7 +24,7 @@ class LLMPort(Protocol):
     def call(self, req: NormRequest) -> NormResponse:
         """Run one request to completion; the response has non-negative usage and latency."""
 
-    def stream(self, req: NormRequest) -> Iterator[dict]:
+    def stream(self, req: NormRequest) -> Iterator[dict[str, Any]]:
         """Yield incremental events; the last one is {"type": "end", "response": NormResponse}."""
 
     def count_tokens(self, req: NormRequest) -> int:

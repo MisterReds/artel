@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import math
 import types
+from collections.abc import Mapping, Sequence
 from dataclasses import fields as _fields
-from typing import Any, Mapping, Optional, Sequence
+from typing import Any, Literal, cast, overload
 
 
 class ContractError(ValueError):
@@ -28,7 +29,11 @@ def _get(d: Mapping[str, Any], key: str, path: str) -> Any:
     return d[key]
 
 
-def string(d, key, path="", nullable=False, nonempty=False) -> Optional[str]:
+@overload
+def string(d: Any, key: str, path: str = ..., nullable: Literal[False] = ..., nonempty: bool = ...) -> str: ...
+@overload
+def string(d: Any, key: str, path: str = ..., *, nullable: bool, nonempty: bool = ...) -> str | None: ...
+def string(d: Any, key: str, path: str = "", nullable: bool = False, nonempty: bool = False) -> str | None:
     v = _get(d, key, path)
     if v is None and nullable:
         return None
@@ -39,16 +44,16 @@ def string(d, key, path="", nullable=False, nonempty=False) -> Optional[str]:
     return v
 
 
-def integer(d, key, path="", minimum=0) -> int:
+def integer(d: Any, key: str, path: str = "", minimum: int = 0) -> int:
     v = _get(d, key, path)
     if isinstance(v, bool) or not isinstance(v, int):
         raise ContractError(f"{path}{key}", "expected an integer")
     if v < minimum:
         raise ContractError(f"{path}{key}", f"must be >= {minimum}")
-    return v
+    return int(v)
 
 
-def number(d, key, path="", minimum=0.0, maximum=None) -> float:
+def number(d: Any, key: str, path: str = "", minimum: float = 0.0, maximum: float | None = None) -> float:
     v = _get(d, key, path)
     if isinstance(v, bool) or not isinstance(v, (int, float)):
         raise ContractError(f"{path}{key}", "expected a number")
@@ -57,26 +62,30 @@ def number(d, key, path="", minimum=0.0, maximum=None) -> float:
     if v < minimum or (maximum is not None and v > maximum):
         hi = "" if maximum is None else f" and <= {maximum}"
         raise ContractError(f"{path}{key}", f"must be >= {minimum}{hi}")
-    return v
+    return cast(float, v)
 
 
-def boolean(d, key, path="") -> bool:
+def boolean(d: Any, key: str, path: str = "") -> bool:
     v = _get(d, key, path)
     if not isinstance(v, bool):
         raise ContractError(f"{path}{key}", "expected a boolean")
     return v
 
 
-def enum(d, key, allowed: Sequence[str], path="", nullable=False) -> Optional[str]:
+@overload
+def enum(d: Any, key: str, allowed: Sequence[str], path: str = ..., nullable: Literal[False] = ...) -> str: ...
+@overload
+def enum(d: Any, key: str, allowed: Sequence[str], path: str = ..., *, nullable: bool) -> str | None: ...
+def enum(d: Any, key: str, allowed: Sequence[str], path: str = "", nullable: bool = False) -> str | None:
     v = _get(d, key, path)
     if v is None and nullable:
         return None
     if v not in allowed:
         raise ContractError(f"{path}{key}", f"must be one of {sorted(allowed)}, got {v!r}")
-    return v
+    return cast(str, v)
 
 
-def strings(d, key, path="", maximum=None) -> tuple:
+def strings(d: Any, key: str, path: str = "", maximum: int | None = None) -> tuple[str, ...]:
     v = _get(d, key, path)
     if not isinstance(v, (list, tuple)):
         raise ContractError(f"{path}{key}", "expected a list")
@@ -88,21 +97,21 @@ def strings(d, key, path="", maximum=None) -> tuple:
     return tuple(v)
 
 
-def nested(d, key, cls, path="", nullable=False):
+def nested(d: Any, key: str, cls: Any, path: str = "", nullable: bool = False) -> Any:
     v = _get(d, key, path)
     if v is None and nullable:
         return None
     return cls.from_dict(v, f"{path}{key}.")
 
 
-def nested_list(d, key, cls, path="") -> tuple:
+def nested_list(d: Any, key: str, cls: Any, path: str = "") -> tuple[Any, ...]:
     v = _get(d, key, path)
     if not isinstance(v, (list, tuple)):
         raise ContractError(f"{path}{key}", "expected a list")
     return tuple(cls.from_dict(x, f"{path}{key}[{i}].") for i, x in enumerate(v))
 
 
-def mapping(d, key, path="", nullable=False) -> Optional[dict]:
+def mapping(d: Any, key: str, path: str = "", nullable: bool = False) -> Any:
     v = _get(d, key, path)
     if v is None and nullable:
         return None
@@ -111,7 +120,9 @@ def mapping(d, key, path="", nullable=False) -> Optional[dict]:
     return freeze(v)
 
 
-def mapping_list(d, key, path="", item_types: Optional[Mapping[str, tuple]] = None) -> tuple:
+def mapping_list(
+    d: Any, key: str, path: str = "", item_types: Mapping[str, tuple[type, ...]] | None = None
+) -> tuple[Any, ...]:
     """A list of objects; item_types maps each required key to the tuple of accepted Python types."""
     v = _get(d, key, path)
     if not isinstance(v, (list, tuple)):
@@ -159,7 +170,7 @@ def thaw(v: Any) -> Any:
     return v
 
 
-def reject_unknown(d: Mapping[str, Any], cls, path: str) -> None:
+def reject_unknown(d: Mapping[str, Any], cls: Any, path: str) -> None:
     known = {"in" if f.name == "in_" else f.name for f in _fields(cls)}
     for k in d:
         if k not in known:
@@ -181,7 +192,7 @@ def to_plain(v: Any) -> Any:
     return v
 
 
-def string_groups(d, key, path="") -> tuple:
+def string_groups(d: Any, key: str, path: str = "") -> tuple[tuple[str, ...], ...]:
     v = _get(d, key, path)
     if not isinstance(v, (list, tuple)):
         raise ContractError(f"{path}{key}", "expected a list")
