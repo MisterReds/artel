@@ -31,7 +31,9 @@ def make_package(root: Path, files: dict[str, str], name: str = "pkg") -> Path:
 def run(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [sys.executable, str(SCRIPTS / "archcheck.py"), "--root", str(root), "--package", "pkg", *args],
-        capture_output=True, text=True, check=False,
+        capture_output=True,
+        text=True,
+        check=False,
     )
 
 
@@ -39,7 +41,10 @@ CLEAN = {
     "contracts/__init__.py": "",
     "contracts/model.py": "from dataclasses import dataclass\n\n@dataclass(frozen=True)\nclass Task:\n    id: str\n",
     "ports/__init__.py": "",
-    "ports/store.py": "from typing import Protocol\nfrom pkg.contracts.model import Task\n\nclass Store(Protocol):\n    def get(self) -> Task: ...\n",
+    "ports/store.py": (
+        "from typing import Protocol\nfrom pkg.contracts.model import Task\n\n"
+        "class Store(Protocol):\n    def get(self) -> Task: ...\n"
+    ),
     "core.py": "from pkg import util\n\nTABLE = {'a': 1}\n\ndef f():\n    return util.g(TABLE['a'])\n",
     "util.py": "def g(x):\n    return x\n",
     "adapters/__init__.py": "",
@@ -63,7 +68,9 @@ def test_import_cycle_is_reported_with_its_edges(tmp_path):
 
 
 def test_relative_import_cycle_and_three_module_cycle(tmp_path):
-    root = make_package(tmp_path, {"a.py": "from . import b\n", "b.py": "from .c import x\n", "c.py": "from pkg.a import y\nx = 1\n"})
+    root = make_package(
+        tmp_path, {"a.py": "from . import b\n", "b.py": "from .c import x\n", "c.py": "from pkg.a import y\nx = 1\n"}
+    )
     keys = set(archcheck.scan(root, "pkg"))
     assert keys == {"cycles:pkg.a -> pkg.b", "cycles:pkg.b -> pkg.c", "cycles:pkg.c -> pkg.a"}
 
@@ -78,7 +85,10 @@ def test_one_way_imports_are_not_cycles(tmp_path):
     [
         ("CACHE = {}\ndef put(k):\n    CACHE[k] = 1\n", {"globals:pkg.m:CACHE": 1}),
         ("ITEMS = []\ndef put(k):\n    ITEMS.append(k)\n", {"globals:pkg.m:ITEMS": 1}),
-        ("from collections import defaultdict\nD = defaultdict(list)\ndef put(k):\n    D.update({k: 1})\n", {"globals:pkg.m:D": 1}),
+        (
+            "from collections import defaultdict\nD = defaultdict(list)\ndef put(k):\n    D.update({k: 1})\n",
+            {"globals:pkg.m:D": 1},
+        ),
         ("SEEN = set()\ndef put(k):\n    SEEN.add(k)\n", {"globals:pkg.m:SEEN": 1}),
         ("N = 0\ndef bump():\n    global N\n    N += 1\n", {"globals:pkg.m:global N": 1}),
     ],
@@ -103,10 +113,13 @@ def test_read_only_or_shadowed_state_is_not_reported(tmp_path, body):
 
 
 def test_vendor_names_outside_the_allow_list_are_reported(tmp_path):
-    root = make_package(tmp_path, {
-        "logic.py": "import anthropic\nclass ClaudeClient:\n    model = 'gpt-4o'\n    other = 'Sonnet'\n",
-        "adapters/ok.py": "import openai\n",
-    })
+    root = make_package(
+        tmp_path,
+        {
+            "logic.py": "import anthropic\nclass ClaudeClient:\n    model = 'gpt-4o'\n    other = 'Sonnet'\n",
+            "adapters/ok.py": "import openai\n",
+        },
+    )
     found = archcheck.scan(root, "pkg")
     assert found == {
         "vendor:pkg/logic.py:anthropic": 1,
@@ -117,7 +130,9 @@ def test_vendor_names_outside_the_allow_list_are_reported(tmp_path):
 
 
 def test_vendor_check_ignores_docstrings_and_lookalikes(tmp_path):
-    root = make_package(tmp_path, {"m.py": '"""Talks to Claude."""\ndef f():\n    """Uses openai."""\n    return "operate"\n'})
+    root = make_package(
+        tmp_path, {"m.py": '"""Talks to Claude."""\ndef f():\n    """Uses openai."""\n    return "operate"\n'}
+    )
     assert archcheck.scan(root, "pkg") == {}
 
 
@@ -125,11 +140,23 @@ def test_vendor_check_ignores_docstrings_and_lookalikes(tmp_path):
     "files, key",
     [
         ({"contracts/__init__.py": "", "contracts/a.py": "import yaml\n"}, "purity:pkg.contracts.a imports yaml"),
-        ({"contracts/__init__.py": "", "contracts/a.py": "from pkg.ports import x\n", "ports/__init__.py": ""},
-         "purity:pkg.contracts.a imports pkg.ports"),
-        ({"ports/__init__.py": "", "ports/a.py": "from pkg import core\n", "core.py": ""}, "purity:pkg.ports.a imports pkg"),
-        ({"ports/__init__.py": "", "ports/a.py": "from ..adapters import llm\n", "adapters/__init__.py": "", "adapters/llm.py": ""},
-         "purity:pkg.ports.a imports pkg.adapters"),
+        (
+            {"contracts/__init__.py": "", "contracts/a.py": "from pkg.ports import x\n", "ports/__init__.py": ""},
+            "purity:pkg.contracts.a imports pkg.ports",
+        ),
+        (
+            {"ports/__init__.py": "", "ports/a.py": "from pkg import core\n", "core.py": ""},
+            "purity:pkg.ports.a imports pkg",
+        ),
+        (
+            {
+                "ports/__init__.py": "",
+                "ports/a.py": "from ..adapters import llm\n",
+                "adapters/__init__.py": "",
+                "adapters/llm.py": "",
+            },
+            "purity:pkg.ports.a imports pkg.adapters",
+        ),
     ],
 )
 def test_core_purity_violations(tmp_path, files, key):
@@ -139,10 +166,15 @@ def test_core_purity_violations(tmp_path, files, key):
 
 
 def test_ports_may_import_contracts_and_stdlib(tmp_path):
-    root = make_package(tmp_path, {
-        "contracts/__init__.py": "", "contracts/m.py": "import json\n",
-        "ports/__init__.py": "", "ports/p.py": "from __future__ import annotations\nfrom pkg.contracts import m\nimport os\n",
-    })
+    root = make_package(
+        tmp_path,
+        {
+            "contracts/__init__.py": "",
+            "contracts/m.py": "import json\n",
+            "ports/__init__.py": "",
+            "ports/p.py": "from __future__ import annotations\nfrom pkg.contracts import m\nimport os\n",
+        },
+    )
     assert archcheck.scan(root, "pkg") == {}
 
 
@@ -186,6 +218,10 @@ def test_a_repeated_known_violation_counts_as_new(tmp_path):
 
 def test_repository_passes_its_own_gate():
     repo = SCRIPTS.parent
-    result = subprocess.run([sys.executable, str(SCRIPTS / "archcheck.py"), "--root", str(repo)],
-                            capture_output=True, text=True, check=False)
+    result = subprocess.run(
+        [sys.executable, str(SCRIPTS / "archcheck.py"), "--root", str(repo)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
     assert result.returncode == 0, result.stdout

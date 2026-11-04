@@ -30,10 +30,24 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-import ratchet  # noqa: E402
+import ratchet
 
 VENDOR_NAMES = frozenset(
-    "anthropic openai claude codex gpt gemini deepseek sonnet opus haiku llama mistral qwen".split()
+    [
+        "anthropic",
+        "openai",
+        "claude",
+        "codex",
+        "gpt",
+        "gemini",
+        "deepseek",
+        "sonnet",
+        "opus",
+        "haiku",
+        "llama",
+        "mistral",
+        "qwen",
+    ]
 )
 
 # Package-relative globs where vendor/model names are allowed (TARGET_ARCHITECTURE §10: adapters and config).
@@ -49,11 +63,41 @@ VENDOR_ALLOWED = (
 PURE_IMPORTS = {"contracts": {"contracts"}, "ports": {"contracts", "ports"}}
 
 MUTATORS = frozenset(
-    "append extend insert remove pop popitem clear update add discard setdefault sort reverse "
-    "appendleft extendleft popleft difference_update intersection_update symmetric_difference_update".split()
+    [
+        "append",
+        "extend",
+        "insert",
+        "remove",
+        "pop",
+        "popitem",
+        "clear",
+        "update",
+        "add",
+        "discard",
+        "setdefault",
+        "sort",
+        "reverse",
+        "appendleft",
+        "extendleft",
+        "popleft",
+        "difference_update",
+        "intersection_update",
+        "symmetric_difference_update",
+    ]
 )
 CONTAINER_CALLS = frozenset(
-    "dict list set defaultdict OrderedDict deque Counter bytearray WeakValueDictionary WeakKeyDictionary".split()
+    [
+        "dict",
+        "list",
+        "set",
+        "defaultdict",
+        "OrderedDict",
+        "deque",
+        "Counter",
+        "bytearray",
+        "WeakValueDictionary",
+        "WeakKeyDictionary",
+    ]
 )
 DEFAULT_BASELINE = "scripts/archcheck_baseline.json"
 
@@ -215,7 +259,7 @@ class _Mutations(ast.NodeVisitor):
         self.generic_visit(node)
         self.scopes.pop()
 
-    visit_FunctionDef = visit_AsyncFunctionDef = _function  # noqa: N815
+    visit_FunctionDef = visit_AsyncFunctionDef = _function
 
     def _target(self, target: ast.expr) -> None:
         if isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name) and self._live(target.value.id):
@@ -224,24 +268,29 @@ class _Mutations(ast.NodeVisitor):
             for elt in target.elts:
                 self._target(elt)
 
-    def visit_Assign(self, node: ast.Assign) -> None:  # noqa: N802
+    def visit_Assign(self, node: ast.Assign) -> None:
         for t in node.targets:
             self._target(t)
         self.generic_visit(node)
 
-    def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self._target(node.target)
         if isinstance(node.target, ast.Name) and self._live(node.target.id):
             self.mutated.add(node.target.id)  # ``X += [...]`` extends a list in place
         self.generic_visit(node)
 
-    def visit_Delete(self, node: ast.Delete) -> None:  # noqa: N802
+    def visit_Delete(self, node: ast.Delete) -> None:
         for t in node.targets:
             self._target(t)
 
-    def visit_Call(self, node: ast.Call) -> None:  # noqa: N802
+    def visit_Call(self, node: ast.Call) -> None:
         f = node.func
-        if isinstance(f, ast.Attribute) and f.attr in MUTATORS and isinstance(f.value, ast.Name) and self._live(f.value.id):
+        if (
+            isinstance(f, ast.Attribute)
+            and f.attr in MUTATORS
+            and isinstance(f.value, ast.Name)
+            and self._live(f.value.id)
+        ):
             self.mutated.add(f.value.id)
         self.generic_visit(node)
 
@@ -286,7 +335,11 @@ def _docstring_nodes(tree: ast.Module) -> set[int]:
     for node in ast.walk(tree):
         if isinstance(node, (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)):
             first = node.body[0] if node.body else None
-            if isinstance(first, ast.Expr) and isinstance(first.value, ast.Constant) and isinstance(first.value.value, str):
+            if (
+                isinstance(first, ast.Expr)
+                and isinstance(first.value, ast.Constant)
+                and isinstance(first.value.value, str)
+            ):
                 ids.add(id(first.value))
     return ids
 
@@ -306,9 +359,7 @@ def check_vendor(modules: dict[str, Module], package: str) -> dict[str, int]:
                 texts.append(node.attr)
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 texts.append(node.name)
-            elif isinstance(node, ast.arg):
-                texts.append(node.arg)
-            elif isinstance(node, ast.keyword) and node.arg:
+            elif isinstance(node, ast.arg) or (isinstance(node, ast.keyword) and node.arg):
                 texts.append(node.arg)
             elif isinstance(node, ast.alias):
                 texts.append(node.name.replace(".", " "))
