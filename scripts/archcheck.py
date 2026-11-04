@@ -431,12 +431,11 @@ def main(argv: list[str] | None = None) -> int:
     baseline = ratchet.load(baseline_path)
     code = ratchet.report("archcheck", current, baseline, args.baseline)
     new_cycles = {k for k in ratchet.diff(current, baseline)[0] if k.startswith("cycles:")}
-    if new_cycles:
-        print("Import cycles (module sets and their edges):")
-        for comp, edges in cycle_groups(load_modules(root, args.package), args.package):
-            print("  cycle among: " + ", ".join(comp))
+    for comp, edges in cycle_groups(load_modules(root, args.package), args.package) if new_cycles else []:
+        if any(f"cycles:{a} -> {b}" in new_cycles for a, b in edges):  # only the groups a new edge belongs to
+            print("Import cycle among: " + ", ".join(comp))
             for a, b in edges:
-                print(f"    {a} -> {b}")
+                print(f"    {a} -> {b}" + ("   <- new" if f"cycles:{a} -> {b}" in new_cycles else ""))
     return code
 
 
