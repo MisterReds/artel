@@ -197,6 +197,7 @@ body:not(.devmode) .dev{display:none!important}
     <a class="dev" href="#/registry" data-v="registry">Реестр харнессов</a>
   </nav>
   <button id="updbtn" style="display:none" title="Доступно обновление Artel"></button>
+  <button id="instbtn" style="display:none" title="Установить Artel как приложение на этом компьютере">Установить приложение</button>
   <button class="primary" id="newbtn">+ Новый проект</button>
   <button id="theme" title="Тема" aria-label="Тема: как в системе">◐</button>
   <button id="logout" title="Выйти на этом устройстве">Выйти</button>
@@ -209,6 +210,7 @@ body:not(.devmode) .dev{display:none!important}
 <dialog id="dlg2" style="width:min(480px,94vw)"></dialog>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <script src="/static/files.js?v=2"></script>
+<script src="/static/desk.js?v=1"></script>
 <script>
 // --- brand: role icons (16px line icons, currentColor) ----------------------------------------------
 const RI={
@@ -303,7 +305,31 @@ applyTheme(document.documentElement.dataset.theme||'',false);
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>applyTheme(document.documentElement.dataset.theme||'',false))}catch(e){}
 // tab title shows how many projects wait for an answer
 let ATTN=0;function setAttn(n){ATTN=n;document.title=n>0?`Artel — ${cnt(n,'вопрос','вопроса','вопросов')} к вам`:'Artel'}
-async function pollAttn(){if(document.hidden)return;try{const ps=await api(MQ('/api/portfolio'));if(Array.isArray(ps))setAttn(ps.reduce((s,p)=>s+(p.attention||[]).length,0))}catch(e){}}
+/* ---------- Приложение на компьютере: установка, системные уведомления, счётчик на значке ---------- */
+const lsGet=k=>{try{return localStorage.getItem(k)}catch(e){return null}}, lsSet=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
+let installEv=null;
+const isApp=()=>{try{return matchMedia('(display-mode: standalone)').matches||navigator.standalone===true}catch(e){return false}};
+function syncInstall(){const show=!!installEv&&!isApp();document.querySelectorAll('#instbtn,#st-inst').forEach(b=>b.style.display=show?'':'none')}
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();installEv=e;syncInstall()});
+window.addEventListener('appinstalled',()=>{installEv=null;syncInstall()});
+async function installApp(){const e=installEv;if(!e)return;installEv=null;syncInstall();try{await e.prompt()}catch(x){}}
+$('#instbtn').onclick=installApp;
+const notifySupported=()=>typeof Notification!=='undefined';
+const notifyOn=()=>notifySupported()&&Notification.permission==='granted'&&lsGet('artel-notify')==='1';
+function shownIds(){return ArtelDesk.loadShown(lsGet('artel-notified'))}  // re-read each time: another window may have announced already
+function markShown(ids){lsSet('artel-notified',JSON.stringify(ArtelDesk.remember(shownIds(),ids,500)))}
+function openTaskWhenReady(slug,task){let i=0;const t=setInterval(()=>{if(++i>100)return clearInterval(t);
+  if(state.slug===slug&&state.v&&state.v.board&&state.v.board.tasks.some(x=>x.id===task)){clearInterval(t);setTab('over');showTask(task)}},100)}
+function openFromNotice(n){window.focus();location.hash='#/p/'+encodeURIComponent(n.slug);if(n.kind==='ask')openTaskWhenReady(n.slug,n.task_id)}
+function showNotice(n){try{const o=new Notification(n.title,{body:n.body,tag:n.id,icon:'/static/icons/icon-192.png'});o.onclick=()=>{openFromNotice(n);o.close()}}catch(e){}}
+function notifyPortfolio(ps){if(!notifyOn())return;const items=ArtelDesk.fresh(ps,shownIds());if(!items.length)return;markShown(items.map(i=>i.id));items.forEach(showNotice)}
+function setBadge(n){try{if(n>0&&navigator.setAppBadge)navigator.setAppBadge(n).catch(()=>{});else if(navigator.clearAppBadge)navigator.clearAppBadge().catch(()=>{})}catch(e){}}
+// only on the owner's click: ask the browser, then treat what is open now as already known
+async function setNotify(on){if(!on){lsSet('artel-notify','0');return true}
+  if(!notifySupported())return false;let p=Notification.permission;if(p==='default')p=await Notification.requestPermission();if(p!=='granted')return false;
+  try{const ps=await api(MQ('/api/portfolio'));if(Array.isArray(ps))markShown(ArtelDesk.fresh(ps,shownIds()).map(i=>i.id))}catch(e){}
+  lsSet('artel-notify','1');return true}
+async function pollAttn(){if(document.hidden&&!notifyOn())return;try{const ps=await api(MQ('/api/portfolio'));if(Array.isArray(ps)){const n=ArtelDesk.badgeCount(ps);setAttn(n);setBadge(n);notifyPortfolio(ps)}}catch(e){}}
 pollAttn();setInterval(pollAttn,20000);document.addEventListener('visibilitychange',()=>{if(!document.hidden)pollAttn()});
 const dlgEl=$('#dlg');dlgEl.addEventListener('click',e=>{if(e.target===dlgEl)dlgEl.close()});
 /* Диагност: «Почему?» — объяснение сбоя на доступной модели */
@@ -333,6 +359,7 @@ function openNew(pre){$('#dlgbody').innerHTML=`<h3>Что нужно сдела�
 $('#newbtn').onclick=()=>openNew();
 
 function route(){state.lastLive=undefined;clearInterval(timer);clearInterval(resPoll);if(es){es.close();es=null}
+  if(location.hash==='#/new'){location.replace('#/portfolio');openNew();return}  // manifest shortcut «Новый проект»
   const h=location.hash.slice(2)||'portfolio';const [v,arg]=h.split('/');
   document.querySelectorAll('#nav a').forEach(a=>{const on=a.dataset.v===v;a.classList.toggle('on',on);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});
   const cur=document.querySelector('#nav a[data-v="'+v+'"]');$('#h1').textContent=cur?cur.textContent:v==='p'?'Проект':'Artel';
@@ -368,8 +395,14 @@ async function settings(){$('#view').innerHTML='<div class="wrap set" id="st"><d
    <section aria-labelledby="g-time"><h3 id="g-time">Время</h3><p class="stat">Время в панели, Telegram и командной строке (24-часовой формат). Пусто — пояс компьютера (сейчас ${esc(tz.effective||'')}).</p>
     <div class="row"><input id="tz" aria-label="Часовой пояс" value="${esc(tz.configured||'')}" placeholder="например Asia/Sakhalin" list="tzl"><datalist id="tzl">${(Intl.supportedValuesOf?Intl.supportedValuesOf('timeZone'):[]).map(z=>`<option value="${z}">`).join('')}</datalist>
     <button class="primary" id="tz-save">Сохранить</button><span class="stat" id="tz-msg"></span></div></section>
-   <section aria-labelledby="g-ntf"><h3 id="g-ntf">Уведомления</h3><p class="stat">Telegram подключается в «Подключениях»; что сообщать о сбоях и отправлять ли их разработчикам — в «Сбоях».</p>
+   <section aria-labelledby="g-ntf"><h3 id="g-ntf">Уведомления</h3>
+    <label class="switch"><input type="checkbox" id="desk-ntf" ${notifyOn()?'checked':''} ${notifySupported()?'':'disabled'}><span>Уведомления на этом компьютере</span></label>
+    <p class="stat" id="desk-msg">${notifySupported()?'Когда нужен ваш ответ или проект готов, система покажет уведомление (панель должна быть открыта в браузере или в приложении). Разрешение браузер спросит при включении.':'Этот браузер не поддерживает системные уведомления.'}</p>
+    <p class="stat">Telegram подключается в «Подключениях»; что сообщать о сбоях и отправлять ли их разработчикам — в «Сбоях».</p>
     <div class="row"><a href="#/providers">Подключения →</a> <a href="#/failures">Сбои →</a></div></section>
+   <section aria-labelledby="g-app"><h3 id="g-app">Приложение на компьютере</h3>
+    <p class="stat">${isApp()?'Artel открыт как приложение.':'Artel можно установить как отдельное окно: кнопкой ниже (Chrome, Edge, Яндекс Браузер), из меню браузера или командой <code>artel app</code>.'}</p>
+    <div class="row"><button class="primary" id="st-inst" style="display:${installEv&&!isApp()?'':'none'}">Установить приложение</button></div></section>
    <section aria-labelledby="g-upd"><h3 id="g-upd">Обновления</h3><p class="stat">${u.available?`Доступно обновление: изменений ${u.behind}.`:'Установлена последняя версия.'}<span class="dev"> ${esc(u.reason||'')}</span> Перед установкой новая версия проверяется тестами; откатиться можно в один клик.</p>
     <div class="row"><button id="st-upd">${u.available?'Посмотреть и обновить':'Проверить сейчас'}</button></div></section>
    <section aria-labelledby="g-dev"><h3 id="g-dev">Для разработчиков</h3><label class="switch"><input type="checkbox" id="devmode" ${DEV?'checked':''}><span>Показывать инструменты разработчика</span></label>
@@ -379,6 +412,8 @@ async function settings(){$('#view').innerHTML='<div class="wrap set" id="st"><d
     const j=await r.json().catch(()=>({}));if(!r.ok){$('#tz-msg').textContent='Не сохранено: '+(j.error||r.status);return}TZ=j.configured||'';$('#tz-msg').textContent='Сохранено.'};
   document.querySelectorAll('input[name=th]').forEach(x=>x.onchange=()=>applyTheme(x.value,true));
   $('#st-upd').onclick=async()=>updDialog(await checkUpdate(true));
+  $('#st-inst').onclick=installApp;
+  $('#desk-ntf').onchange=async e=>{const ok=await setNotify(e.target.checked);if(e.target.checked&&!ok){e.target.checked=false;$('#desk-msg').textContent='Браузер не разрешил уведомления. Разрешите их для этого сайта в настройках браузера и включите снова.'}}
   $('#devmode').onchange=e=>setDev(e.target.checked)}
 
 /* ---------- Портфель ---------- */

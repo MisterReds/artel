@@ -86,3 +86,12 @@ def test_localize_stats_for_portfolio_cards():
          "last_event": None}
     localize_stats(s)
     assert s["workers"][0]["role"] == "аудитор" and s["attention"][0]["question"].startswith("Все требования")
+
+
+def test_block_ask_id_changes_when_the_same_question_is_asked_again():
+    from artel.humanize import block_ask_id
+    first = [{"id": 4, "author": "Ada", "body": "BLOCKED: Which domain?"}]
+    again = first + [{"id": 7, "author": "human", "body": "x"}, {"id": 9, "author": "Ada", "body": "BLOCKED: Which domain?"}]
+    assert block_ask_id(first) == 4 and block_ask_id(again) == 9
+    assert block_ask_id(first + [{"id": 5, "author": "human", "body": "ok"}]) is None
+    assert block_ask_id([]) is None
