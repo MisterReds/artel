@@ -1,0 +1,2 @@
+# Mutants that survive on changed lines and are explained, one per line: path:line: reason
+# (equivalent mutants, logging text, defensive branches that cannot be reached). Everything else must be killed by a test.
