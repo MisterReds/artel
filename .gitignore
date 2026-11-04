@@ -7,3 +7,6 @@ dist/
 *.bin
 *.safetensors
 *.log
+mutants/
+.coverage
+coverage.json
