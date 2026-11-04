@@ -120,6 +120,15 @@ def mapping(d: Any, key: str, path: str = "", nullable: bool = False) -> Any:
     return freeze(v)
 
 
+def _check_item_field(item: Mapping[str, Any], where: str, key: str, accepted: tuple[type, ...]) -> None:
+    if key not in item:
+        raise ContractError(f"{where}.{key}", "required field is missing")
+    val = item[key]
+    if not isinstance(val, accepted) or (isinstance(val, bool) and bool not in accepted):
+        names = " or ".join(t.__name__ if t is not Mapping else "object" for t in accepted)
+        raise ContractError(f"{where}.{key}", f"expected {names}")
+
+
 def mapping_list(
     d: Any, key: str, path: str = "", item_types: Mapping[str, tuple[type, ...]] | None = None
 ) -> tuple[Any, ...]:
@@ -129,15 +138,11 @@ def mapping_list(
         raise ContractError(f"{path}{key}", "expected a list")
     out = []
     for i, x in enumerate(v):
+        where = f"{path}{key}[{i}]"
         if not isinstance(x, Mapping):
-            raise ContractError(f"{path}{key}[{i}]", "expected an object")
+            raise ContractError(where, "expected an object")
         for k, types_ in (item_types or {}).items():
-            if k not in x:
-                raise ContractError(f"{path}{key}[{i}].{k}", "required field is missing")
-            val = x[k]
-            if not isinstance(val, types_) or (isinstance(val, bool) and bool not in types_):
-                names = " or ".join(t.__name__ if t is not Mapping else "object" for t in types_)
-                raise ContractError(f"{path}{key}[{i}].{k}", f"expected {names}")
+            _check_item_field(x, where, k, types_)
         out.append(freeze(x))
     return tuple(out)
 
