@@ -158,8 +158,7 @@ def _tokens(check: str) -> list:
     lex.commenters = ""
     out: list = []
     try:
-        for tok in lex:
-            out.append(tok)
+        out.extend(lex)
     except ValueError:  # unbalanced quote: the words read so far still name the program
         pass
     return out
