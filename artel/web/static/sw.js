@@ -6,7 +6,6 @@ const ASSETS = [
   '/',
   '/manifest.webmanifest',
   '/static/favicon.svg',
-  '/static/mark.svg',
   '/static/desk.js',
   '/static/fonts/fonts.css',
   '/static/fonts/Onest-cyrillic-dea2c9.woff2',

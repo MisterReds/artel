@@ -20,8 +20,7 @@
 |---|---|
 | `docs/brand/arteliq-logo.svg`, `arteliq-logo-dark.svg` | знак + слово «Arteliq» в кривых, для светлой и тёмной темы |
 | `docs/brand/arteliq-mark.svg` | знак на медной плашке (плитка) |
-| `artel/web/static/mark.svg` | знак без плашки, цвета следуют теме страницы |
-| `artel/web/static/favicon.svg` | иконка вкладки (упрощённый знак на плашке) |
+| `artel/web/static/favicon.svg` | иконка вкладки (упрощённый знак на плашке); знак без плашки в дашборде рисуется инлайном, цвета берёт из токенов темы |
 | `artel/web/static/icons/*.png` | иконки PWA, apple-touch и ярлыков рабочего стола (`icon-*` с прозрачными углами, `maskable-*` и `apple-touch-icon` на всю плашку) |
 
 ## Цвет
