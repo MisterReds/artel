@@ -1,9 +1,9 @@
-# Artel roadmap — the single source of truth. docs/ROADMAP.md is generated from this file (`artel roadmap render`).
+# Arteliq roadmap — the single source of truth. docs/ROADMAP.md is generated from this file (`arteliq roadmap render`).
 #
 # status: done | partial | planned | in_progress
 # mode:   pillar  — a foundation; contract guarded by tests/test_invariants.py
 #         design  — structural; implemented deliberately by hand, not by evolution
-#         evolve  — implemented by `artel evolve --roadmap` (branch, tests, benchmark, merge)
+#         evolve  — implemented by `arteliq evolve --roadmap` (branch, tests, benchmark, merge)
 # source.repo + source.paths are handed to the implementing team as read-only references.
 
 pillars:
@@ -45,14 +45,14 @@ pillars:
 
 items:
   # ---- built by hand outside the waves (product and reliability) ----
-  - {id: D-self-update, wave: 0, mode: design, status: done, title: "Self-update from the dashboard and CLI, verified by the pillar tests before switching, rollback", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/updater.py]}
-  - {id: D-brand, wave: 0, mode: design, status: done, title: "Brand identity: A-frame mark, copper palette, bundled fonts, role icons, terminal colours", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/web/, docs/BRAND.md]}
+  - {id: D-self-update, wave: 0, mode: design, status: done, title: "Self-update from the dashboard and CLI, verified by the pillar tests before switching, rollback", source: {harness: Arteliq, repo: MisterReds/arteliq}, target: [artel/updater.py]}
+  - {id: D-brand, wave: 0, mode: design, status: done, title: "Brand identity: A-frame mark, copper palette, bundled fonts, role icons, terminal colours", source: {harness: Arteliq, repo: MisterReds/arteliq}, target: [artel/web/, docs/BRAND.md]}
   - {id: D-codex-runtime, wave: 0, mode: design, status: done, title: "Codex runtime (ChatGPT subscription) with device-code login", source: {harness: Codex / Hermes Agent, repo: openai/codex}, target: [artel/runtimes/codex.py, artel/providers.py]}
-  - {id: D-providers, wave: 0, mode: design, status: done, title: "Провайдеры page: subscriptions, keys (set/unset only), local model, per-role routing, CLIs installed on demand without Node.js", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/providers.py, artel/tools.py]}
-  - {id: D-installers, wave: 0, mode: design, status: done, title: "Installers for Linux/macOS and Windows that install only what Artel needs", source: {harness: Artel, repo: MisterReds/artel}, target: [install.sh, install.ps1]}
-  - {id: D-failure-classes, wave: 0, mode: design, status: done, title: "No crash, no endless loop: auto executor, setup errors to a person, limits wait, replan cap", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/failures.py, artel/manager.py, artel/runtimes/__init__.py]}
-  - {id: D-evolution-ops, wave: 0, mode: design, status: done, title: "Evolution operations: adopt mode for roadmap items, resume after restart, pause on provider limits, journal on GitHub", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/evolve/engine.py]}
-  - {id: D-provider-failover, wave: 0, mode: design, status: done, title: "Provider failover on limits, disabling runtimes, model lists from the CLIs, Claude and Codex sign-in from the dashboard, live agents panel", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/limits.py, artel/providers.py, artel/runtimes/__init__.py]}
+  - {id: D-providers, wave: 0, mode: design, status: done, title: "Провайдеры page: subscriptions, keys (set/unset only), local model, per-role routing, CLIs installed on demand without Node.js", source: {harness: Arteliq, repo: MisterReds/arteliq}, target: [artel/providers.py, artel/tools.py]}
+  - {id: D-installers, wave: 0, mode: design, status: done, title: "Installers for Linux/macOS and Windows that install only what Arteliq needs", source: {harness: Arteliq, repo: MisterReds/arteliq}, target: [install.sh, install.ps1]}
+  - {id: D-failure-classes, wave: 0, mode: design, status: done, title: "No crash, no endless loop: auto executor, setup errors to a person, limits wait, replan cap", source: {harness: Arteliq, repo: MisterReds/arteliq}, target: [artel/failures.py, artel/manager.py, artel/runtimes/__init__.py]}
+  - {id: D-evolution-ops, wave: 0, mode: design, status: done, title: "Evolution operations: adopt mode for roadmap items, resume after restart, pause on provider limits, journal on GitHub", source: {harness: Arteliq, repo: MisterReds/arteliq}, target: [artel/evolve/engine.py]}
+  - {id: D-provider-failover, wave: 0, mode: design, status: done, title: "Provider failover on limits, disabling runtimes, model lists from the CLIs, Claude and Codex sign-in from the dashboard, live agents panel", source: {harness: Arteliq, repo: MisterReds/arteliq}, target: [artel/limits.py, artel/providers.py, artel/runtimes/__init__.py]}
   - id: D-semantic-retrieval
     wave: 0
     mode: design
@@ -81,8 +81,8 @@ items:
       With a local Gemma 4 served through the openai_compat provider, the whole loop — model and retrieval — can run
       on the machine. Verify llama-server's multimodal embedding endpoint before building on it.
     acceptance: [an image in shared/ is found by a text description, media encoders are loaded only when needed]
-  - {id: D-doctor, wave: 0, mode: design, status: done, title: "Diagnostician: when something fails, a read-only worker on an available model (not the failing one) explains the cause and the steps; rules without a model; automatic note in tasks that stop for a person; 'Почему?' buttons and artel why", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/doctor.py, artel/manager.py, artel/web/index.html]}
-  - {id: D-failure-reports, wave: 0, mode: design, status: done, title: "Failure reports: every failure is a redacted text report with the diagnosis — to the owner's Telegram, to the developers as a GitHub issue (one per failure, repeats as comments)", source: {harness: Artel, repo: MisterReds/artel}, target: [artel/reports.py, artel/web/index.html]}
+  - {id: D-doctor, wave: 0, mode: design, status: done, title: "Diagnostician: when something fails, a read-only worker on an available model (not the failing one) explains the cause and the steps; rules without a model; automatic note in tasks that stop for a person; 'Почему?' buttons and arteliq why", source: {harness: Arteliq, repo: MisterReds/arteliq}, target: [artel/doctor.py, artel/manager.py, artel/web/index.html]}
+  - {id: D-failure-reports, wave: 0, mode: design, status: done, title: "Failure reports: every failure is a redacted text report with the diagnosis — to the owner's Telegram, to the developers as a GitHub issue (one per failure, repeats as comments)", source: {harness: Arteliq, repo: MisterReds/arteliq}, target: [artel/reports.py, artel/web/index.html]}
   # ---- wave 1: loop reliability (cheap, directly moves pass rate and cost) ----
   - id: W1-loop-detector
     wave: 1
@@ -260,14 +260,14 @@ items:
     target: [.github/workflows]
     plan: >-
       GitHub Actions matrix (ubuntu, macos, windows): full test suite; install.sh / install.ps1 into a clean home with
-      the local checkout as the repo; `artel run --provider scripted` end to end; dashboard starts and answers
+      the local checkout as the repo; `arteliq run --provider scripted` end to end; dashboard starts and answers
       /api/ready. Required before an evolution merge is published.
     acceptance: [green on all three systems, installer failures block the merge]
   - id: W2-remote-and-notify
     wave: 2
     mode: design
     status: done
-    result: "Telegram bot (control, answers, notifications, one-time pairing) and `artel web --remote`: token login (scrypt hash only, rotatable), server-side HttpOnly SameSite=Strict sessions, per-IP rate limit, HTTPS recipes (Caddy, Tailscale) with an insecure-connection banner; installable PWA (manifest, icons, shell-only service worker)"
+    result: "Telegram bot (control, answers, notifications, one-time pairing) and `arteliq web --remote`: token login (scrypt hash only, rotatable), server-side HttpOnly SameSite=Strict sessions, per-IP rate limit, HTTPS recipes (Caddy, Tailscale) with an insecure-connection banner; installable PWA (manifest, icons, shell-only service worker)"
     note: "Study 2026-10: ECC ecc2/src/notifications.rs adds per-event toggles and quiet hours (cross-midnight) plus Slack/Discord webhook payloads; Fusion packages/engine/src/notification/ntfy-provider.ts uses ntfy topics with a click-through deep link to the task (no bot account needed) and packages/engine/src/remote-access/ manages a tailscale funnel / cloudflared tunnel instead of a reverse-proxy recipe. Two-way replies: A-hive-chat-reply."
     title: Use from the phone — authenticated remote dashboard and notifications (Telegram / webhook)
     source: {harness: Hermes Agent / OpenClaw, repo: NousResearch/hermes-agent, paths: [gateway/]}
@@ -283,7 +283,7 @@ items:
     status: done
     result: "evolve/gen-4 (merged by hand after a conflict with the System One change)"
     title: User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin
-    source: {harness: Artel, repo: MisterReds/artel, paths: [artel/web/index.html]}
+    source: {harness: Arteliq, repo: MisterReds/arteliq, paths: [artel/web/index.html]}
     target: [artel/web/index.html, artel/cli.py]
     plan: >-
       Setting ui.timezone (IANA name, default: the browser's / system zone) editable on the Провайдеры page; all
@@ -295,7 +295,7 @@ items:
     status: done
     result: "evolve.runtimes [claude_code, codex]: a limit moves implementation and benchmark to the next runtime, pause only when all are limited; baselines per (commit, runtime) (tests/test_evolve_runtimes.py)"
     title: Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it
-    source: {harness: Artel, repo: MisterReds/artel, paths: [artel/evolve/engine.py]}
+    source: {harness: Arteliq, repo: MisterReds/arteliq, paths: [artel/evolve/engine.py]}
     target: [artel/evolve/engine.py]
     plan: >-
       Implementation and benchmark can each run on Claude Code or Codex; when one provider pauses on a limit, the
@@ -312,7 +312,7 @@ items:
     target: [artel/plugins/runtimes.py]
     result: >-
       feat/acp-runtime — runtime `acp` (artel/runtimes/acp.py): ACP v1 client over stdio with presets chosen per role
-      (`acp:gemini`, `acp:claude`…); Artel's MCP proxy passed in session/new; session/update mirrored to the event
+      (`acp:gemini`, `acp:claude`…); Arteliq's MCP proxy passed in session/new; session/update mirrored to the event
       log; permissions and fs/* by role policy; resume in the same session; tests with a stand-in ACP agent;
       handshake checked against the real Gemini CLI and the Claude ACP adapter.
   - id: W3-dsh-runtime
@@ -321,9 +321,9 @@ items:
     status: done
     result: >-
       Runtime `dsh` (artel/runtimes/dsh.py) on the official Python SDK; dsh plugins (profile packages and patch
-      layers) load unchanged, Artel tools over dsh-mcp-client; verified for real (boot, MCP tool discovery, missing-key
+      layers) load unchanged, Arteliq tools over dsh-mcp-client; verified for real (boot, MCP tool discovery, missing-key
       classification, no key used) and end to end against a stand-in SDK (tests/test_dsh.py)
-    title: DeepSeek Harness as a runtime plugin, so dsh plugins work inside Artel workers
+    title: DeepSeek Harness as a runtime plugin, so dsh plugins work inside Arteliq workers
     source: {harness: DeepSeek Harness, repo: deepseek-ai/deepseek-harness, paths: [docs/user/guide/python-sdk.md]}
     target: [artel/plugins/runtimes.py]
   - id: W3-durable
@@ -338,7 +338,7 @@ items:
     wave: 3
     mode: design
     status: done
-    result: "feat/plugin-packages: artel plugins install|list|show|enable|disable|update|remove (git, pip, path; ARTEL_HOME/plugins + plugins.json; static manifest, installed disabled), lifecycle events project_start / before_agent_start / agent_end / task_done / project_end / session_shutdown, failing plugins disabled with the error, dashboard section, examples/artel-plugin-hello"
+    result: "feat/plugin-packages: arteliq plugins install|list|show|enable|disable|update|remove (git, pip, path; ARTEL_HOME/plugins + plugins.json; static manifest, installed disabled), lifecycle events project_start / before_agent_start / agent_end / task_done / project_end / session_shutdown, failing plugins disabled with the error, dashboard section, examples/artel-plugin-hello"
     title: Plugin packages (install from git/pip), lifecycle events before_agent_start / session_shutdown
     source: {harness: Pi, repo: badlogic/pi-mono, paths: [packages/coding-agent/docs/extensions.md, packages/coding-agent/docs/packages.md]}
     target: [artel/kernel.py, artel/packages.py, artel/manager.py, artel/runtimes/__init__.py, artel/web/]
@@ -437,12 +437,12 @@ items:
     source: {harness: partner team, repo: pending, paths: [docs/SYSTEM_ONE.md]}
     target: [artel/decide.py]
     plan: >-
-      The Jev model and the local llama.cpp runner were removed; Artel keeps the typed decision contract and four
+      The Jev model and the local llama.cpp runner were removed; Arteliq keeps the typed decision contract and four
       decision points. When the partner repository is ready: connect it (plugin or HTTP), turn the points on one at a
       time and keep only those that lower cost without lowering the pass rate on the benchmark.
     acceptance: [each enabled point measured with and without System One, decision latency under 500 ms]
 
-  # ---- wave 3, core: what the main harnesses have and Artel lacks (harnesses.yaml, docs/roadmap.html) ----
+  # ---- wave 3, core: what the main harnesses have and Arteliq lacks (harnesses.yaml, docs/roadmap.html) ----
   - id: C-agents-md
     wave: 3
     priority: core
@@ -469,8 +469,8 @@ items:
     target: [artel/runtimes/mcp_client.py, artel/plugins/builtin_tools.py, artel/runtimes/claude_code.py, artel/runtimes/codex.py]
     plan: >-
       `mcp_servers:` in artel.yaml (stdio / http, env from variables, per-role allow list). The native runtime lists
-      their tools and calls them as Artel tools (logged, policy-checked); Claude Code and Codex get them in their own
-      MCP config next to Artel's bridge. Presets: Playwright (browser QA — gstack /qa, Cline), fetch, filesystem.
+      their tools and calls them as Arteliq tools (logged, policy-checked); Claude Code and Codex get them in their own
+      MCP config next to Arteliq's bridge. Presets: Playwright (browser QA — gstack /qa, Cline), fetch, filesystem.
       A browser server always runs headless or on the worker's own display, never on the owner's screen.
     acceptance: [a stdio MCP server's tool is called by a native worker (fake server test), the same server reaches Claude Code and Codex args, roles without the grant do not see it]
   - id: C-task-tool
@@ -518,14 +518,14 @@ items:
     priority: core
     mode: design
     status: planned
-    title: Headless runs and GitHub — `artel run --json`, a GitHub Action, @artel in issues and pull requests
+    title: Headless runs and GitHub — `arteliq run --json`, a GitHub Action, @artel in issues and pull requests
     source: {harness: Claude Code / Gemini CLI / Codex / OpenHands, repo: openai/codex, paths: [docs/exec.md], license: Apache-2.0}
     target: [artel/cli.py, .github/actions/artel/action.yml, docs/CI.md]
     plan: >-
       Non-interactive mode with stable JSON events on stdout and exit codes by outcome; a composite GitHub Action that
-      installs Artel, runs a goal from an issue or a review request with the repository as the work directory and
+      installs Arteliq, runs a goal from an issue or a review request with the repository as the work directory and
       posts the result as a comment or a pull request; secrets only from the repository's secret store.
-    acceptance: [artel run --json emits parseable events (test), the action runs in CI on a fixture repository, no secret ever printed]
+    acceptance: [arteliq run --json emits parseable events (test), the action runs in CI on a fixture repository, no secret ever printed]
   - id: C-lsp
     wave: 3
     priority: core
@@ -551,7 +551,7 @@ items:
       Extract definitions and references per file (Python ast; tree-sitter when installed), rank files by references
       and relevance to the task (retrieval.rank), fit the top of the map into a token budget and add it to the task
       card for code tasks; cached by file mtime.
-    acceptance: [map of Artel's own repository fits the budget and lists the task's relevant module first, cache hit on the second build]
+    acceptance: [map of Arteliq's own repository fits the budget and lists the task's relevant module first, cache hit on the second build]
   - id: C-rewind
     wave: 3
     priority: core
@@ -561,7 +561,7 @@ items:
     source: {harness: Claude Code / Cline / Gemini CLI, repo: anomalyco/opencode, paths: [packages/opencode/src/session/revert.ts], license: MIT}
     target: [artel/snapshot.py, artel/web/server.py, artel/web/index.html]
     plan: >-
-      Snapshots already exist (W1-snapshots) but only Artel restores them on a rejection. List checkpoints per task
+      Snapshots already exist (W1-snapshots) but only Arteliq restores them on a rejection. List checkpoints per task
       with their diff, restore one (deliverables and the task's state) by a button or `artel rewind`, recorded in the
       event log; restoring never deletes later checkpoints.
     acceptance: [restore returns the files to the checkpoint and is itself undoable, shown in the timeline]
@@ -574,7 +574,7 @@ items:
     source: {harness: Superpowers / Spec Kit, repo: obra/superpowers, paths: [skills], license: MIT}
     target: [artel/data/skills/, artel/skills.py]
     plan: >-
-      Import the most-starred methodology as skills with attribution (MIT), adapted to Artel's roles: planner uses
+      Import the most-starred methodology as skills with attribution (MIT), adapted to Arteliq's roles: planner uses
       brainstorm and plan, workers TDD and verification-before-completion, reviewer the two-stage review. Measured
       on the benchmark like any change; a skill that does not help is archived, not kept.
     acceptance: [skills present with license notes, benchmark not worse, planner index lists them first for code goals]
@@ -639,7 +639,7 @@ items:
     after: [C-exec-backends]
     plan: >-
       Part of a worker's workspace, like its folder and memory: when a worker needs to see or operate something visual,
-      Artel starts a virtual display for that worker only (Linux: Xvfb per worker; macOS and Windows: inside the worker's
+      Arteliq starts a virtual display for that worker only (Linux: Xvfb per worker; macOS and Windows: inside the worker's
       container from C-exec-backends) with its own browser and apps. Tools: screenshot, click, type, key, scroll,
       open URL/app — all bound to that display; screenshots go to a vision-capable model. Never attaches to the
       owner's display: no DISPLAY / Wayland / desktop session is inherited, and starting a screen fails rather than
@@ -677,19 +677,19 @@ items:
     priority: core
     mode: design
     status: planned
-    title: Artel as an ACP agent — drive the whole team from Zed, JetBrains or any ACP client
+    title: Arteliq as an ACP agent — drive the whole team from Zed, JetBrains or any ACP client
     source: {harness: Gemini CLI / Claude Code / goose (IDE integration), repo: agentclientprotocol/agent-client-protocol, license: Apache-2.0}
     target: [artel/acp_server.py, artel/cli.py]
     plan: >-
       `artel acp` speaks ACP over stdio: a prompt becomes a goal, plan and task progress stream back as updates,
-      file edits are reported as diffs, permission requests map to Artel's human questions.
+      file edits are reported as diffs, permission requests map to Arteliq's human questions.
     acceptance: [an ACP test client starts a goal and receives plan and completion updates]
 
   - id: C-rea-pack
     wave: 3
     mode: evolve
     status: done
-    result: "REA as skill + CLI (artel skills import morluto/rea); not MCP: 207 tool schemas would cost every run"
+    result: "REA as skill + CLI (arteliq skills import morluto/rea); not MCP: 207 tool schemas would cost every run"
     after: [C-mcp-client]
     title: Reverse-engineering pack (REA) — workers can investigate binaries, JS/Electron bundles, .NET, APKs and websites
     source: {harness: REA (Reverse Engineer Anything), repo: morluto/rea, paths: [README.md, docs/mcp-contracts.md], license: MIT}
@@ -748,7 +748,7 @@ items:
     - artel/runtimes/codex.py
     - artel/manager.py
     - artel/board.py
-    plan: 'Artel writes run heartbeats (board.heartbeat) but nothing reads them (board.stale_runs is unused), and
+    plan: 'Arteliq writes run heartbeats (board.heartbeat) but nothing reads them (board.stale_runs is unused), and
       the Claude Code / Codex runtimes only have a 40-minute wall timeout. Following ECC2''s enforce_session_heartbeats:
       the runtimes record the time of the last stream event; a watchdog thread kills the subprocess after runtimes.idle_timeout_s
       (default 600) of silence and ends the run with status ''hung''. The manager retries a hung run once without
@@ -965,7 +965,7 @@ items:
     - artel/runtimes/codex.py
     plan: 'The native bash tool runs with the full os.environ, so any worker command (or a prompt-injected one) can
       read ANTHROPIC_API_KEY, OPENAI_API_KEY, notification tokens. AgentTeams keeps real credentials in the gateway
-      and gives workers only scoped keys. Artel version: one function builds the worker env: drop variables matching
+      and gives workers only scoped keys. Arteliq version: one function builds the worker env: drop variables matching
       *_API_KEY, *_TOKEN, *SECRET*, *PASSWORD*, ARTEL_* credentials, keep an explicit allowlist (PATH, HOME, LANG,
       proxy, the runtime''s own auth variable only for the CLI process itself); projects can pass named secrets to
       tasks explicitly via config.'
@@ -1036,9 +1036,9 @@ items:
     target:
     - artel/kernel.py
     - artel/tooling.py
-    plan: 'Nothing in Artel masks tokens: a key printed by a command lands in events.jsonl, the dashboard feed and
+    plan: 'Nothing in Arteliq masks tokens: a key printed by a command lands in events.jsonl, the dashboard feed and
       the reviewer''s context. Port redactTokens'' patterns (sk-ant-api, sk-, ghp_/gho_/ghs_/github_pat_, xox*/xapp,
-      Telegram bot tokens, AKIA, Bearer values) plus the literal values of secret environment variables known to Artel;
+      Telegram bot tokens, AKIA, Bearer values) plus the literal values of secret environment variables known to Arteliq;
       apply once in EventLog.append and in tool results before they enter the model context.'
     acceptance:
     - 'test: a token echoed by bash is masked in the tool result and in events.jsonl'

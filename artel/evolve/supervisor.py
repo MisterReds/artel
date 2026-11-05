@@ -1,10 +1,11 @@
 """Evolution survives its process: a generation whose process died (machine restart, killed container, OOM) is
 resumed automatically.
 
-A running ``artel evolve`` keeps ``heartbeat.json`` in its evolution home fresh (pid, how it was started, time). The
-supervisor — a thread in ``artel web`` (``evolve.auto_resume``, on by default) or ``artel evolve --supervise`` — finds
+A running ``arteliq evolve`` keeps ``heartbeat.json`` in its evolution home fresh (pid, how it was started, time). The
+supervisor — a thread in ``arteliq web`` (``evolve.auto_resume``, on by default) or ``arteliq evolve --supervise`` —
+finds
 generations that are still marked running in state.json while their heartbeat is stale and their process is gone, and
-starts ``artel evolve --resume`` with the same options. Crash loops are cut off: a generation whose resumed process
+starts ``arteliq evolve --resume`` with the same options. Crash loops are cut off: a generation whose resumed process
 keeps dying within minutes stops being restarted and is marked for a person, with the reason in the dashboard.
 """
 
@@ -47,7 +48,7 @@ def pid_alive(pid: int | None) -> bool:
 
 
 def evolve_process_running(exclude_supervisors: bool = True, exclude: int | None = None) -> bool | None:
-    """Whether any ``artel evolve`` process exists (Linux /proc); None when it cannot be told."""
+    """Whether any ``arteliq evolve`` process exists (Linux /proc); None when it cannot be told."""
     proc = Path("/proc")
     if not proc.is_dir():
         return None
@@ -67,7 +68,7 @@ def evolve_process_running(exclude_supervisors: bool = True, exclude: int | None
 
 
 def resume_argv(argv: list) -> list:
-    """The options of the original ``artel evolve ...`` that matter for continuing it, plus ``--resume``."""
+    """The options of the original ``arteliq evolve ...`` that matter for continuing it, plus ``--resume``."""
     out, i = ["evolve", "--resume"], 0
     args = list(argv)
     if args and args[0] == "evolve":
@@ -88,7 +89,7 @@ def resume_argv(argv: list) -> list:
 
 
 class Heartbeat:
-    """Kept by a running ``artel evolve`` (a daemon thread); removed on a clean exit."""
+    """Kept by a running ``arteliq evolve`` (a daemon thread); removed on a clean exit."""
 
     def __init__(self, home: Path, argv: list, cwd: str | None = None):
         self.path = Path(home) / "heartbeat.json"
@@ -130,7 +131,7 @@ class AlreadyRunning(RuntimeError):
 
 
 class RepoLock:
-    """One evolution per repository at a time, whatever ARTEL_HOME it runs with: a second ``artel evolve`` on the
+    """One evolution per repository at a time, whatever ARTEL_HOME it runs with: a second ``arteliq evolve`` on the
     same repository (another home, a restored journal, a supervisor) is refused instead of doing the work twice."""
 
     def __init__(self, repo: Path):
@@ -153,7 +154,7 @@ class RepoLock:
         if pid:
             raise AlreadyRunning(f"evolution is already running on this repository (pid {pid})")
         if not self.path.exists() and evolve_process_running(exclude_supervisors=True, exclude=os.getpid()):
-            raise AlreadyRunning("another `artel evolve` process is running (started by a version without locks)")
+            raise AlreadyRunning("another `arteliq evolve` process is running (started by a version without locks)")
         self.path.write_text(json.dumps({"pid": os.getpid(), "at": time.time()}), encoding="utf-8")
         return self
 
@@ -196,7 +197,7 @@ def orphaned(evo_root: Path, now: float | None = None) -> list[dict]:
 
 
 def restart(item: dict, log=print) -> int | None:
-    """Start ``artel evolve --resume`` for an orphaned generation; returns the pid (None when restarts are cut off)."""
+    """Start ``arteliq evolve --resume`` for an orphaned generation; returns the pid (None when cut off)."""
     home, state, hb = item["home"], item["state"], item["heartbeat"]
     run = state["running"]
     sup = run.setdefault("supervisor", {"restarts": 0, "quick_deaths": 0})

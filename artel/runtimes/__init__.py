@@ -1,5 +1,5 @@
-"""Agent runtimes. ``native`` is Artel's own loop over the Messages API; ``claude_code`` drives the Claude Code CLI
-and ``codex`` the Codex CLI headless, exposing Artel's tools to them over MCP.
+"""Agent runtimes. ``native`` is Arteliq's own loop over the Messages API; ``claude_code`` drives the Claude Code CLI
+and ``codex`` the Codex CLI headless, exposing Arteliq's tools to them over MCP.
 
 A runtime name may carry a variant after a colon (``name:variant``); the variant is passed to the runtime as
 ``variant=``.

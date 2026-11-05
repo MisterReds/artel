@@ -1,6 +1,6 @@
-"""Artel in Telegram: control and notifications from the phone.
+"""Arteliq in Telegram: control and notifications from the phone.
 
-The bot runs inside the dashboard process (`artel web`) or alone (`artel telegram`) and talks to the same Runner,
+The bot runs inside the dashboard process (`arteliq web`) or alone (`arteliq telegram`) and talks to the same Runner,
 so a goal started from the phone is a normal project visible everywhere.
 
 Security: the bot token comes only from the environment (ARTEL_TELEGRAM_TOKEN) and is never stored. Nobody gets
@@ -10,7 +10,7 @@ on the dashboard's "Подключения" page. Paired chat ids are kept in AR
 Free text that is not a command goes to the concierge chat (artel/chat.py).
 Commands: /status · /projects · /p N · /new <цель> (or just send the goal text) · /answer N <ответ> · /stop N ·
 /resume N · /update · /unpair · /help. Notifications: a project is done, needs a person, failed or ran out of
-budget; an update of Artel is available.
+budget; an update of Arteliq is available.
 """
 
 from __future__ import annotations
@@ -32,10 +32,10 @@ API = "https://api.telegram.org"
 CODE_TTL_S = 15 * 60
 NOTIFY = {"done": "✅ Цель достигнута", "waiting_human": "🙋 Нужен человек", "error": "⚠️ Ошибка",
           "paused_budget": "⏸ Закончился бюджет"}
-HELP = ("Artel на связи.\n"
+HELP = ("Arteliq на связи.\n"
         "/status — сводка\n/projects — проекты\n/p N — проект подробно\n"
         "/new цель — начать (или просто пришлите текст цели)\n/answer N текст — ответить проекту, который ждёт вас\n"
-        "/stop N · /resume N — остановить / продолжить\n/update — обновление Artel\n/unpair — отвязать этот чат")
+        "/stop N · /resume N — остановить / продолжить\n/update — обновление Arteliq\n/unpair — отвязать этот чат")
 
 NO_AUTHORITY = "Действия доступны только владельцу в личном чате с ботом."
 
@@ -209,14 +209,14 @@ class TelegramBot:
         cmd, _, code = text.partition(" ")
         if cmd.split("@")[0].lower() == "/pair" and code:
             if self.store.pair(chat, code, user):
-                self.send(chat, "Чат привязан к Artel.\n\n" + HELP)
+                self.send(chat, "Чат привязан к Arteliq.\n\n" + HELP)
             else:
                 self.failed_pairs[chat] = self.failed_pairs.get(chat, 0) + 1
                 self.send(chat, "Код не подошёл или устарел. Новый код: дашборд → Подключения → Telegram, "
-                                "или `artel telegram pair` в терминале.")
+                                "или `arteliq telegram pair` в терминале.")
         else:
             self.send(chat, "Этот чат не привязан. Отправьте /pair КОД — код в дашборде (Подключения → Telegram) "
-                            "или в терминале: `artel telegram pair`.")
+                            "или в терминале: `arteliq telegram pair`.")
 
     # --- commands -------------------------------------------------------
     def _portfolio(self) -> list[dict]:
@@ -403,7 +403,7 @@ class TelegramBot:
             self.send(chat, "Продолжаю.")
         elif data == "update":
             out = self.runner.update_apply()
-            self.send(chat, "Обновлено, Artel перезапустится, когда проекты закончатся." if out.get("ok")
+            self.send(chat, "Обновлено, Arteliq перезапустится, когда проекты закончатся." if out.get("ok")
                       else f"Обновление не установлено: {out.get('error', '')[:500]}")
 
     # --- notifications --------------------------------------------------
@@ -447,7 +447,7 @@ class TelegramBot:
         if upd.get("available") and seen.get("_update") != upd.get("remote"):
             seen["_update"] = upd.get("remote")
             for chat in paired:
-                self.send(chat, f"⬆️ Доступно обновление Artel: {upd.get('behind')} изменений. /update")
+                self.send(chat, f"⬆️ Доступно обновление Arteliq: {upd.get('behind')} изменений. /update")
             sent += 1
         self.store.save()
         return sent

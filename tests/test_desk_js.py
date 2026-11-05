@@ -29,11 +29,11 @@ def js(expr: str, **data):
 def test_new_question_and_done_project_become_notifications_with_the_agreed_text():
     items = js("D.fresh(P, [])")
     ask = next(i for i in items if i["kind"] == "ask")
-    assert ask["title"] == "Artel: нужен ваш ответ"
+    assert ask["title"] == "Arteliq: нужен ваш ответ"
     assert ask["body"] == "Сайт кофейни: Какой домен использовать?"
     assert (ask["slug"], ask["task_id"]) == ("cafe", "t3")
     done = next(i for i in items if i["kind"] == "done")
-    assert done["title"] == "Artel: готово" and done["body"] == "Бот записи" and done["slug"] == "bot"
+    assert done["title"] == "Arteliq: готово" and done["body"] == "Бот записи" and done["slug"] == "bot"
     assert len(items) == 2  # a blocked task nobody must answer is not a question to the owner
 
 

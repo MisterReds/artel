@@ -88,7 +88,7 @@ def test_nothing_is_shown_to_an_unpaired_chat_and_pairing_is_one_time(bot):
     tg.msg(1, f"/pair {code}")
     tg.msg(2, f"/pair {code}")  # the same code cannot pair a second chat
     b.poll_once(timeout=0)
-    assert "привязан к Artel" in tg.texts(1)[-1] and "не подошёл" in tg.texts(2)[-1]
+    assert "привязан к Arteliq" in tg.texts(1)[-1] and "не подошёл" in tg.texts(2)[-1]
     assert b.store.data["paired"] == [1]
 
 

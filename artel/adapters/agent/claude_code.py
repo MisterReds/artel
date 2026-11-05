@@ -1,5 +1,6 @@
 """Claude Code codec (``claude -p`` stream-json): settings, environment, arguments, line parsing. The loop is loop.py.
-Claude Code uses its own tools; Artel's coordination tools reach it over MCP through the proxy and the loop's bridge."""
+Claude Code uses its own tools; Arteliq's coordination tools reach it over MCP through the proxy and the loop's
+bridge."""
 
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from ._common import classify  # noqa: F401 - part of the codec interface
 
 NAME, LABEL = "claude_code", "claude code"
 INSTALL_HINT = ("Claude Code CLI не установлен: «Подключения» → «Установить» "
-                "или `artel providers install claude`")
+                "или `arteliq providers install claude`")
 NO_SESSION = "claude code produced no session"
 OK_EXIT, TRACK_STOP, LOG_ROLE, STRIP_STDERR = (0, None), False, True, False
 GATE_TOOL = SHELL_TOOL = "Bash"  # roles that judge or plan must not edit what they judge: WRITE_TOOLS
@@ -28,7 +29,7 @@ SESSION_ENV = ("CLAUDE_CODE_SESSION_ID", "CLAUDE_CODE_REMOTE_SESSION_ID", "CLAUD
 MCP_PREFIX = "mcp__artel__"
 WRITE_TOOLS = ("Write", "Edit", "MultiEdit")
 # The MCP proxy is started by its file path, never `-m artel.runtimes.mcp_proxy`: the CLI starts it in the agent's
-# workspace, and when that workspace is a checkout of Artel (evolution) `-m` would import that checkout's proxy.
+# workspace, and when that workspace is a checkout of Arteliq (evolution) `-m` would import that checkout's proxy.
 PROXY_SCRIPT = str(Path(__file__).resolve().parents[2] / "runtimes" / "mcp_proxy.py")
 POLICY_SCRIPT = str(Path(__file__).resolve().parents[2] / "policy.py")
 DEFAULTS = {"binary": "claude", "model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
@@ -51,7 +52,7 @@ def child_env(config: dict | None = None, runtime: str = "claude_code") -> dict:
 
 
 def mcp_servers_json(external: dict, base: dict) -> dict:
-    """The ``mcpServers`` object for --mcp-config: Artel's bridge plus the configured external servers."""
+    """The ``mcpServers`` object for --mcp-config: Arteliq's bridge plus the configured external servers."""
     out = dict(base)
     for name, s in external.items():
         if name in out:
@@ -90,7 +91,7 @@ def prepare(run) -> dict:
 def note(run) -> str:
     specs, ctx = run.bridge.specs, run.ctx
     terminal = [s.name for s in specs if s.terminal]
-    return (f"\n\n## Runtime\nYou run inside Claude Code. Use your built-in tools for files and shell. Artel "
+    return (f"\n\n## Runtime\nYou run inside Claude Code. Use your built-in tools for files and shell. Arteliq "
             f"coordination tools are MCP tools named {MCP_PREFIX}<name>: {', '.join(s.name for s in specs)}. The ONLY "
             f"way to finish is calling {' or '.join(MCP_PREFIX + n for n in terminal)}. Your working directory is "
             f"your workspace; the team's shared deliverables directory is {ctx.shared_dir}.{ctx.shared_note}"

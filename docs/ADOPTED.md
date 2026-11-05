@@ -1,4 +1,4 @@
-# Что взято в Artel и откуда
+# Что взято в Arteliq и откуда
 
 План и порядок работ — в [ROADMAP.md](ROADMAP.md) (генерируется из `roadmap.yaml`). Здесь — что уже взято из каких харнессов, в каком объёме, и что дальше. Статусы: ✅ сделано и покрыто тестами ·
 ◐ сделано частично (упрощённая версия) · ⏭ в плане.
@@ -14,11 +14,11 @@
 
 ## Взято и работает
 
-| Механизм | Источник | В Artel | Статус |
+| Механизм | Источник | В Arteliq | Статус |
 |---|---|---|---|
 | Скиллы: авто-создание после задачи, правка, read-before-write, ownership | Hermes Agent | `skills.py`, библиотекарь в `manager.py` | ✅ |
 | Журнал правок скиллов + откат, lifecycle active→stale→archived, guard по доверию | Hermes Agent | `skills.py` | ✅ |
-| Импорт из хабов скиллов | anthropics/skills, openai/skills, Agent Skills spec | `artel skills import` | ✅ |
+| Импорт из хабов скиллов | anthropics/skills, openai/skills, Agent Skills spec | `arteliq skills import` | ✅ |
 | Канбан на SQLite: DAG, CAS-захват, попытки | Hermes kanban | `board.py` | ✅ |
 | Цикл до результата: continuation, лимит холостых ходов, backoff | Prime Agent | `agent.py`, `manager.py` | ✅ |
 | Завершение решает проверка, а не агент (гейты) | Prime Agent autonomous | гейты + ревьюер | ✅ |
@@ -34,7 +34,7 @@
 | Эволюция харнесса, проверяемая бенчмарком | auto-harness, Gear, HarnessX, reef | `evolve/` | ✅ |
 | Скрытые проверки, которых агенты не видят | Terminal-Bench / Harbor | `evals/tasks` | ✅ |
 | Ветки-кандидаты, отбор, теги поколений | Ouroboros (reviewed core evolution) | `evolve/engine.py` | ✅ |
-| Абсорбция чужого харнесса | — (своё) | `artel absorb` | ✅ |
+| Абсорбция чужого харнесса | — (своё) | `arteliq absorb` | ✅ |
 | System One решения в узких местах | контракт TypeSafe Jev (типизированные вопросы noul / choice / score) | `decide.py`, `docs/SYSTEM_ONE.md` | ◐ контракт и 4 точки решения; модель Jev убрана — подключается своя System One команды-партнёра |
 | Петля суждений: исправления → правила | kagemusha | refine → RULES.md | ◐ |
 
@@ -81,5 +81,5 @@
 | 25 | Merge-очередь, панель судей, подписанные квитанции, чат-поверхности | Gas Town, revfactory, Bernstein, Hermes | см. прошлую версию плана |
 | 26 | Доменные пакеты скиллов и коннекторы (наука) | OpenScience | новые классы задач |
 
-Волна 1 идёт через `artel evolve` с ручными гипотезами: каждый пункт — ветка, тесты, бенчмарк, решение о слиянии.
-Волны 2–3 — через `artel absorb <репозиторий> --focus "<механизм>" --run`.
+Волна 1 идёт через `arteliq evolve` с ручными гипотезами: каждый пункт — ветка, тесты, бенчмарк, решение о слиянии.
+Волны 2–3 — через `arteliq absorb <репозиторий> --focus "<механизм>" --run`.

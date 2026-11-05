@@ -192,7 +192,7 @@ INSTALL = (ROOT / "install.sh").read_text(encoding="utf-8")
 
 
 def test_installer_asks_once_defaults_to_no_and_removes_both_files():
-    assert "Разрешить Artel ставить системные пакеты (apt) и профиль AppArmor для песочницы?" in INSTALL
+    assert "Разрешить Arteliq ставить системные пакеты (apt) и профиль AppArmor для песочницы?" in INSTALL
     ask = INSTALL[INSTALL.index("ask_root() {"):INSTALL.index("root_remove() {")]
     assert "ARTEL_ALLOW_ROOT" in ask and "[y/N]" in ask and "else return 1" in ask  # no terminal: no
     assert "install -m 0755 -o root -g root" in INSTALL and "visudo -cf" in INSTALL and "TESTHOOK-BEGIN" in INSTALL

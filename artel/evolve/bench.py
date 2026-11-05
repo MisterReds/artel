@@ -1,4 +1,4 @@
-"""Benchmark suite: run Artel (any code revision) on tasks with hidden checks and measure it.
+"""Benchmark suite: run Arteliq (any code revision) on tasks with hidden checks and measure it.
 
 A task lives in ``evals/tasks/<id>/``:
     task.yaml   id, goal, optional seed dir, timeout_s, hidden: [shell commands]

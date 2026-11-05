@@ -3,21 +3,21 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>Artel</title>
+<title>Arteliq</title>
 <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/static/icons/apple-touch-icon.png">
 <meta name="theme-color" content="#B5522B">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-title" content="Artel">
+<meta name="apple-mobile-web-app-title" content="Arteliq">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <link rel="stylesheet" href="/static/fonts/fonts.css">
 <link rel="stylesheet" href="/static/chat.css">
 <link rel="stylesheet" href="/static/files.css?v=3">
 <style>
 :root{
-  /* Artel design system. Brand: copper on warm paper. Copper marks the one primary action and the current place;
+  /* Arteliq design system. Brand: copper on warm paper. Copper marks the one primary action and the current place;
      status colours are separate from the brand so a running task never looks like a button.
      Spacing: 4/8 scale (--s1..--s8). Radii: 8 (controls) 12 (cards) 16 (panels, dialogs).
      Fonts: Unbounded (display, headings), Onest (text), JetBrains Mono (logs, code). */
@@ -327,8 +327,8 @@ body:not(.devmode) .dev{display:none!important}
   </nav>
   <div class="hact">
     <button id="isochip" class="isochip" type="button" hidden aria-label="Команды агентов выполняются без изоляции: показать" title="Без изоляции: показать подробности"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3l8 3v6c0 4.5-3.2 7.8-8 9-4.8-1.2-8-4.5-8-9V6l8-3zM12 8.5v4M12 15.5h.01"/></svg><span class="lbl">Без изоляции</span></button>
-    <button id="updbtn" style="display:none" title="Доступно обновление Artel"></button>
-    <button id="instbtn" style="display:none" title="Установить Artel как приложение на этом компьютере">Установить приложение</button>
+    <button id="updbtn" style="display:none" title="Доступно обновление Arteliq"></button>
+    <button id="instbtn" style="display:none" title="Установить Arteliq как приложение на этом компьютере">Установить приложение</button>
     <button class="primary" id="newbtn" aria-label="Новый проект"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="lbl">Новый проект</span></button>
     <button id="theme" title="Тема" aria-label="Тема: как в системе"></button>
     <button id="logout" title="Выйти на этом устройстве">Выйти</button>
@@ -453,7 +453,7 @@ $('#theme').onclick=()=>{const cur=document.documentElement.dataset.theme||'';ap
 applyTheme(document.documentElement.dataset.theme||'',false);
 try{matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>applyTheme(document.documentElement.dataset.theme||'',false))}catch(e){}
 // tab title shows how many projects wait for an answer
-let ATTN=0;function setAttn(n){ATTN=n;document.title=n>0?`Artel — ${cnt(n,'вопрос','вопроса','вопросов')} к вам`:'Artel'}
+let ATTN=0;function setAttn(n){ATTN=n;document.title=n>0?`Arteliq — ${cnt(n,'вопрос','вопроса','вопросов')} к вам`:'Arteliq'}
 /* ---------- Приложение на компьютере: установка, системные уведомления, счётчик на значке ---------- */
 const lsGet=k=>{try{return localStorage.getItem(k)}catch(e){return null}}, lsSet=(k,v)=>{try{localStorage.setItem(k,v)}catch(e){}};
 let installEv=null;
@@ -489,7 +489,7 @@ function isoDraw(){const b=$('#unisolated');if(!b)return;b.innerHTML=isoReason?`
   <button type="button" class="ghost" id="iso-more" aria-expanded="false" aria-controls="iso-det">Подробнее ${icon('chev')}</button><span class="grow"></span>
   <button type="button" class="x ghost" id="iso-x" aria-label="Скрыть до конца сессии" title="Скрыть до конца сессии">${icon('x')}</button></div>
   <div class="isodet" id="iso-det" hidden><p class="why">${esc(isoReason)}</p><p>Как исправить — откройте <a href="#/providers">«Подключения»</a>.</p>
-  <p>Без изоляции Artel защищает от честных ошибок и подсунутого в данные текста, но не от намеренно враждебного исполнителя: он может менять журнал, проверки и рабочие папки с правами владельца. Замену проверок в таком режиме подтверждаете вы.</p></div>`:'';
+  <p>Без изоляции Arteliq защищает от честных ошибок и подсунутого в данные текста, но не от намеренно враждебного исполнителя: он может менять журнал, проверки и рабочие папки с правами владельца. Замену проверок в таком режиме подтверждаете вы.</p></div>`:'';
   const m=$('#iso-more');if(m)m.onclick=()=>{const d=$('#iso-det'),o=d.hidden;d.hidden=!o;m.setAttribute('aria-expanded',o)};
   const x=$('#iso-x');if(x)x.onclick=()=>isoHide(true)}
 $('#isochip').onclick=()=>isoHide(false);
@@ -500,7 +500,7 @@ const dlgEl=$('#dlg');dlgEl.addEventListener('click',e=>{if(e.target===dlgEl)dlg
 /* Диагност: «Почему?» — объяснение сбоя на доступной модели */
 async function why(problem,slug,task){dlg('<h3>Диагност</h3><p class="stat">Собираю факты и разбираю причину на доступной модели… обычно до минуты.</p>');
   const j=await post('/api/doctor',{problem,slug:slug||'',task_id:task||''});if(!j||!j.id){$('#dlgbody').querySelector('p').textContent='Не удалось запустить диагноста.';return}
-  const WHO={artel:'Artel',owner:'владелец — на этой машине или в аккаунте',provider:'провайдер модели',unknown:'неизвестно'};
+  const WHO={artel:'Arteliq',owner:'владелец — на этой машине или в аккаунте',provider:'провайдер модели',unknown:'неизвестно'};
   for(let i=0;i<120;i++){await new Promise(r=>setTimeout(r,2000));const s=await api('/api/doctor/'+j.id);if(s.phase!=='done')continue;const r=s.report;
     dlg(`<h3>Диагност</h3><p><b>Причина:</b> ${esc(r.cause||'')}</p><p><b>Исправляет:</b> ${esc(WHO[r.who]||r.who||'')}</p>
       ${(r.steps||[]).length?`<h2>Что сделать</h2><ol>${r.steps.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}
@@ -511,7 +511,7 @@ function labelDlg(){const h=$('#dlgbody h3');if(h){h.id='dlgtitle';dlgEl.setAttr
 const DCLOSE=`<button class="dclose" aria-label="Закрыть" title="Закрыть" onclick="dlgEl.close()">${icon('x')}</button>`;
 function dlg(html){$('#dlgbody').innerHTML=html+'<div style="text-align:right;margin-top:12px"><button onclick="dlgEl.close()">Закрыть</button></div>'+DCLOSE;labelDlg();dlgEl.showModal()}
 const EXAMPLES=['Сайт-визитка для кофейни','Телеграм-бот для записи на приём','Таблица личных расходов','Лендинг для мероприятия'];
-function openNew(pre){$('#dlgbody').innerHTML=`<h3>Что нужно сделать?</h3><p class="stat">Опишите результат своими словами. Artel соберёт команду, разделит работу на задачи, выполнит и проверит их. Ход работы виден на странице проекта.</p>
+function openNew(pre){$('#dlgbody').innerHTML=`<h3>Что нужно сделать?</h3><p class="stat">Опишите результат своими словами. Arteliq соберёт команду, разделит работу на задачи, выполнит и проверит их. Ход работы виден на странице проекта.</p>
   <textarea id="goal" rows="4" autofocus aria-label="Что нужно сделать" placeholder="Например: сайт-визитка для кофейни с меню и контактами"></textarea>
   <div class="exs" role="group" aria-label="Примеры">${EXAMPLES.map(x=>`<button type="button" data-ex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
   <details class="more"><summary>Дополнительно</summary><input id="pname" aria-label="Название проекта (необязательно)" placeholder="Название (необязательно)"><p class="stat">Без названия оно возьмётся из цели.</p></details>
@@ -527,14 +527,14 @@ function route(){state.lastLive=undefined;clearInterval(timer);clearInterval(res
   if(location.hash==='#/new'){location.replace('#/portfolio');openNew();return}  // manifest shortcut «Новый проект»
   const h=location.hash.slice(2)||'portfolio';const [v,arg]=h.split('/');
   document.querySelectorAll('#nav a').forEach(a=>{const on=a.dataset.v===v;a.classList.toggle('on',on);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current')});
-  const cur=document.querySelector('#nav a[data-v="'+v+'"]');$('#h1').textContent=cur?cur.textContent:v==='p'?'Проект':'Artel';
+  const cur=document.querySelector('#nav a[data-v="'+v+'"]');$('#h1').textContent=cur?cur.textContent:v==='p'?'Проект':'Arteliq';
   ({portfolio,agents,registry,skills,evolution,providers,plugins,failures,settings,p:project}[v]||portfolio)(arg&&decodeURIComponent(arg))}
 window.addEventListener('hashchange',route);
 
 /* ---------- Сбои ---------- */
 async function failures(){$('#view').innerHTML='<div class="wrap" id="fl"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
   const draw=async()=>{const d=await api('/api/reports');const gh=d.github||{},st=d.settings||{};
-    const WHO={artel:'Artel',owner:'владелец',provider:'провайдер',unknown:'неизвестно'};
+    const WHO={artel:'Arteliq',owner:'владелец',provider:'провайдер',unknown:'неизвестно'};
     $('#fl').innerHTML=`<p class="stat">Каждый сбой — текстовый отчёт: что сломалось, причина и шаги от Диагноста, версия и система. Ключи, токены, e-mail и пути пользователя вырезаются до сохранения.</p>
     <div class="kv" style="max-width:640px"><span>в Telegram</span><span><label class="chk"><input type="checkbox" id="rp-tg" ${st.telegram!==false?'checked':''}> сообщать о каждом сбое (если бот привязан)</label></span>
       <span>разработчикам</span><span><select id="rp-gh" aria-label="Отправка отчётов разработчикам">${[['ask','по кнопке у отчёта'],['auto','автоматически — каждый новый вид сбоя'],['off','никогда']].map(([v,l])=>`<option value="${v}" ${st.github===v?'selected':''}>${l}</option>`).join('')}</select>
@@ -566,7 +566,7 @@ async function settings(){$('#view').innerHTML='<div class="wrap set" id="st"><d
     <p class="stat">Telegram подключается в «Подключениях»; что сообщать о сбоях и отправлять ли их разработчикам — в «Сбоях».</p>
     <div class="row"><a href="#/providers">Подключения →</a> <a href="#/failures">Сбои →</a></div></section>
    <section aria-labelledby="g-app"><h3 id="g-app">Приложение на компьютере</h3>
-    <p class="stat">${isApp()?'Artel открыт как приложение.':'Artel можно установить как отдельное окно: кнопкой ниже (Chrome, Edge, Яндекс Браузер), из меню браузера или командой <code>artel app</code>.'}</p>
+    <p class="stat">${isApp()?'Arteliq открыт как приложение.':'Arteliq можно установить как отдельное окно: кнопкой ниже (Chrome, Edge, Яндекс Браузер), из меню браузера или командой <code>arteliq app</code>.'}</p>
     <div class="row"><button class="primary" id="st-inst" style="display:${installEv&&!isApp()?'':'none'}">Установить приложение</button></div></section>
    <section aria-labelledby="g-upd"><h3 id="g-upd">Обновления</h3><p class="stat">${u.available?`Доступно обновление: изменений ${u.behind}.`:'Установлена последняя версия.'}<span class="dev"> ${esc(u.reason||'')}</span> Перед установкой новая версия проверяется тестами; откатиться можно в один клик.</p>
     <div class="row"><button id="st-upd">${u.available?'Посмотреть и обновить':'Проверить сейчас'}</button></div></section>
@@ -610,7 +610,7 @@ function renderPortfolio(){const ps=state.ps;if(typing())return;const att=ps.fla
 function portfolio_redraw(){api(MQ('/api/portfolio')).then(ps=>{state.ps=ps;renderPortfolio()}).catch(()=>{})}
 // first run: one clear next step instead of an empty grid
 const onboardHtml=()=>`<section class="onboard" aria-labelledby="ob-h"><svg class="illu" viewBox="0 0 160 120" aria-hidden="true">${ILLU.projects}</svg><h2 id="ob-h">Опишите первую цель</h2>
-  <p class="stat">Расскажите своими словами, что нужно получить. Artel соберёт команду, разделит работу на задачи, выполнит и проверит их. Если понадобится ваш ответ, он появится здесь.</p>
+  <p class="stat">Расскажите своими словами, что нужно получить. Arteliq соберёт команду, разделит работу на задачи, выполнит и проверит их. Если понадобится ваш ответ, он появится здесь.</p>
   <div class="exs" role="group" aria-label="Примеры">${EXAMPLES.map(x=>`<button type="button" data-obex="${esc(x)}">${esc(x)}</button>`).join('')}</div>
   <button class="primary" id="ob-new">Описать цель</button>
   <p class="stat" style="margin-top:12px">Нужен исполнитель: <a href="#/providers">«Подключения»</a> — войдите в Claude Code или Codex (подписка) либо задайте ключ API.</p></section>`;
@@ -688,7 +688,7 @@ function setTab(t,quiet){state.ptab=t;const pm=$('#pm');if(!pm)return;pm.dataset
 function openFiles(){setTab('files');if(state.fv)state.fv.openDefault();const p=$('#pm-files');if(p)p.scrollIntoView({block:'start'})}
 async function stopFlow(kind){const slug=encodeURIComponent(state.slug),pause=kind==='pause';
   const ok=await ask({title:pause?'Поставить проект на паузу?':'Остановить проект?',danger:true,ok:pause?'Поставить на паузу':'Остановить',
-    text:(pause?'Пауза — это остановка с сохранением состояния: в Artel нет отдельного режима «приостановлено». ':'')+'Исполнители прекратят работу сразу. Всё уже сделанное сохранится и ничего не удалится; задачи, которые шли в эту минуту, вернутся в очередь. Продолжить можно в любой момент кнопкой «Продолжить» — работа пойдёт с того же места.',
+    text:(pause?'Пауза — это остановка с сохранением состояния: в Arteliq нет отдельного режима «приостановлено». ':'')+'Исполнители прекратят работу сразу. Всё уже сделанное сохранится и ничего не удалится; задачи, которые шли в эту минуту, вернутся в очередь. Продолжить можно в любой момент кнопкой «Продолжить» — работа пойдёт с того же места.',
     run:()=>post(`/api/projects/${slug}/stop`)});
   if(!ok)return;setTimeout(refresh,800);
   toast('Проект остановлен',{ms:10000,id:'stop',action:{label:'Вернуть',fn:async()=>{try{await post(`/api/projects/${slug}/resume`);toast('Проект продолжен',{id:'stop'})}catch(e){}setTimeout(refresh,800)}}})}
@@ -770,7 +770,7 @@ function resultDraw(r,remote){const box=$('#resbox');if(!box)return;resLast=r;co
   if(run||r.state==='not_answering')resPoll=setInterval(()=>{if(!$('#resbox')||document.hidden){if(!$('#resbox')){clearInterval(resPoll);resPoll=null}return}resultBox(true)},2000)}
 async function resultBox(quiet){try{const r=await api(`/api/projects/${encodeURIComponent(state.slug)}/run`);resultDraw(r,!!(state.v&&state.v.remote))}catch(e){if(!quiet){const b=$('#resbox');if(b)b.textContent='Не удалось получить состояние запуска'}}}
 const PURPOSE={intake:'уточняет задачу',plan:'составляет план',work:'выполняет задачу',review:'проверяет работу',audit:'аудит цели',test:'тестирует',refine:'улучшает харнесс',librarian:'собирает навыки'};
-// how Artel understood the request (intake contract, cheap model): the person sees it before the work is judged by it
+// how Arteliq understood the request (intake contract, cheap model): the person sees it before the work is judged by it
 function contractBox(c){if(!c)return '';const L=(t,xs)=>(xs||[]).length?`<div style="margin-top:6px"><b>${t}</b><ul style="margin:2px 0 0;padding-left:18px">${xs.map(x=>`<li>${esc(x)}</li>`).join('')}</ul></div>`:'';
   return `<details style="margin-top:6px"><summary class="stat">Как понята задача${c.complexity?' · сложность '+esc({low:'низкая',medium:'средняя',high:'высокая'}[c.complexity]||c.complexity):''}</summary>
     ${L('Результат',c.deliverables)}${L('Критерии успеха',c.success_criteria)}${L('Ограничения',c.constraints)}${L('Не входит',c.out_of_scope)}${L('Допущения',c.assumptions)}${L('Открытые вопросы',c.open_questions)}</details>`}
@@ -848,7 +848,7 @@ function appendEvent(e){const box=$('#events');if(!box)return;const f=$('#filter
 
 /* ---------- Провайдеры ---------- */
 async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
-  const RT={auto:'Автоматически — что подключено (рекомендуется)',native:'Artel (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)',none:'ничего не подключено'};
+  const RT={auto:'Автоматически — что подключено (рекомендуется)',native:'Arteliq (свой цикл, API)',claude_code:'Claude Code (подписка Claude)',codex:'Codex (подписка ChatGPT)',none:'ничего не подключено'};
   const rtl=x=>RT[x]||x;
   const draw=async()=>{const [o,tg]=await Promise.all([api('/api/providers'),api('/api/telegram')]);const box=$('#pvw');if(!box)return;const L=o.codex_login||{};
    const st=(ok,on,off)=>`<span class="st ${ok?'on':'off'}">${ok?on:off}</span>`;
@@ -856,7 +856,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    const inst=(name,s,label,hint)=>{const j=I[name]||{};
      if(j.phase==='running')return `<p class="stat">Устанавливаю ${label}…</p><pre>${esc((j.log||[]).join('\n'))}</pre>`;
      if(j.phase==='error')return `<pre>${esc(j.error||'')}</pre><button data-inst="${name}">Повторить установку</button>`;
-     if(!s.installed)return `<p class="stat">Не установлен. ${hint||'Ставится нативная сборка в папку Artel, без прав администратора и без Node.js.'}</p><button class="primary" data-inst="${name}">Установить ${label}</button>`;
+     if(!s.installed)return `<p class="stat">Не установлен. ${hint||'Ставится нативная сборка в папку Arteliq, без прав администратора и без Node.js.'}</p><button class="primary" data-inst="${name}">Установить ${label}</button>`;
      if(s.by_artel)return `<button data-uninst="${name}">Удалить ${label}</button>`;
      return ''};
    const cx=o.codex,cc=o.claude_code,r=o.routing;
@@ -867,7 +867,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       <p><button class="primary" id="cl-send">Подтвердить</button> <button id="cl-cancel">Отменить</button></p>`
      :CL.phase==='starting'||CL.phase==='checking'?'<p class="stat">Жду ответа Claude…</p>'
      :CL.phase==='error'?`<pre>${esc(CL.error||'')}</pre>`:CL.phase==='done'?'<p style="color:var(--ok)">Вход выполнен.</p>':'';
-   const use=(rt)=>`<label class="stat chk" style="margin:6px 0"><input type="checkbox" data-use="${rt}" ${off.has(rt)?'':'checked'}> использовать в работе${off.has(rt)?' — <b>отключён</b>: Artel не будет его выбирать':''}</label>${lim[rt]?`<p class="stat" style="color:var(--warn,#b5522b)">Упёрся в лимит до ${fmtT(lim[rt])} — задачи идут на другой подключённый рантайм. <button data-unlim="${rt}">Снять отметку</button></p>`:''}`;
+   const use=(rt)=>`<label class="stat chk" style="margin:6px 0"><input type="checkbox" data-use="${rt}" ${off.has(rt)?'':'checked'}> использовать в работе${off.has(rt)?' — <b>отключён</b>: Arteliq не будет его выбирать':''}</label>${lim[rt]?`<p class="stat" style="color:var(--warn,#b5522b)">Упёрся в лимит до ${fmtT(lim[rt])} — задачи идут на другой подключённый рантайм. <button data-unlim="${rt}">Снять отметку</button></p>`:''}`;
    const msel=(id,rt,val,ph)=>{const c=(r.catalogs||{})[rt]||[];if(!c.length)return `<input id="${id}" aria-label="Модель ${esc(rt)}" value="${esc(val||'')}" placeholder="${ph}">`;
      const known=c.some(m=>m.id===val);return `<select id="${id}" aria-label="Модель ${esc(rt)}"><option value="">${ph}</option>${c.map(m=>`<option value="${esc(m.id)}" ${m.id===val?'selected':''}>${esc(m.name)}${m.name.toLowerCase()===String(m.id).toLowerCase()?'':' · '+esc(m.id)}</option>`).join('')}${val&&!known?`<option value="${esc(val)}" selected>${esc(val)} (своя)</option>`:''}<option value="__other">другая модель…</option></select>`};
    const login=L.phase==='waiting'?`<p>Откройте ссылку, войдите в аккаунт ChatGPT и введите код:</p>
@@ -881,8 +881,8 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    <p class="stat" id="sandbox-status" style="color:${sb.active?'var(--ok)':'var(--warn,inherit)'}">Изоляция: ${esc(sb.message||'—')}</p>
    <div class="pv">
     <div class="pvc"><h3>${ri('worker')}Codex${st(cx.logged_in,'подключён',cx.installed?'не подключён':'не установлен')}</h3>
-      <div class="kv"><span>вход</span><span>${cx.logged_in?esc(cx.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка ChatGPT (device code) или ключ API</span>${cx.installed?`<span>CLI</span><span>${esc(cx.version)}${cx.by_artel?' · в папке Artel':''}</span><span>модель</span><span>${esc(cx.model||'')}</span>`:''}</div>
-      <p class="stat dev">Работает автономно: Codex ничего не спрашивает (approval_policy=never — спрашивать некого), его команды ограничены песочницей <code>workspace-write</code> (папка бота и результаты) и политикой команд Artel; инструменты Artel (канбан, сообщения, отчёты) одобрены заранее. Приложения аккаунта ChatGPT, управление экраном и браузер владельца для ботов отключены.</p>
+      <div class="kv"><span>вход</span><span>${cx.logged_in?esc(cx.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка ChatGPT (device code) или ключ API</span>${cx.installed?`<span>CLI</span><span>${esc(cx.version)}${cx.by_artel?' · в папке Arteliq':''}</span><span>модель</span><span>${esc(cx.model||'')}</span>`:''}</div>
+      <p class="stat dev">Работает автономно: Codex ничего не спрашивает (approval_policy=never — спрашивать некого), его команды ограничены песочницей <code>workspace-write</code> (папка бота и результаты) и политикой команд Arteliq; инструменты Arteliq (канбан, сообщения, отчёты) одобрены заранее. Приложения аккаунта ChatGPT, управление экраном и браузер владельца для ботов отключены.</p>
       ${cx.sandbox?`<p class="stat dev">Песочница: ${esc(cx.sandbox)}</p>`:''}
       ${use('codex')}
       ${login}
@@ -890,7 +890,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       ${cx.logged_in?'<button id="cx-logout">Выйти</button>':''}
       ${inst('codex',cx,'Codex CLI')}</div>
     <div class="pvc"><h3>${ri('worker')}Claude Code${st(cc.logged_in,'подключён',cc.installed?'не подключён':'не установлен')}</h3>
-      <div class="kv"><span>вход</span><span>${cc.logged_in?esc(cc.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка Claude или ключ API</span>${cc.installed?`<span>CLI</span><span>${esc(cc.version)}${cc.by_artel?' · в папке Artel':''}</span><span>модель</span><span>${esc(cc.model)}</span>`:''}</div>
+      <div class="kv"><span>вход</span><span>${cc.logged_in?esc(cc.method||'выполнен'):'—'}</span><span>доступ</span><span>подписка Claude или ключ API</span>${cc.installed?`<span>CLI</span><span>${esc(cc.version)}${cc.by_artel?' · в папке Arteliq':''}</span><span>модель</span><span>${esc(cc.model)}</span>`:''}</div>
       ${use('claude_code')}
       ${clogin}
       ${cc.installed&&!cc.logged_in&&!['waiting','starting','checking'].includes(CL.phase)?'<button class="primary" id="cl-login">Войти через подписку Claude</button>':''}
@@ -904,12 +904,12 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
       <span>сервер</span><span>${em.running?'<span style="color:var(--ok)">запущен</span>':'запускается при первом поиске'}</span>`:''}</div>
       ${em.error?`<pre>${esc(em.error)}</pre><p><button data-why="${esc('Эмбеддинги: '+em.error)}">Почему?</button></p>`:''}
       ${em.installed?'<p><button id="em-save">Сохранить</button> <button id="em-test">Проверить</button> <span class="stat" id="em-msg"></span></p>':''}
-      ${inst('embeddings',{installed:em.installed,by_artel:em.installed},'EmbeddingGemma 2','Ставится сервер llama.cpp (~45 МБ) и модель EmbeddingGemma 2 Q8_0 (~310 МБ) в папку Artel; контрольная сумма модели сверяется с Hugging Face. Без модели поиск работает по словам.')}</div>
+      ${inst('embeddings',{installed:em.installed,by_artel:em.installed},'EmbeddingGemma 2','Ставится сервер llama.cpp (~45 МБ) и модель EmbeddingGemma 2 Q8_0 (~310 МБ) в папку Arteliq; контрольная сумма модели сверяется с Hugging Face. Без модели поиск работает по словам.')}</div>
     <div class="pvc"><h3>${ri('librarian')}Ключи API</h3><div class="kv">${o.keys.map(k=>`<span>${esc(k.label)}</span><span>${k.set?'<span style="color:var(--ok)">задан</span>':'не задан'} · <code>${esc(k.env)}</code></span>`).join('')}</div>
       <p class="stat">Задаются в настройках окружения, не в чате и не здесь.</p></div>
     <div class="pvc"><h3>${ri('human')}Telegram${st(tg.paired>0,'чатов: '+tg.paired,tg.token_set?'не привязан':'не настроен')}</h3>
       <div class="kv"><span>что даёт</span><span>цели, статус, ответы проектам и уведомления с телефона</span><span>токен</span><span>${tg.token_set?'задан':'не задан'} · <code>${esc(tg.token_env)}</code></span></div>
-      ${tg.token_set?(tg.code?`<p>Отправьте боту в Telegram:</p><div class="devcode">/pair ${esc(tg.code)}</div><p class="stat">Код одноразовый, действует 15 минут.</p>`:'<button id="tg-pair">Показать код привязки</button>'):'<p class="stat">Создайте бота у @BotFather (/newbot) и задайте его токен в переменной окружения ARTEL_TELEGRAM_TOKEN, затем перезапустите <code>artel web</code>. Токен не вводится здесь и нигде не сохраняется.</p>'}</div>
+      ${tg.token_set?(tg.code?`<p>Отправьте боту в Telegram:</p><div class="devcode">/pair ${esc(tg.code)}</div><p class="stat">Код одноразовый, действует 15 минут.</p>`:'<button id="tg-pair">Показать код привязки</button>'):'<p class="stat">Создайте бота у @BotFather (/newbot) и задайте его токен в переменной окружения ARTEL_TELEGRAM_TOKEN, затем перезапустите <code>arteliq web</code>. Токен не вводится здесь и нигде не сохраняется.</p>'}</div>
    </div>
    <h2>Модели</h2>
    <div class="dev"><h2>Кто какую роль выполняет <span class="devtag">разработчик</span></h2>
@@ -923,7 +923,7 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    <p class="stat">Действует для новых запусков.<span class="dev"> Сохраняется в ARTEL_HOME/artel.yaml. Разные подписки на разных ролях разносят нагрузку по лимитам.</span></p>`;
    const on=(id,fn)=>{const el=$('#'+id);if(el)el.onclick=fn};
    document.querySelectorAll('[data-inst]').forEach(b=>b.onclick=async()=>{b.disabled=true;await api('/api/providers/install/'+b.dataset.inst,{method:'POST',headers:{'Content-Type':'application/json'}});state.inst=true;draw()});
-   document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!await ask({title:'Удалить из папки Artel?',text:'Установленная программа будет удалена из папки Artel.',ok:'Удалить',danger:true}))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+   document.querySelectorAll('[data-uninst]').forEach(b=>b.onclick=async()=>{if(!await ask({title:'Удалить из папки Arteliq?',text:'Установленная программа будет удалена из папки Arteliq.',ok:'Удалить',danger:true}))return;await api('/api/providers/uninstall/'+b.dataset.uninst,{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    ['m-cc','m-cx'].forEach(id=>{const el=$('#'+id);if(el&&el.tagName==='SELECT'){let prev=el.value;el.onchange=()=>{if(el.value!=='__other'){prev=el.value;return}
      const v=(prompt('Полное имя модели:')||'').trim();if(!v){el.value=prev;return}const op=document.createElement('option');op.value=v;op.textContent=v+' (своя)';el.insertBefore(op,el.lastElementChild);el.value=prev=v}}});
    document.querySelectorAll('[data-use]').forEach(b=>b.onchange=async()=>{const d=[...document.querySelectorAll('[data-use]')].filter(x=>!x.checked).map(x=>x.dataset.use);
@@ -939,9 +939,9 @@ async function providers(){$('#view').innerHTML='<div class="wrap" id="pvw"><div
    on('cl-cancel',async()=>{await api('/api/providers/claude/cancel',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('cl-send',async()=>{$('#cl-send').disabled=true;const j=await api('/api/providers/claude/code',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:$('#cl-code').value})});
      if(j.error&&j.phase==='waiting'){toast(j.error,{bad:true});$('#cl-send').disabled=false;return}draw()});
-   on('cl-logout',async()=>{if(!await ask({title:'Выйти из Claude Code?',text:'Artel перестанет использовать подписку Claude, пока вы не войдёте снова.',ok:'Выйти'}))return;await api('/api/providers/claude/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+   on('cl-logout',async()=>{if(!await ask({title:'Выйти из Claude Code?',text:'Arteliq перестанет использовать подписку Claude, пока вы не войдёте снова.',ok:'Выйти'}))return;await api('/api/providers/claude/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('cx-cancel',async()=>{await api('/api/providers/codex/cancel',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
-   on('cx-logout',async()=>{if(!await ask({title:'Выйти из Codex?',text:'Artel перестанет использовать подписку ChatGPT через Codex, пока вы не войдёте снова.',ok:'Выйти'}))return;await api('/api/providers/codex/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
+   on('cx-logout',async()=>{if(!await ask({title:'Выйти из Codex?',text:'Arteliq перестанет использовать подписку ChatGPT через Codex, пока вы не войдёте снова.',ok:'Выйти'}))return;await api('/api/providers/codex/logout',{method:'POST',headers:{'Content-Type':'application/json'}});draw()});
    on('rt-save',async()=>{const byRole={};document.querySelectorAll('select[data-role]').forEach(s=>{if(s.value)byRole[s.dataset.role]=s.value});
      const body={runtime:document.querySelector('select[data-def]').value,runtime_by_role:byRole,models:{claude_code:$('#m-cc').value,codex:$('#m-cx').value}};
      const rr=await api('/api/providers/routing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
@@ -975,7 +975,7 @@ function renderRegistry(){const all=state.reg;const cats=Object.entries(all.redu
   const feats=[...new Set(all.flatMap(e=>e.features||[]))].sort();
   const rows=all.filter(e=>(state.rc==='all'||e.category===state.rc)&&(!state.rf||(e.features||[]).includes(state.rf))&&(!state.rq||(e.repo+' '+e.description).toLowerCase().includes(state.rq)))
     .sort((a,b)=>(b.relevance||0)-(a.relevance||0));
-  $('#rg').innerHTML=`<p class="stat">Полный реестр: ${all.length} проектов из 10 курируемых списков и ручных дополнений; существование каждого репозитория проверено (живых ${all.filter(e=>e.status==='alive').length}, удалённых ${all.filter(e=>e.status==='dead').length}). Признаки извлечены из README. Сортировка — по релевантности для Artel.</p>
+  $('#rg').innerHTML=`<p class="stat">Полный реестр: ${all.length} проектов из 10 курируемых списков и ручных дополнений; существование каждого репозитория проверено (живых ${all.filter(e=>e.status==='alive').length}, удалённых ${all.filter(e=>e.status==='dead').length}). Признаки извлечены из README. Сортировка — по релевантности для Arteliq.</p>
    <div class="chips">${[['all',all.length],...cats].map(([c,n])=>`<button data-c="${c}" class="${state.rc===c?'on':''}">${c==='all'?'все':esc(CAT[c]||c)} ${n}</button>`).join('')}</div>
    <div style="display:flex;gap:8px;flex-wrap:wrap"><input id="rq" aria-label="Поиск по реестру" placeholder="Поиск: kanban, verifier, deepseek…" value="${esc(state.rq)}" style="max-width:320px">
    <select id="rf" aria-label="Признак" style="max-width:220px"><option value="">любой признак</option>${feats.map(f=>`<option ${state.rf===f?'selected':''}>${f}</option>`).join('')}</select><span class="stat" style="align-self:center">найдено ${rows.length}</span></div>
@@ -997,15 +997,15 @@ function deltaChips(d){return Object.entries(DM).filter(([k])=>d&&d[k]!=null&&d[
   return `<span class="ft" style="color:${good?'var(--ok)':'var(--bad)'}">${l} ${f(d[k])}</span>`}).join('')||'<span class="stat">без изменений метрик</span>'}
 async function evolution(){$('#view').innerHTML='<div class="wrap" id="evo"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
   const draw=async()=>{const evs=await api('/api/evolution');
-  if(!evs.length){$('#evo').innerHTML=`<div class="empty">Эволюция ещё не запускалась.<br><br><code>artel evolve --generations 1 --candidates 2</code> · <code>artel absorb owner/repo --run</code></div>`;return}
+  if(!evs.length){$('#evo').innerHTML=`<div class="empty">Эволюция ещё не запускалась.<br><br><code>arteliq evolve --generations 1 --candidates 2</code> · <code>arteliq absorb owner/repo --run</code></div>`;return}
   $('#evo').innerHTML=evs.map(ev=>{const L=ev.ledger,base=L.filter(e=>e.kind==='baseline'),cands=L.filter(e=>e.kind==='candidate'||e.kind==='absorb_candidate');
     const gens=[...new Set(cands.map(c=>c.generation))].sort((a,b)=>b-a);const run=ev.state.running;
-    return `<p class="stat">Artel улучшает сам себя: каждая гипотеза — ветка git, реализует её сам Artel, затем тесты и бенчмарк со скрытыми проверками; лучший кандидат вливается в <b>${esc(ev.state.main)}</b>.</p>
+    return `<p class="stat">Arteliq улучшает сам себя: каждая гипотеза — ветка git, реализует её сам Arteliq, затем тесты и бенчмарк со скрытыми проверками; лучший кандидат вливается в <b>${esc(ev.state.main)}</b>.</p>
     <div class="kpis"><div class="kpi"><b>${ev.state.generation||0}</b><span>поколений</span></div><div class="kpi"><b>${cands.length}</b><span>кандидатов</span></div>
       <div class="kpi"><b style="color:var(--ok)">${cands.filter(c=>c.merged).length}</b><span>влито</span></div><div class="kpi"><b>${esc(ev.state.champion||'—')}</b><span>чемпион</span></div>
       <div class="kpi"><b>${ev.branches.length}</b><span>веток evolve/*</span></div></div>
     ${run?`<div class="alert" style="border-left-color:var(--run)">▶ идёт поколение ${run.generation}: ${esc(run.phase)} · ${ago(run.since).replace(' назад','')}
-      <div class="stat">${run.auto_resume_blocked?'⚠ автоперезапуск остановлен: '+esc(run.auto_resume_blocked)+' — после исправления: <code>artel evolve --resume</code>'
+      <div class="stat">${run.auto_resume_blocked?'⚠ автоперезапуск остановлен: '+esc(run.auto_resume_blocked)+' — после исправления: <code>arteliq evolve --resume</code>'
         :(ev.state.process||{}).alive?'процесс работает (pid '+esc(String(ev.state.process.pid))+')'+((run.supervisor||{}).restarts?` · перезапусков после сбоев: ${run.supervisor.restarts}`:'')
         :'процесс остановлен — дашборд продолжит поколение автоматически в течение пары минут'}</div></div>`:''}
     <h2>Чемпион по коммитам</h2><div class="tablewrap"><table><tr><th>коммит</th><th class="n">прохождение</th><th class="n">частично</th><th class="n">стоимость</th><th class="n">время/задача</th><th class="n">отказы</th><th class="n">срывы</th></tr>
@@ -1038,7 +1038,7 @@ function plgManifest(r,perms){return Object.entries(r.manifests||{}).map(([ep,m]
 async function plugins(){$('#view').innerHTML='<div class="wrap plg" id="plg"><div class="sk-wrap" role="status" aria-label="Загрузка"><i class="sk" style="width:45%"></i><i class="sk"></i><i class="sk" style="width:80%"></i></div></div>';
   const draw=async()=>{const o=await api('/api/plugins');const box=$('#plg');if(!box)return;const perms=o.permissions||{};state.plg=o.plugins;
    const card=r=>{const st=r.error?'<span class="st err">ошибка</span>':r.enabled?'<span class="st on">включён</span>':'<span class="st off">выключен</span>';
-     const acts=r.kind==='config'?'<span class="stat">меняется в artel.yaml</span>':r.core?'<span class="stat">ядро Artel — не выключается</span>':
+     const acts=r.kind==='config'?'<span class="stat">меняется в artel.yaml</span>':r.core?'<span class="stat">ядро Arteliq — не выключается</span>':
        `${r.enabled?`<button data-pa="disable" data-id="${esc(r.id)}">Выключить</button>`:`<button class="primary" data-pa="enable" data-id="${esc(r.id)}">Включить…</button>`}
         ${r.kind==='package'?`<button data-pa="update" data-id="${esc(r.id)}">Обновить</button><button data-pa="remove" data-id="${esc(r.id)}">Удалить</button>`:''}`;
      return `<div class="pvc"><h3>${ri(r.kind==='package'?'absorber':'worker')}${esc(r.id)}${st}</h3>
@@ -1047,7 +1047,7 @@ async function plugins(){$('#view').innerHTML='<div class="wrap plg" id="plg"><d
       ${r.error?`<div class="errbox">${esc(r.error)}</div>`:''}
       ${plgManifest(r,perms)}<div class="acts">${acts}</div></div>`};
    const pk=o.plugins.filter(r=>r.kind==='package'),bi=o.plugins.filter(r=>r.kind!=='package');
-   box.innerHTML=`<p class="stat">Каждая способность Artel — плагин с манифестом. Пакеты ставятся в ARTEL_HOME/plugins выключенными: плагин не работает, пока вы не прочтёте манифест и не включите его. Пакет из PyPI ставится только готовым колесом и папка с artel-plugin.toml копируется — их код при установке не запускается; пакет из git или папки с pyproject.toml/setup.py собирается, и его сценарий сборки выполняется уже при установке. Плагин работает внутри Artel с его правами — ставьте только то, чему доверяете. Плагин, который не загрузился, выключается с ошибкой; Artel продолжает работу.</p>
+   box.innerHTML=`<p class="stat">Каждая способность Arteliq — плагин с манифестом. Пакеты ставятся в ARTEL_HOME/plugins выключенными: плагин не работает, пока вы не прочтёте манифест и не включите его. Пакет из PyPI ставится только готовым колесом и папка с artel-plugin.toml копируется — их код при установке не запускается; пакет из git или папки с pyproject.toml/setup.py собирается, и его сценарий сборки выполняется уже при установке. Плагин работает внутри Arteliq с его правами — ставьте только то, чему доверяете. Плагин, который не загрузился, выключается с ошибкой; Arteliq продолжает работу.</p>
    <h2>Установить</h2><div class="inst"><input id="plg-src" aria-label="Источник плагина" placeholder="git URL (https://github.com/…), пакет pip (artel-plugin-x==1.0) или путь к папке"><button class="primary" id="plg-go">Установить</button></div>
    <p class="stat" id="plg-msg"></p>
    <h2>Пакеты</h2>${pk.length?`<div class="pv">${pk.map(card).join('')}</div>`:'<p class="stat">Пакетов нет. Пример: examples/artel-plugin-hello.</p>'}
@@ -1058,7 +1058,7 @@ async function plugins(){$('#view').innerHTML='<div class="wrap plg" id="plg"><d
      if(r.error){$('#plg-msg').innerHTML=`<span style="color:var(--bad)">${esc(r.error)}</span>`;return}
      $('#plg-msg').textContent=`Установлен ${r.name} ${r.version||''} — выключен. Проверьте манифест и включите.`;await draw()};
    document.querySelectorAll('[data-pa]').forEach(b=>b.onclick=async()=>{const id=b.dataset.id,a=b.dataset.pa,r=state.plg.find(x=>x.id===id);
-     if(a==='enable'){dlg(`<h3>Включить ${esc(id)}?</h3><p class="stat">Плагин запустит свой setup внутри Artel и получит его права. Проверьте, что он просит.</p>${plgManifest(r,perms)}
+     if(a==='enable'){dlg(`<h3>Включить ${esc(id)}?</h3><p class="stat">Плагин запустит свой setup внутри Arteliq и получит его права. Проверьте, что он просит.</p>${plgManifest(r,perms)}
         <div style="margin-top:12px"><button class="primary" id="plg-yes">Включить</button></div>`);
        $('#plg-yes').onclick=async()=>{$('#plg-yes').disabled=true;const x=await post(`/api/plugins/${encodeURIComponent(id)}/enable`);dlgEl.close();
          if(x.error)toast((r.kind==='package'?'Не загрузился, оставлен выключенным: ':'')+x.error,{bad:true});await draw()};return}
@@ -1076,7 +1076,7 @@ function updDialog(u){const st=u.state||{};const when=t=>fmtDT(t);
   const rows=(u.commits||[]).map(c=>`<tr><td class="stat">${esc(c.date.slice(0,16).replace('T',' '))}</td><td>${esc(c.subject)}</td></tr>`).join('');
   const done=(u.roadmap_done||[]).map(r=>`<li><b>${esc(r.id)}</b> — ${esc(r.title)} <span class="stat">из ${esc(r.from)}</span></li>`).join('');
   const hist=(u.history||[]).slice().reverse().map(h=>`<li class="stat">${when(h.ts)} · ${esc(h.action)} ${esc((h.from||'').slice(0,8))} → ${esc((h.to||'').slice(0,8))}</li>`).join('');
-  dlg(`<h3>Обновление Artel</h3>
+  dlg(`<h3>Обновление Arteliq</h3>
    <p class="stat">Канал ${esc(u.channel||'')} · установлено ${esc((u.current||'').slice(0,10))} · новое ${esc((u.remote||'').slice(0,10))}</p>
    ${u.available?`<p>Новых изменений: <b>${u.behind}</b>${u.deps_changed?' · изменились зависимости (будут установлены)':''}</p>`:`<p>${esc(u.reason||'Установлена последняя версия')}</p>`}
    ${done?`<h4>Новое из дорожной карты</h4><ul>${done}</ul>`:''}
@@ -1093,7 +1093,7 @@ function updDialog(u){const st=u.state||{};const when=t=>fmtDT(t);
   $('#upd-go').onclick=async()=>{$('#upd-go').disabled=true;$('#upd-go').textContent='Проверка и установка…';
     const r=await api('/api/update/apply',{method:'POST',headers:{'Content-Type':'application/json'}});updDialog(await checkUpdate(false));if(!r.ok)return;waitRestart()};
   $('#upd-check').onclick=async()=>updDialog(await checkUpdate(true));
-  $('#upd-back').onclick=async()=>{if(!await ask({title:'Вернуть предыдущую версию?',text:'Artel откатится на прошлую версию и перезапустится.',ok:'Вернуть'}))return;const r=await api('/api/update/rollback',{method:'POST',headers:{'Content-Type':'application/json'}});updDialog(await checkUpdate(false));if(r.ok)waitRestart()}}
+  $('#upd-back').onclick=async()=>{if(!await ask({title:'Вернуть предыдущую версию?',text:'Arteliq откатится на прошлую версию и перезапустится.',ok:'Вернуть'}))return;const r=await api('/api/update/rollback',{method:'POST',headers:{'Content-Type':'application/json'}});updDialog(await checkUpdate(false));if(r.ok)waitRestart()}}
 function waitRestart(){const t0=Date.now();const iv=setInterval(async()=>{try{const u=await api('/api/update');if(u.state.phase!=='restart_pending'&&Date.now()-t0>3000){clearInterval(iv);location.reload()}}catch(e){}},2000)}
 $('#updbtn').onclick=async()=>updDialog(await checkUpdate(false));
 checkUpdate(false);setInterval(()=>checkUpdate(false),60000);

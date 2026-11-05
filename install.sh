@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Artel installer for Linux and macOS.
+# Arteliq installer for Linux and macOS.
 #
 #   bash install.sh [--dir DIR] [--with-codex] [--with-claude] [--service] [--no-start] [--yes] [--reinstall]
 #
 # One command (private repository, GitHub CLI signed in):
-#   gh api repos/MisterReds/artel/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
+#   gh api repos/MisterReds/arteliq/contents/install.sh -H "Accept: application/vnd.github.raw" | bash
 # Flags through a pipe:  ... | bash -s -- --reinstall
-# Public repository:     curl -fsSL https://raw.githubusercontent.com/MisterReds/artel/master/install.sh | bash
+# Public repository:     curl -fsSL https://raw.githubusercontent.com/MisterReds/arteliq/master/install.sh | bash
 #
 # --reinstall (or ARTEL_REINSTALL=1): fresh copy of the app and a fresh virtual environment. Only the app clone and
 # the venv are replaced. The app dir is DELETED only when it is $HOME/.artel/app or $ARTEL_HOME/app and git shows nothing
@@ -15,11 +15,11 @@
 # Empty / "/" / $HOME / ARTEL_HOME itself / a dir holding artel.yaml or projects/ is refused. Config, projects,
 # credentials and everything else in ARTEL_HOME stay. A running background service is stopped and restarted.
 
-# Installs only what Artel itself needs (git, Python 3.10+, GitHub access for the private repository), clones Artel
+# Installs only what Arteliq itself needs (git, Python 3.10+, GitHub access for the private repository), clones Arteliq
 # into ~/.artel/app as a git clone (so the built-in updater works), creates a virtual environment, puts `artel` on
 # PATH and starts the dashboard. Safe to run again: it updates in place.
 # Agent CLIs (Codex, Claude Code) are NOT installed by default: install them when you need them from the dashboard
-# ("Провайдеры" → "Установить") or with `artel providers install codex|claude` — into ~/.artel/tools, no sudo.
+# ("Провайдеры" → "Установить") or with `arteliq providers install codex|claude` — into ~/.artel/tools, no sudo.
 # --with-codex / --with-claude do that right away.
 # Secrets are never asked for here: GitHub and Codex sign in through their own device-code flows.
 set -euo pipefail
@@ -28,18 +28,18 @@ set -euo pipefail
 
 usage() {
   cat <<'USAGE'
-Artel installer for Linux and macOS.
+Arteliq installer for Linux and macOS.
   bash install.sh [--dir DIR] [--with-codex] [--with-claude] [--service] [--no-start] [--yes] [--reinstall]
   --reinstall  fresh app clone + fresh venv; config, projects and credentials in ARTEL_HOME are kept
   --yes        do not ask for confirmation
   --remove-root  remove the root wrapper (/usr/local/sbin/artel-root) and its sudoers rule, then exit
-Piped:  gh api repos/MisterReds/artel/contents/install.sh -H "Accept: application/vnd.github.raw" | bash -s -- --reinstall
+Piped:  gh api repos/MisterReds/arteliq/contents/install.sh -H "Accept: application/vnd.github.raw" | bash -s -- --reinstall
 Env:    ARTEL_REPO ARTEL_DIR ARTEL_VENV ARTEL_BIN ARTEL_REINSTALL=1 ARTEL_ALLOW_ROOT=1|0 (answer the root-wrapper question)
 USAGE
 }
 
-REPO="${ARTEL_REPO:-https://github.com/MisterReds/artel.git}"
-GH_REPO="MisterReds/artel"
+REPO="${ARTEL_REPO:-https://github.com/MisterReds/arteliq.git}"
+GH_REPO="MisterReds/arteliq"
 DIR="${ARTEL_DIR-$HOME/.artel/app}"
 VENV="${ARTEL_VENV-$HOME/.artel/venv}"
 BIN="${ARTEL_BIN:-$HOME/.local/bin}"
@@ -141,9 +141,9 @@ refuse_path() {  # refuse_path <label> <path>: exit non-zero unless the path is 
   c="$(canon "$p")"; h="$(canon "$HOME")"; ah="$(canon "$ARTEL_HOME_DIR")"
   case "$c" in ""|/) die "refusing: $label is '$p'" ;; esac
   [ "$c" != "$h" ] || die "refusing: $label is your home directory ($p)"
-  [ "$c" != "$ah" ] || die "refusing: $label is the Artel data directory itself ($p)"
-  if [ -e "$c/artel.yaml" ] || [ -d "$c/projects" ]; then die "refusing: $label ($p) contains Artel data (artel.yaml or projects/)"; fi
-  case "$ah/" in "$c/"*) die "refusing: $label ($p) contains the Artel data directory" ;; esac
+  [ "$c" != "$ah" ] || die "refusing: $label is the Arteliq data directory itself ($p)"
+  if [ -e "$c/artel.yaml" ] || [ -d "$c/projects" ]; then die "refusing: $label ($p) contains Arteliq data (artel.yaml or projects/)"; fi
+  case "$ah/" in "$c/"*) die "refusing: $label ($p) contains the Arteliq data directory" ;; esac
   case "$h/" in "$c/"*) die "refusing: $label ($p) contains your home directory" ;; esac
 }
 
@@ -197,7 +197,7 @@ reinstall_prepare() {
     move) note "will move aside, NOT delete (${why}): $DIR -> $DIR.bak-$TS" ;;
   esac
   note "kept untouched: everything else (config, projects, credentials, tools)"
-  confirm "Reinstall Artel?" || die "cancelled"
+  confirm "Reinstall Arteliq?" || die "cancelled"
   svc="$(service_kind)"
   if [ "$svc" = systemd ]; then systemctl --user stop artel.service 2>/dev/null || true; SERVICE=1
   elif [ "$svc" = launchd ]; then launchctl unload "$HOME/Library/LaunchAgents/ai.artel.dashboard.plist" 2>/dev/null || true; SERVICE=1
@@ -207,7 +207,7 @@ reinstall_prepare() {
 }
 
 # --- root wrapper (Linux, optional, owner's consent) ---------------------------------------------------------------
-# /usr/local/sbin/artel-root (root:root 0755, POSIX sh) is the ONLY thing Artel may run as root: apt-install of signed
+# /usr/local/sbin/artel-root (root:root 0755, POSIX sh) is the ONLY thing Arteliq may run as root: apt-install of signed
 # packages (validated names, the allowlist and deny list in /etc/artel-root.conf) and the AppArmor profile that lets bwrap use user
 # namespaces. /etc/sudoers.d/artel allows exactly that file, no password, for the installing user.
 root_installed() { [ -e "$ROOT_WRAPPER" ] || [ -e "$ROOT_SUDOERS" ]; }
@@ -215,7 +215,7 @@ root_installed() { [ -e "$ROOT_WRAPPER" ] || [ -e "$ROOT_SUDOERS" ]; }
 ask_root() {  # default NO; ARTEL_ALLOW_ROOT=1 answers yes, =0 no; without a terminal the answer is no
   case "${ARTEL_ALLOW_ROOT:-}" in 1) return 0 ;; 0) return 1 ;; esac
   local a=""
-  local q="Разрешить Artel ставить системные пакеты (apt) и профиль AppArmor для песочницы?"
+  local q="Разрешить Arteliq ставить системные пакеты (apt) и профиль AppArmor для песочницы?"
   if [ -t 0 ]; then read -r -p "  $q [y/N] " a
   elif { : </dev/tty; } 2>/dev/null; then printf '  %s [y/N] ' "$q" >/dev/tty; read -r a </dev/tty || a=""
   else return 1
@@ -239,7 +239,7 @@ root_remove() {
 root_conf() {
   local yaml="$1" tmp
   tmp="$(mktemp)"
-  { printf '# Artel root wrapper. allow= : exact apt package names it may install (written by install.sh from tools.yaml).\n'
+  { printf '# Arteliq root wrapper. allow= : exact apt package names it may install (written by install.sh from tools.yaml).\n'
     printf '# deny= : extra packages it must never install (shell globs); kept across reinstalls.\n'
     [ -r "$ROOT_CONF" ] && grep '^deny=' "$ROOT_CONF" || true
     awk '/^packages:/{f=1;next} /^[^ #]/{f=0} f && match($0,/apt: *[a-z0-9+.-]+/){print "allow=" substr($0,RSTART+5,RLENGTH-5)}' "$yaml" | tr -d ' ' | sort -u
@@ -279,7 +279,7 @@ root_setup() {
 
 main() {
 # ---------------------------------------------------------------------------------------------------------------
-step "Artel installer — $OS"
+step "Arteliq installer — $OS"
 if [ "$REMOVE_ROOT" = 1 ]; then root_remove; exit 0; fi
 if [ "$PM" = brew ] && ! have brew; then
   confirm "Homebrew is needed to install dependencies on macOS. Install it?" || die "install Homebrew: https://brew.sh"
@@ -316,7 +316,7 @@ fi
 
 [ "$REINSTALL" = 1 ] && reinstall_prepare
 
-step "Artel → $DIR"
+step "Arteliq → $DIR"
 if [ -d "$DIR/.git" ]; then
   git -C "$DIR" pull --ff-only --quiet && note "updated to $(git -C "$DIR" rev-parse --short HEAD)"
 else
@@ -337,9 +337,10 @@ import os, site, sys
 d, v = sys.argv[1:3]
 sp = [p for p in site.getsitepackages() if p.startswith(v)][0]
 open(os.path.join(sp, "artel-checkout.pth"), "w").write(d + "\n")
-launcher = os.path.join(v, "bin", "artel")
-open(launcher, "w").write("#!%s\nimport sys\nfrom artel.cli import main\nsys.exit(main())\n" % sys.executable)
-os.chmod(launcher, 0o755)
+for name in ("arteliq", "artel"):  # artel stays as an alias for existing installs and scripts
+    launcher = os.path.join(v, "bin", name)
+    open(launcher, "w").write("#!%s\nimport sys\nfrom artel.cli import main\nsys.exit(main())\n" % sys.executable)
+    os.chmod(launcher, 0o755)
 PYEOF
   fi
 else
@@ -348,7 +349,8 @@ else
 fi
 root_setup
 mkdir -p "$BIN"
-ln -sf "$VENV/bin/artel" "$BIN/artel"
+ln -sf "$VENV/bin/arteliq" "$BIN/arteliq"
+ln -sf "$VENV/bin/artel" "$BIN/artel"  # alias
 case ":$PATH:" in *":$BIN:"*) ;; *)
   for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
     [ -f "$rc" ] || [ "$rc" = "$HOME/.bashrc" ] || continue
@@ -367,7 +369,7 @@ if [ "$SERVICE" = 1 ]; then
     mkdir -p "$HOME/.config/systemd/user"
     cat > "$HOME/.config/systemd/user/artel.service" <<UNIT
 [Unit]
-Description=Artel dashboard
+Description=Arteliq dashboard
 [Service]
 ExecStart=$VENV/bin/artel web
 Restart=on-failure
@@ -394,16 +396,16 @@ PLIST
     launchctl load "$plist" && note "launchd: ai.artel.dashboard"
     START=0
   else
-    note "no systemd/launchd here; start it with: artel web"
+    note "no systemd/launchd here; start it with: arteliq web"
   fi
 fi
 
 step "Check"
 "$VENV/bin/artel" providers || true
-printf '\n%s▲ Artel установлен.%s\n' "$C" "$R"
-note "дашборд:   artel web  →  http://127.0.0.1:8765"
+printf '\n%s▲ Arteliq установлен.%s\n' "$C" "$R"
+note "дашборд:   arteliq web  →  http://127.0.0.1:8765"
 note "Codex / Claude Code: по необходимости — «Провайдеры» → «Установить», затем вход"
-note "обновление: кнопка в дашборде или artel update"
+note "обновление: кнопка в дашборде или arteliq update"
 if [ "$START" = 1 ] && [ -t 1 ]; then
   url="http://127.0.0.1:8765"
   (sleep 2; { have xdg-open && xdg-open "$url"; } || { have open && open "$url"; } || true) >/dev/null 2>&1 &

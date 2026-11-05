@@ -1,4 +1,4 @@
-/* Artel chat: floating button and side panel (full screen on phones). Uses the dashboard's CSS variables. */
+/* Arteliq chat: floating button and side panel (full screen on phones). Uses the dashboard's CSS variables. */
 #artel-chat .ac-fab{position:fixed;right:16px;bottom:calc(16px + env(safe-area-inset-bottom));z-index:40;min-height:48px;
   padding:0 18px;border-radius:99px;background:var(--accent);color:var(--accent-ink);border:0;font-weight:600;
   box-shadow:0 10px 24px -8px color-mix(in srgb,var(--brand) 70%,#000),0 1px 0 rgba(255,255,255,.2) inset;display:flex;align-items:center;gap:8px;transition:transform .16s,box-shadow .16s}

@@ -48,7 +48,7 @@ def reachable(config: dict, timeout: float = 5.0) -> tuple[bool, str]:
 
 def loopback_proxy_down(env: dict, timeout: float = 2.0) -> str:
     """Why the loopback proxy named in ``env`` refuses the runner's own TCP connection ('' when there is none or
-    it answers). Structural: Artel connects itself; nothing a checked command printed is consulted."""
+    it answers). Structural: Arteliq connects itself; nothing a checked command printed is consulted."""
     for var in PROXY_VARS:
         val = env.get(var)
         if not val:

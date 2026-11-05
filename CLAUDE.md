@@ -1,6 +1,6 @@
-# Working on Artel: every token where it counts
+# Working on Arteliq: every token where it counts
 
-The same rule Artel follows at runtime (docs/ORCHESTRATION.md) applies to agents developing it: the strongest model
+The same rule Arteliq follows at runtime (docs/ORCHESTRATION.md) applies to agents developing it: the strongest model
 decides, cheaper subagents do the reading, searching, routine editing and checking. The main session keeps its
 context small and spends it on decisions.
 

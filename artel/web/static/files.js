@@ -1,4 +1,4 @@
-/* Artel file viewer: tree of a project's shared/ folder on the left, a preview by file type on the right.
+/* Arteliq file viewer: tree of a project's shared/ folder on the left, a preview by file type on the right.
    No dependencies. Everything dynamic goes through esc() or textContent; HTML files run only inside
    <iframe sandbox="allow-scripts"> served by /preview with `Content-Security-Policy: sandbox allow-scripts`.
    API: ArtelFiles.mount(host, {slug, remote, toast}) -> {open(path), reload()}; ArtelFiles.hl / .md are pure. */

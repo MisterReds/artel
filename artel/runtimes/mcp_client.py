@@ -1,8 +1,8 @@
 """Minimal MCP client (JSON-RPC over stdio or streamable http) and the ``mcp_servers:`` config of artel.yaml.
 
 External MCP servers are configured once and reach every runtime: the native runtime lists their tools and calls
-them as Artel tools (``mcp__<server>__<tool>``, logged and policy-checked); Claude Code and Codex get the same
-servers in their own MCP config next to Artel's bridge.
+them as Arteliq tools (``mcp__<server>__<tool>``, logged and policy-checked); Claude Code and Codex get the same
+servers in their own MCP config next to Arteliq's bridge.
 
 Config (artel.yaml)::
 
@@ -18,7 +18,7 @@ never opens a window on the owner's screen. Secrets belong in ``${VAR}`` referen
 to artel.yaml, logs or a command line (Codex receives them through its environment, by variable name).
 
 The shape of the client (initialize / tools/list / tools/call, name sanitising) follows the donor
-opencode packages/opencode/src/mcp (MIT License, Copyright (c) 2025 opencode); the code is written for Artel.
+opencode packages/opencode/src/mcp (MIT License, Copyright (c) 2025 opencode); the code is written for Arteliq.
 """
 
 from __future__ import annotations
@@ -71,7 +71,7 @@ def force_headless(args: list) -> list:
     return [*out, "--headless"]
 
 
-RESERVED = {"artel"}  # Artel's own bridge
+RESERVED = {"artel"}  # Arteliq's own bridge
 
 
 def parse_servers(config: dict | None, environ: dict | None = None) -> dict[str, dict]:
@@ -135,7 +135,7 @@ def tool_name(server: str, tool: str) -> str:
 
 def server_environ(config: dict | None = None) -> dict:
     """The environment an external MCP server starts with: the agent allowlist (``agent_env("native", config)``) and
-    nothing else from Artel's own environment; the secrets a server needs are the names/values its own ``env`` entry
+    nothing else from Arteliq's own environment; the secrets a server needs are the names/values its own ``env`` entry
     declares (added by the caller)."""
     from ..agent_env import agent_env
 
@@ -358,7 +358,7 @@ def codex_secrets(servers: dict) -> tuple[dict, dict]:
 
 
 def register_tools(kernel) -> Any:
-    """Register ``mcp__<server>__<tool>`` Artel tools for every configured server (setup of builtin_tools).
+    """Register ``mcp__<server>__<tool>`` Arteliq tools for every configured server (setup of builtin_tools).
 
     A server that fails to start or list is skipped (recorded in ``kernel.failed``), never fatal. Returns a teardown
     that closes the connections.
@@ -368,7 +368,7 @@ def register_tools(kernel) -> Any:
 
     servers = []
     for name, spec in parse_servers(kernel.config).items():
-        # Claude Code and Codex start their own copy of the server; Artel connects only for roles that run natively
+        # Claude Code and Codex start their own copy of the server; Arteliq connects only for roles that run natively
         native = [r for r in spec["allow"] if _native(kernel.config, r, runtime_for)]
         if not native:
             continue
@@ -410,7 +410,7 @@ def register_tools(kernel) -> Any:
 
 
 def _tool_fn(srv: McpServer, tool: str, full: str):
-    """The Artel tool that calls one MCP tool (ctx is positional-only: a tool argument may be called anything)."""
+    """The Arteliq tool that calls one MCP tool (ctx is positional-only: a tool argument may be called anything)."""
     from .. import policy
     from ..tooling import ToolError
 

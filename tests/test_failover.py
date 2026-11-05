@@ -94,7 +94,7 @@ def test_codex_models_come_from_the_cli_and_names_are_normalized(tmp_path, monke
                             workspace=tmp_path, shared=tmp_path, role="worker", bridge_url="http://x", bridge_token="t",
                             effort=None, thread_id=None, last_message=tmp_path / "m")
     assert "gpt-fake-sol" in args
-    # autonomous: Codex never asks, and Artel's own tools are pre-approved so planning and the board work
+    # autonomous: Codex never asks, and Arteliq's own tools are pre-approved so planning and the board work
     assert 'approval_policy="never"' in args and 'mcp_servers.artel.default_tools_approval_mode="approve"' in args
 
 

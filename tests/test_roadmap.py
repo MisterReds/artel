@@ -63,7 +63,8 @@ def test_real_roadmap_is_consistent_and_rendered():
             rm.get(dep)
     assert {p["id"].split("-", 1)[1] for p in rm.pillars} >= {"modularity", "skills", "goal-loop"}
     assert all(p["status"] == "done" for p in rm.pillars)
-    assert (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8") == rm.render_markdown(), "run `artel roadmap render`"
+    assert (ROOT / "docs" / "ROADMAP.md").read_text(encoding="utf-8") == rm.render_markdown(), (
+        "run `arteliq roadmap render`")
 
 
 def test_next_items_order_modes_and_dependencies(tmp_path):
@@ -246,7 +247,8 @@ def test_harnesses_rating_refs_and_html_are_consistent():
     assert {"openai/codex", "anthropics/claude-code", "openclaw/openclaw", "NousResearch/hermes-agent"} <= core
     assert scores["ultraworkers/claw-code"]["tier"] != "core"  # a clone with many stars is not a main harness
     assert [t[1] for t in TIERS] == ["core", "major", "niche"]
-    assert (ROOT / "docs" / "roadmap.html").read_text(encoding="utf-8") == render_html(ROOT), "run `artel roadmap html`"
+    assert (ROOT / "docs" / "roadmap.html").read_text(encoding="utf-8") == render_html(ROOT), (
+        "run `arteliq roadmap html`")
 
 
 def test_core_priority_items_go_first_and_study_follows_significance(tmp_path):
@@ -276,7 +278,7 @@ def test_evolve_items_picks_exact_items_and_rejects_unknown_ids(tmp_path, monkey
     from artel.evolve import supervisor
     from artel.evolve.engine import Evolution
 
-    # a real `artel evolve` may be running on this machine; the lock scan must not depend on it
+    # a real `arteliq evolve` may be running on this machine; the lock scan must not depend on it
     monkeypatch.setattr(supervisor, "evolve_process_running", lambda **kw: False)
     monkeypatch.setenv("ARTEL_HOME", str(tmp_path / "home"))
     monkeypatch.setattr(supervisor, "evolve_process_running", lambda **kw: False)  # a real evolution may be running

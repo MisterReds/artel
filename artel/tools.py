@@ -60,7 +60,7 @@ def conda_bin_dirs() -> list:
 
 
 def with_tool_dirs(path: str) -> str:
-    """PATH with Artel's tools dir first and its conda environment last (so conda's python never shadows the system's)."""
+    """PATH with Arteliq's tools dir first and its conda environment last (so conda's python never shadows the system's)."""
     parts = [p for p in path.split(os.pathsep) if p]
     head = [str(bin_dir())] if bin_dir().exists() else []
     tail = conda_bin_dirs()
@@ -74,7 +74,7 @@ def env_with_tools(env: dict | None = None) -> dict:
 
 
 def resolve(binary: str) -> str | None:
-    """Full path of a CLI: Artel's tools first, then the system PATH."""
+    """Full path of a CLI: Arteliq's tools first, then the system PATH."""
     if os.path.sep in binary or (WIN and "/" in binary):
         return binary if Path(binary).exists() else None
     return shutil.which(binary, path=env_with_tools().get("PATH"))
@@ -453,12 +453,12 @@ def install(name: str, log: Callable[[str], None] = print) -> dict:
 
 
 def uninstall(name: str) -> dict:
-    """Remove a CLI that Artel installed (a system-wide install is left alone)."""
+    """Remove a CLI that Arteliq installed (a system-wide install is left alone)."""
     if name not in TOOLS:
         return {"ok": False, "error": f"unknown tool: {name}"}
     spec = TOOLS[name]
     if not installed_by_artel(name):
-        return {"ok": False, "error": f"{spec['label']} установлен не Artel — удалите его тем же способом, каким ставили"}
+        return {"ok": False, "error": f"{spec['label']} установлен не Arteliq — удалите его тем же способом, каким ставили"}
     if name == "embeddings":
         from .embeddings import LocalServer
 

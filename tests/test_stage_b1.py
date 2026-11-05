@@ -1,4 +1,4 @@
-"""Stage B item 1: every llm/response has stop_reason; an invalid agent event becomes contract/violation; artel log is tolerant."""
+"""Stage B item 1: every llm/response has stop_reason; an invalid agent event becomes contract/violation; arteliq log is tolerant."""
 import json
 
 import pytest
@@ -40,7 +40,7 @@ def run_codex(cfg, project):
                      max_turns=40, purpose="test")
 
 
-# --- item 1: stop_reason, contract validation, tolerant `artel log` ------------------------------------------------
+# --- item 1: stop_reason, contract validation, tolerant `arteliq log` ------------------------------------------------
 def test_log_prints_an_old_journal_line_without_stop_reason(project, capsys):
     with project.log.path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps({"seq": 99999, "ts": 1.0, "kind": "llm/response", "turn": 3,

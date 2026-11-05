@@ -1,8 +1,8 @@
-"""Failure reports: every failure Artel meets becomes a short text report — what broke, the diagnostician's cause and
+"""Failure reports: every failure Arteliq meets becomes a short text report — what broke, the diagnostician's cause and
 steps, where, on which version — kept in ARTEL_HOME/reports/ and sent where it helps:
 
 - to the owner: Telegram (when the bot is paired), as soon as it is recorded;
-- to the developers: an issue in Artel's own GitHub repository (label `artel-report`) through the GitHub CLI the
+- to the developers: an issue in Arteliq's own GitHub repository (label `artel-report`) through the GitHub CLI the
   installer signed in with. By button ("Отправить разработчикам") by default; `reports.github: auto` sends every new
   kind of failure. The same failure (same fingerprint) is a comment on the existing issue, not a new one, so
   evolution sees how often each failure happens.
@@ -189,14 +189,14 @@ def markdown(rep: dict) -> str:
     d = rep.get("diagnosis") or {}
     steps = "\n".join(f"{i}. {s}" for i, s in enumerate(d.get("steps") or [], 1))
     parts = [f"**{rep['title']}**", "",
-             f"- вид: `{rep['kind']}` · версия Artel: `{rep['version']}` · {rep['system']}",
+             f"- вид: `{rep['kind']}` · версия Arteliq: `{rep['version']}` · {rep['system']}",
              f"- отпечаток: `{rep['fingerprint']}` · время: {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime(rep['ts']))}"]
     if d:
         parts += ["", "### Диагност", f"Причина: {d.get('cause', '')}", f"Исправляет: {d.get('who', '')}",
                   steps, f"Доказательство: {d.get('evidence', '')}" if d.get("evidence") else "",
                   f"_({'правила' if d.get('by') == 'rules' else 'модель ' + str(d.get('by'))})_"]
     parts += ["", "### Подробности", "```", rep["text"][-4000:], "```",
-              "", "_Отчёт создан Artel автоматически; ключи, токены и пути пользователя вырезаны._"]
+              "", "_Отчёт создан Arteliq автоматически; ключи, токены и пути пользователя вырезаны._"]
     return "\n".join(p for p in parts if p is not None)
 
 
@@ -231,7 +231,7 @@ def _gh(*args: str, input_text: str | None = None) -> subprocess.CompletedProces
 
 
 def send_github(rid: str) -> dict:
-    """Open an issue for this failure in Artel's repository, or comment on the open one with the same fingerprint."""
+    """Open an issue for this failure in Arteliq's repository, or comment on the open one with the same fingerprint."""
     rep = get(rid)
     if not rep:
         return {"ok": False, "error": "нет такого отчёта"}
@@ -250,7 +250,7 @@ def send_github(rid: str) -> dict:
         url = existing["url"]
     else:
         _gh("label", "create", LABEL, "-R", repo, "--color", "B5522B", "--description",
-            "failure reported by an Artel installation", "--force")
+            "failure reported by an Arteliq installation", "--force")
         p = _gh("issue", "create", "-R", repo, "--title", f"[сбой] {rep['title'][:120]}", "--label", LABEL,
                 "--body-file", "-", input_text=body)
         url = p.stdout.strip().splitlines()[-1] if p.returncode == 0 and p.stdout.strip() else ""
