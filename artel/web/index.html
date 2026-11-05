@@ -114,13 +114,16 @@ a.back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-we
 .pulse::after{content:"";position:absolute;inset:-4px;border-radius:50%;border:2px solid currentColor;opacity:0;animation:pulse 1.8s var(--ease) infinite}
 @keyframes pulse{0%{transform:scale(.5);opacity:.5}100%{transform:scale(1.25);opacity:0}}
 /* ---- portfolio ---- */
-.kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:var(--s3)}
-.kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--r3);padding:var(--s4) var(--s5);box-shadow:var(--sh1)}
-.kpi b{display:block;font:600 32px/1.15 var(--text);letter-spacing:-.02em;font-variant-numeric:tabular-nums}.kpi span{color:var(--muted);font-size:13px}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(340px,1fr));gap:var(--s4)}
+.kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:var(--s4)}
+.kpi{display:flex;align-items:baseline;gap:var(--s3);background:var(--panel);border:1px solid var(--line);border-radius:var(--r3);padding:var(--s4) var(--s5);box-shadow:var(--sh1)}
+.kpi b{display:inline-block;font:600 32px/1.15 var(--text);letter-spacing:-.02em;font-variant-numeric:tabular-nums}.kpi span{color:var(--muted);font-size:13px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:var(--s4)}
 .pcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r3);padding:var(--s4) var(--s5);cursor:pointer;display:flex;flex-direction:column;gap:var(--s3);box-shadow:var(--sh1);transition:box-shadow var(--t),transform var(--t),border-color var(--t)}
 .pcard:hover{box-shadow:var(--sh2);transform:translateY(-2px);border-color:var(--line2)}
 .pcard .top{display:flex;gap:var(--s3);align-items:flex-start}.pcard .nm{font:600 16px/1.4 var(--text);flex:1;overflow-wrap:anywhere}
+.grid.solo{grid-template-columns:1fr}
+@media (min-width:900px){.grid.solo .pcard{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);column-gap:var(--s7);align-content:center}
+ .grid.solo .pcard>*{grid-column:1}.grid.solo .pcard>.avatars{grid-column:2;grid-row:1;align-self:start}.grid.solo .pcard>.last{grid-column:2;grid-row:2}}
 .pcard .foot{display:flex;align-items:center;justify-content:space-between;gap:var(--s3);flex-wrap:wrap}
 .pcard .num{font-variant-numeric:tabular-nums}
 .bar{display:flex;gap:2px;height:8px;border-radius:99px;overflow:hidden;background:var(--chip)}
@@ -135,8 +138,8 @@ a.back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-we
 .dot.live{background:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
 .chips{display:flex;gap:var(--s2);flex-wrap:wrap;margin:var(--s2) 0}
 .chips button{padding:4px 12px;font-size:13px;border-radius:99px;box-shadow:none;background:transparent}.chips button.on{background:var(--ink);color:var(--bg);border-color:var(--ink)}
-.toolbar{display:flex;gap:var(--s3);flex-wrap:wrap;align-items:center;justify-content:space-between}
-.toolbar input{max-width:280px}
+.toolbar{margin-bottom:var(--s4);display:flex;gap:var(--s2) var(--s4);flex-wrap:wrap;align-items:center}
+.toolbar .chips{margin:0}.toolbar input{flex:1 1 220px;max-width:320px}
 .alert{border:1px solid color-mix(in srgb,var(--bad) 35%,var(--line));border-left:3px solid var(--bad);background:var(--panel);border-radius:var(--r2);padding:var(--s3) var(--s4);margin-bottom:var(--s2);cursor:pointer;box-shadow:var(--sh1);transition:box-shadow var(--t)}
 .alert:hover{box-shadow:var(--sh2)}
 /* ---- project: stepper, progress ---- */
@@ -186,6 +189,9 @@ a.back{display:inline-flex;align-items:center;gap:6px;color:var(--muted);font-we
 .card .who{display:inline-flex;align-items:center;gap:6px;color:var(--ink)}
 .human{color:var(--bad);font-weight:600}
 .goal{background:var(--panel);border:1px solid var(--line);border-radius:var(--r3);padding:var(--s4) var(--s5);margin:var(--s4) 0 var(--s2);box-shadow:var(--sh1)}
+.verdict{display:flex;gap:var(--s3);margin-top:var(--s3);padding-top:var(--s3);border-top:1px solid var(--line)}
+.vmark{flex:none;display:grid;place-items:center;width:22px;height:22px;border-radius:50%;background:color-mix(in srgb,var(--ok) 15%,var(--panel));color:var(--ok);margin-top:1px}.vmark .ic{width:14px;height:14px}
+.vbody{min-width:0}.vbody p{margin:0 0 var(--s2)}.vbody ol{margin:0 0 var(--s2);padding-left:20px}.vbody li{margin:0 0 var(--s1);padding-left:4px;overflow-wrap:anywhere}.vbody li::marker{color:var(--ok);font-weight:600}
 .goal>b:first-child{font:600 11.5px/1 var(--text);text-transform:uppercase;letter-spacing:.09em;color:var(--muted);margin-right:6px}
 /* ---- feed: timeline ---- */
 .feed{background:var(--panel);border-left:1px solid var(--line);display:flex;flex-direction:column;min-height:0}
@@ -290,6 +296,7 @@ body:not(.devmode) .dev{display:none!important}
   .pname{font-size:20px}.kpi{padding:var(--s3) var(--s4)}.kpi b{font-size:26px}.kpis{grid-template-columns:repeat(2,1fr)}
   .pvroles select{min-width:0;width:100%;max-width:100%}.pvroles td:first-child{white-space:nowrap}
   .onboard h2{font-size:19px}
+  .toolbar input{max-width:none;flex-basis:100%}
   .ask,.goal,.onboard{padding:var(--s4)}.stepper{gap:4px}.step .sl{font-size:11px}
   .team{grid-template-columns:1fr}dialog{border-radius:16px}.dlg{padding:var(--s4)}
 }
@@ -336,7 +343,7 @@ body:not(.devmode) .dev{display:none!important}
 <dialog id="dlg2" style="width:min(480px,94vw)"></dialog>
 <div class="toasts" id="toasts" aria-live="polite"></div>
 <script src="/static/files.js?v=2"></script>
-<script src="/static/desk.js?v=1"></script>
+<script src="/static/desk.js?v=2"></script>
 <script>
 // --- brand: role icons (16px line icons, currentColor) ----------------------------------------------
 const RI={
@@ -593,7 +600,7 @@ function renderPortfolio(){const ps=state.ps;if(typing())return;const att=ps.fla
   ${att.length?`<div role="alert"><h2>Нужен ваш ответ <span class="stat">${cnt(att.length,'вопрос','вопроса','вопросов')}</span></h2>${att.map(a=>a.reason==='нужен человек'?askCard(a,{slug:a.p.slug,pname:a.p.name,link:true}):`<a class="alert" href="#/p/${encodeURIComponent(a.p.slug)}"><b>${esc(a.p.name)}</b> · ${esc(a.title)} <span class="stat">· ${esc(a.assignee)} · ${esc(a.reason)}</span></a>`).join('')}</div>`:''}
   ${ps.length?`<h2>${cnt(ps.length,'проект','проекта','проектов')}</h2><div class="toolbar"><div class="chips" role="group" aria-label="Фильтр по этапу">${stages.map(s=>`<button data-f="${esc(s)}" aria-pressed="${state.pfilter===s}" class="${state.pfilter===s?'on':''}">${s==='all'?'все':esc(chipText(s))} ${s==='all'?ps.length:ps.filter(p=>p.stage===s).length}</button>`).join('')}</div>
     <input id="pq" aria-label="Поиск по проектам" placeholder="Поиск по проектам" value="${esc(state.pq)}"></div>`:onboardHtml()}
-  ${!ps.length?'':shown.length?`<div class="grid">${shown.map(pcard).join('')}</div>`:emptyHtml('search','Ничего не найдено','Попробуйте другой фильтр или запрос.')}`;
+  ${!ps.length?'':shown.length?`<div class="grid${shown.length===1?' solo':''}">${shown.map(pcard).join('')}</div>`:emptyHtml('search','Ничего не найдено','Попробуйте другой фильтр или запрос.')}`;
   if(!setHTML($('#pf'),html))return;
   wireAsks($('#pf'),()=>portfolio_redraw());
   const ob=$('#ob-new');if(ob)ob.onclick=()=>openNew();
@@ -613,7 +620,7 @@ function pcard(p){const c=p.counts||{};const n=(p.attention||[]).length;return `
   ${segbar(c,p.tasks_total)}
   <div class="stat">${p.tasks_done} из ${cnt(p.tasks_total,'задачи','задач','задач')}<span class="dev"> · аудитов ${p.audit_rounds||0} · ${money(p.cost_usd)}</span>${p.budget&&p.budget.alert?` · <span class="human">бюджет ${pct(p.budget.fraction)}</span>`:''}</div>
   <div class="avatars">${(p.workers||[]).map(w=>`<span class="av ${w.busy_on?'busy':''}" title="${esc(w.role)}${w.busy_on?' — '+esc(w.busy_on):''}">${ava(w.name)}${esc(w.name)}</span>`).join('')}</div>
-  ${p.last_event?`<div class="stat" style="overflow-wrap:anywhere">${esc(p.last_event.text)} · ${ago(p.last_event.ts)}</div>`:''}
+  ${p.last_event?`<div class="stat last" style="overflow-wrap:anywhere">${esc(p.last_event.text)} · ${ago(p.last_event.ts)}</div>`:''}
   ${n?`<div class="human">${icon('warn')} ${n} ${plural(n,'задача требует','задачи требуют','задач требуют')} внимания</div>`:''}</a>`}
 
 /* ---------- Проект ---------- */
@@ -634,6 +641,9 @@ const fmtHM=ts=>{const o={hour:'2-digit',minute:'2-digit',hourCycle:'h23'};try{r
 const LEG=[['done','готово'],['review','на проверке'],['running','в работе'],['ready','готово к старту'],['todo','в очереди'],['blocked','нужен ответ']];
 const legend=c=>`<ul class="legend" aria-label="Расшифровка полосы">${LEG.filter(([s])=>c[s]).map(([s,l])=>`<li><i class="s-${s}" aria-hidden="true"></i>${l} ${c[s]}</li>`).join('')}</ul>`;
 // one line that answers «что сейчас?»
+// the auditor's verdict: a success marker, the criteria as a list, neutral text (all values escaped)
+function verdictHtml(text){const v=ArtelDesk.verdict(text);
+  return `<div class="verdict"><span class="vmark" aria-hidden="true">${icon('check')}</span><div class="vbody">${v.lead?`<p>${esc(v.lead)}</p>`:''}${v.items.length?`<ol>${v.items.map(x=>`<li>${esc(x)}</li>`).join('')}</ol>`:''}${v.tail?`<p class="stat">${esc(v.tail)}</p>`:''}</div></div>`}
 function summaryLine(v,needsMe){const st=v.stats,m=v.meta,prog=`${st.tasks_done} из ${st.tasks_total} ${plural(st.tasks_total,'задачи','задач','задач')}`;
   if(m.status==='done'||st.stage==='done')return `Готово · ${prog}`;
   if(needsMe||st.stage==='waiting_human')return `Ждёт вашего ответа · ${prog}`;
@@ -702,7 +712,7 @@ async function refresh(){const v=await api(MQ(`/api/projects/${encodeURIComponen
   <div class="tabs ptabs" role="tablist" aria-label="Разделы проекта"><button role="tab" id="tab-over" data-ptab="over" class="${state.ptab==='over'?'on':''}" aria-selected="${state.ptab==='over'}">Обзор</button><button role="tab" id="tab-files" data-ptab="files" class="${state.ptab==='files'?'on':''}" aria-selected="${state.ptab==='files'}">Файлы</button></div>
   <div class="over">
   ${st.attention.length?`<div role="alert" id="attn"><h2>Требует внимания</h2>${asks.map(a=>askCard(a,{slug:state.slug})).join('')}${other.map(a=>`<div class="alert" data-t="${esc(a.task_id)}"><b>${esc(a.title)}</b> <span class="stat">· ${esc(a.assignee)} · ${esc(a.reason)} — откройте подробности</span></div>`).join('')}</div>`:''}
-  <div class="goal"><b>Цель.</b> ${esc(m.goal)}${contractBox(m.contract)}${root&&root.result?`<div style="margin-top:6px;color:var(--ok)">${esc(root.result)}</div>`:''}</div>
+  <div class="goal"><b>Цель.</b> ${esc(m.goal)}${contractBox(m.contract)}${root&&root.result?verdictHtml(root.result):''}</div>
   ${activeBox(v,tasks)}
   <h2>Команда</h2><div class="team">${v.workers.map(w=>{const s=st.workers.find(x=>x.name===w.name)||{};return `<div class="worker" data-w="${esc(w.name)}"><span class="wi">${ri(w.role)}</span><div class="wb"><b>${esc(w.name)}</b><span class="role">${esc(w.role)}</span></div>
     <div class="wf">${w.current?`<div class="now"><span class="sdot"></span>${esc((tasks.find(t=>t.id===w.current)||{}).title||w.current)}</div>`:'<div class="idle"><span class="sdot"></span>свободен</div>'}
