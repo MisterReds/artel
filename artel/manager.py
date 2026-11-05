@@ -18,6 +18,7 @@ human stop, or every remaining path waiting on a human.
 from __future__ import annotations
 
 import contextlib
+import functools
 import json
 import os
 import re
@@ -76,6 +77,25 @@ def wants_start_over(feedback: str) -> bool:
 
 def _fmt_list(items: list) -> str:
     return "\n".join(f"- {x}" for x in items) or "- (none)"
+
+
+def _owning_the_run(run):
+    """Only one manager runs a project at a time across all processes: the wrapped run holds the project's run
+    (Project.claim_run) from start to end, and raises ProjectBusy, touching nothing, when another one holds it."""
+    @functools.wraps(run)
+    def owned(self) -> str:
+        try:
+            mine = self.project.claim_run()  # False: the caller (resume) claimed it before reopening tasks
+        except ProjectBusy:
+            self.pool.shutdown(wait=False)
+            raise
+        try:
+            return run(self)
+        finally:
+            if mine:
+                self.project.release_run()
+
+    return owned
 
 
 class Manager:
@@ -1228,21 +1248,8 @@ class Manager:
             return False
         return any(t["needs_human"] for t in open_work)
 
+    @_owning_the_run
     def run(self) -> str:
-        """Drive the project to a final status. Only one manager runs a project at a time across all processes:
-        raises ProjectBusy (and touches nothing) when another one runs it (Project.claim_run)."""
-        try:
-            mine = self.project.claim_run()  # False: the caller (resume) claimed it before reopening tasks
-        except ProjectBusy:
-            self.pool.shutdown(wait=False)
-            raise
-        try:
-            return self._run()
-        finally:
-            if mine:
-                self.project.release_run()
-
-    def _run(self) -> str:
         budget = self.kernel.get("budget")
         skills = self.kernel.get("skills")
         sk = self.cfg["skills"]

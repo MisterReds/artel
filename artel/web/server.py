@@ -211,23 +211,29 @@ def portfolio(runner: Runner) -> list[dict]:
     return [{**p, "live_elsewhere": state.get(p["slug"], (False, None))[1]} for p in ps]
 
 
-def project_view(project: Project, runner: Runner, user: bool = False) -> dict:
-    """The project page's payload. `user`: system strings in Russian (humanize); the dev mode keeps them raw."""
-    snap = project.board.snapshot()
-    workers = []
-    running = {t["assignee"]: t["id"] for t in snap["tasks"] if t["status"] == "running"}
-    for p in project.personas():
-        files = project.worker_files(p.name)
-        done = sum(1 for t in snap["tasks"] if t["assignee"] == p.name and t["status"] == "done")
-        workers.append({"name": p.name, "role": p.role, "files": files, "current": running.get(p.name),
-                        "done": done, "skills": p.skills})
-    events = analytics._events(project)
+def _workers(project: Project, tasks: list[dict]) -> list[dict]:
+    running = {t["assignee"]: t["id"] for t in tasks if t["status"] == "running"}
+    return [{"name": p.name, "role": p.role, "files": project.worker_files(p.name), "current": running.get(p.name),
+             "done": sum(1 for t in tasks if t["assignee"] == p.name and t["status"] == "done"), "skills": p.skills}
+            for p in project.personas()]
+
+
+def _annotate_tasks(tasks: list[dict], events: list[dict]) -> None:
+    """Each task gets its timeline and, when the guardian assessed it, its latest risk."""
     timelines = analytics.task_timelines(events)
     risks = guardian.latest_risk(events)
-    for t in snap["tasks"]:
+    for t in tasks:
         t["timeline"] = timelines.get(t["id"], [])
         if t["id"] in risks:
             t["risk"], t["risk_score"], t["risk_reason"] = (risks[t["id"]][k] for k in ("risk", "score", "reason"))
+
+
+def project_view(project: Project, runner: Runner, user: bool = False) -> dict:
+    """The project page's payload. `user`: system strings in Russian (humanize); the dev mode keeps them raw."""
+    snap = project.board.snapshot()
+    workers = _workers(project, snap["tasks"])
+    events = analytics._events(project)
+    _annotate_tasks(snap["tasks"], events)
     live, elsewhere = live_state(runner.active, project.root)
     stats = analytics.project_stats(project, live=live)
     errors = [e for e in events if e["kind"] in ("llm/error", "manager/escalated", "manager/provider_switch",
