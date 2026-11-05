@@ -1,14 +1,20 @@
 """The product is Arteliq; `artel` stays as a console alias and the import package keeps its name."""
 import importlib
+import re
 from pathlib import Path
-
-import tomllib
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def _project():
-    return tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))["project"]
+    """name, description and console scripts from pyproject.toml (no tomllib: Python 3.10 is supported)."""
+    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    scripts = text.split("[project.scripts]")[1].split("\n[")[0]
+    return {
+        "name": re.search(r'^name = "([^"]+)"', text, re.M).group(1),
+        "description": re.search(r'^description = "([^"]+)"', text, re.M).group(1),
+        "scripts": dict(re.findall(r'^([\w-]+) = "([^"]+)"', scripts, re.M)),
+    }
 
 
 def test_distribution_is_arteliq():
