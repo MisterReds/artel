@@ -6,6 +6,7 @@ person lists in config ``agent_env: {pass: [...]}``.
 """
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import shlex
@@ -157,10 +158,8 @@ def _tokens(check: str) -> list:
     lex.whitespace_split = True
     lex.commenters = ""
     out: list = []
-    try:
+    with contextlib.suppress(ValueError):  # unbalanced quote: the words read so far still name the program
         out.extend(lex)
-    except ValueError:  # unbalanced quote: the words read so far still name the program
-        pass
     return out
 
 
