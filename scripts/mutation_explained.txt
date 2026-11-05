@@ -2,3 +2,5 @@
 # (equivalent mutants, logging text, defensive branches that cannot be reached). Everything else must be killed by a test.
 artel/contracts/_base.py:65: equivalent mutant, typing.cast(float, v) -> cast(None, v): cast returns its argument at runtime
 artel/contracts/schemas.py:31: equivalent mutant, fields(cast(Any, self)) -> fields(cast(None, self)): cast is a runtime no-op
+artel/agent_env.py:177: equivalent mutant, target = False -> None initial value: target is only read for truthiness (elif target) and is assigned before the other read (not target)
+artel/agent_env.py:184: equivalent mutant, target = False -> None after a redirect target: target is only read for truthiness, None and False behave the same

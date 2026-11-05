@@ -55,3 +55,36 @@ def test_commands_after_keywords_are_checked():
     assert missing_programs(["if no-such-tool-xyz; then other-missing-abc; fi", "time third-missing-def",
                              "! fourth-missing-ghi", "for f in a b; do true; done"]) == [
         "no-such-tool-xyz", "other-missing-abc", "third-missing-def", "fourth-missing-ghi"]
+
+
+def test_line_continuation_after_operator_keeps_the_next_program():
+    assert missing_programs(["true && \\\nno-such-tool-xyz"]) == ["no-such-tool-xyz"]
+
+
+def test_quoted_program_name_is_unquoted():
+    assert missing_programs(['"no-such-tool-xyz" arg']) == ["no-such-tool-xyz"]
+
+
+def test_program_name_may_contain_any_letters():
+    assert missing_programs(["no-such-tool-XYZ arg", "Mixed-Case-Tool"]) == ["no-such-tool-XYZ", "Mixed-Case-Tool"]
+
+
+def test_word_with_expansion_is_not_a_plain_name():
+    assert missing_programs(["no-such-tool-xyz$SUFFIX arg"]) == []
+
+
+def test_empty_substitution_runs_nothing():
+    assert missing_programs(['echo "$()"', 'echo "``"']) == []
+
+
+def test_command_follows_a_leading_redirect():
+    assert missing_programs(["> out.txt no-such-tool-xyz"]) == ["no-such-tool-xyz"]
+
+
+def test_run_of_every_operator_still_separates_commands():
+    assert missing_programs(["true ();<>|&`\nno-such-tool-xyz"]) == ["no-such-tool-xyz"]
+
+
+def test_environment_assignments_before_a_program_are_skipped():
+    assert missing_programs(["FOO=1 no-such-tool-xyz", "foo_1=bar other-missing-abc", "_X=1 third-missing-def"]) == [
+        "no-such-tool-xyz", "other-missing-abc", "third-missing-def"]
