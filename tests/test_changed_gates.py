@@ -187,3 +187,22 @@ def test_coverage_threshold_only_goes_up(tmp_path, capsys, monkeypatch):
     cov.write_text(json.dumps({"totals": {"percent_covered": 60.0}}))
     coverage_gate.main(["raise", str(cov)])
     assert f.read_text() == "# comment 5\n82\n"  # never lowered
+
+
+def test_mutation_copy_holds_the_repo_data_the_tests_read(tmp_path):
+    """mutmut runs the tests inside mutants/; data the code reads from the repo root (acceptance scenarios in bench/)
+    must be copied there, or the clean run fails before any mutant is tried."""
+    import configparser
+
+    for path in ("artel/a.py", "tests/test_a.py", "bench/acceptance/S.yaml", "docs/agents_md.md", "scripts/x.py",
+                 "install.sh", ".github/workflows/ci.yml"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("x", encoding="utf-8")
+    (tmp_path / "coverage.json").write_text("{}", encoding="utf-8")  # untracked output, not repo data
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "artel", "tests", "bench", "docs", "scripts", "install.sh", ".github"], cwd=tmp_path,
+                   check=True)
+    mutation.write_config(tmp_path, ["artel/a.py"], ["tests/test_a.py"])
+    cfg = configparser.ConfigParser()
+    cfg.read(tmp_path / "setup.cfg", encoding="utf-8")
+    assert cfg["mutmut"]["also_copy"].split() == ["bench/", "docs/", "install.sh", "scripts/"]

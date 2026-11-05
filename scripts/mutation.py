@@ -130,12 +130,23 @@ def tests_for(root: Path, files: list[str]) -> list[str]:
     return sorted(f"tests/{p.name}" for p in tests if regex.search(p.read_text(encoding="utf-8")))
 
 
+def repo_data(root: Path) -> list[str]:
+    """Top-level tracked entries besides the package and the tests (which mutmut copies itself): the data the tests
+    read from the repo root (docs/, bench/, install.sh, ...) must exist in mutants/ too, or the clean run fails."""
+    out = subprocess.run(["git", "ls-files"], cwd=root, capture_output=True, text=True, check=False).stdout
+    tops = {line.split("/", 1)[0] + ("/" if "/" in line else "") for line in out.splitlines() if line}
+    data = sorted(t for t in tops if t not in ("artel/", "tests/", "setup.cfg") and not t.startswith("."))
+    return data or ["scripts/"]
+
+
 def write_config(root: Path, files: list[str], tests: list[str]) -> Path:
     cfg = root / "setup.cfg"
     if cfg.exists():
         raise SystemExit("mutation: setup.cfg exists; the gate writes its own temporary mutmut config there")
     cfg.write_text(
-        "[mutmut]\nsource_paths=artel\nalso_copy=\n    scripts/\nmutate_only_covered_lines=true\nonly_mutate=\n"
+        "[mutmut]\nsource_paths=artel\nalso_copy=\n"
+        + "".join(f"    {d}\n" for d in repo_data(root))
+        + "mutate_only_covered_lines=true\nonly_mutate=\n"
         + "".join(f"    {f}\n" for f in files)
         + "pytest_add_cli_args=\n    -p\n    no:randomly\n    -q\n"
         + "".join(f"    --deselect\n    {d}\n" for d in DESELECT)
