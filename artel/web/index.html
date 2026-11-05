@@ -485,7 +485,7 @@ function summaryLine(v,needsMe){const st=v.stats,m=v.meta,prog=`${st.tasks_done}
   if(needsMe||st.stage==='waiting_human')return `Ждёт вашего ответа · ${prog}`;
   if(st.stage==='stopped')return `Пауза · ${prog}`;
   if(['paused_budget','error','needs_review','network_wait'].includes(st.stage))return `${(STAGE[st.stage]||st.stage).replace(/^./,c=>c.toUpperCase())} · ${prog}`;
-  return `${v.live?'Идёт':'Не запущен'}: ${STAGE[st.stage]||st.stage} · ${prog}`}
+  return `${v.live_elsewhere?'Идёт (в другом процессе)':v.live?'Идёт':'Не запущен'}: ${STAGE[st.stage]||st.stage} · ${prog}`}
 function stepperHtml(st,waiting){let si=STEPS.indexOf(st.stage);if(st.stage==='done')si=STEPS.length;else if(si<0&&waiting)si=1;
   return `<ol class="stepper" aria-label="Этапы проекта">${STEPS.map((s,i)=>`<li class="step ${i<si?'past':i===si?'now'+(waiting?' bad':''):''}"${i===si?' aria-current="step"':''}><span class="sd" aria-hidden="true"></span><span class="sr">${STAGE[s]}</span></li>`).join('')}</ol>
    <div class="stlabel">${si>=STEPS.length?'Все этапы пройдены':si>=0?`Этап ${si+1} из ${STEPS.length}: <b>${waiting?'ждёт вашего ответа':STAGE[STEPS[si]]}</b>`:esc(STAGE[st.stage]||st.stage)}</div>`}
@@ -540,7 +540,7 @@ async function refresh(){const v=await api(MQ(`/api/projects/${encodeURIComponen
   const html=`<div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap"><a class="back" href="#/portfolio">← Проекты</a></div>
   ${fail?`<div class="alert" role="alert"><b>Что-то пошло не так.</b> ${esc(fail)} <button id="why-proj">Объяснить</button> <a href="#/providers">Подключения →</a><span class="stat"> · после исправления нажмите «Продолжить».</span>${m.diagnosis?`<div class="stat" style="margin-top:6px"><b>Диагност:</b> ${esc(m.diagnosis.cause||'')}${(m.diagnosis.steps||[]).length?' — '+esc(m.diagnosis.steps[0]):''}</div>`:''}</div>`:''}
   <div class="phead"><div class="pname">${esc(m.name)}</div>${chip(st.stage)}
-    <div class="pctl">${needsMe?'<button class="primary" id="answer">Ответить</button>':''}${v.live?'<button id="pause">Пауза</button><button class="danger" id="stop">Остановить</button>':m.status==='done'||needsMe?'':'<button id="resume">Продолжить</button>'}<button class="feedbtn" id="openfeed">${DEV?'Лента':'Что происходит'}</button></div></div>
+    <div class="pctl">${needsMe?'<button class="primary" id="answer">Ответить</button>':''}${v.live_elsewhere?'':v.live?'<button id="pause">Пауза</button><button class="danger" id="stop">Остановить</button>':m.status==='done'||needsMe?'':'<button id="resume">Продолжить</button>'}<button class="feedbtn" id="openfeed">${DEV?'Лента':'Что происходит'}</button></div></div>
   <div class="sumline" id="sum">${esc(summaryLine(v,needsMe))}</div>
   ${stepperHtml(st,waiting)}
   <div class="stat dev">токены ${num(u.input_tokens)} → ${num(u.output_tokens)} · запросов ${u.requests} · ${money(st.cost_usd)} · раундов аудита ${m.audit_rounds||0}</div>

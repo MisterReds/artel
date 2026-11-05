@@ -24,7 +24,7 @@ from .. import analytics, chat, guardian
 from ..httpd import LocalHTTPServer
 from ..humanize import happenings, localize_stats, localize_view, ru
 from ..manager import human_comment, new_kernel, resume, run_goal
-from ..project import Project, list_projects
+from ..project import Project, ProjectBusy, artel_home, list_projects, run_owner
 from . import filesview
 
 STATIC = Path(__file__).parent / "index.html"
@@ -123,16 +123,35 @@ class Runner:
             project.log.append("manager/fatal", error=repr(exc))
             project.set_meta(status="error")
 
-    def resume(self, slug: str, via: str = "web", after_answer: bool = False) -> None:
+    def resume(self, slug: str, via: str = "web", after_answer: bool = False) -> bool:
+        """Run the project here; True when this call started it. Raises ProjectBusy when another process runs it;
+        after an answer that process picks the answer up itself, so nothing is raised then."""
         if slug in self.active:
-            return
+            return False
         from ..manager import continue_after_human
 
         stop = threading.Event()
         project = Project.open(slug, self.config)
-        continue_after_human(project)
-        project.log.append("owner/resume", via=via, **({"after_answer": True} if after_answer else {}))
-        self._spawn(slug, stop, lambda: self._drive(project, stop))
+        try:
+            project.claim_run()  # before reopening tasks; the run thread releases it
+        except ProjectBusy:
+            if after_answer:
+                return False
+            raise
+        try:
+            continue_after_human(project)
+            project.log.append("owner/resume", via=via, **({"after_answer": True} if after_answer else {}))
+            self._spawn(slug, stop, lambda: self._drive_claimed(project, stop))
+        except BaseException:
+            project.release_run()
+            raise
+        return True
+
+    def _drive_claimed(self, project: Project, stop: threading.Event) -> None:
+        try:
+            self._drive(project, stop)
+        finally:
+            project.release_run()
 
     def resume_after_answer(self, project: Project) -> bool:
         """The owner answered a question. Continue the project only if it went idle waiting for that answer: not
@@ -144,8 +163,7 @@ class Runner:
         owner = [e for e in project.log.read() if str(e.get("kind", "")).startswith("owner/")]
         if owner and owner[-1]["kind"] == "owner/stop":
             return False
-        self.resume(project.slug, after_answer=True)
-        return True
+        return self.resume(project.slug, after_answer=True)
 
     def _spawn(self, slug: str, stop: threading.Event, fn) -> None:
         def wrapped():
@@ -170,6 +188,29 @@ class Runner:
         return bool(ev)
 
 
+def live_state(active, root: Path) -> tuple[bool, dict | None]:
+    """(the project's manager runs in any process, the owner record {pid, kind, ...} when another process runs it).
+    ``active``: the runs this server's runner drives. A run of this process outside the runner (`artel run --web`)
+    is live, not elsewhere."""
+    if root.name in active:
+        return True, None
+    owner = run_owner(root)
+    return owner is not None, owner if owner and owner.get("pid") != os.getpid() else None
+
+
+def live_fields(runner: Runner, slug: str) -> dict:
+    live, elsewhere = live_state(runner.active, artel_home() / "projects" / slug)
+    return {"live": live, "live_elsewhere": elsewhere}
+
+
+def portfolio(runner: Runner) -> list[dict]:
+    """All projects with their stats; a project another process runs counts as live and says who runs it."""
+    base = artel_home() / "projects"
+    state = {d.name: live_state(runner.active, d) for d in (base.iterdir() if base.exists() else [])}
+    ps = analytics.portfolio(runner.config, live={slug for slug, (live, _) in state.items() if live})
+    return [{**p, "live_elsewhere": state.get(p["slug"], (False, None))[1]} for p in ps]
+
+
 def project_view(project: Project, runner: Runner, user: bool = False) -> dict:
     """The project page's payload. `user`: system strings in Russian (humanize); the dev mode keeps them raw."""
     snap = project.board.snapshot()
@@ -187,8 +228,8 @@ def project_view(project: Project, runner: Runner, user: bool = False) -> dict:
         t["timeline"] = timelines.get(t["id"], [])
         if t["id"] in risks:
             t["risk"], t["risk_score"], t["risk_reason"] = (risks[t["id"]][k] for k in ("risk", "score", "reason"))
-    stats = analytics.project_stats(project, live=project.slug in runner.active)
-    live = project.slug in runner.active
+    live, elsewhere = live_state(runner.active, project.root)
+    stats = analytics.project_stats(project, live=live)
     errors = [e for e in events if e["kind"] in ("llm/error", "manager/escalated", "manager/provider_switch",
                                                 "manager/provider_limit", "provider/limited")][-5:]
     from ..tooling import effective_grants
@@ -201,7 +242,8 @@ def project_view(project: Project, runner: Runner, user: bool = False) -> dict:
                                                                 for k, v in titles.items()}),
             "active": analytics.active_agents(events, live), "stage": analytics.stage_of(project, snap["tasks"]),
             "recent_problems": errors,
-            "notes": project.prompt_notes(), "live": project.slug in runner.active, "seq": project.log.seq}
+            "notes": project.prompt_notes(), "live": live, "live_elsewhere": elsewhere,
+            "seq": project.log.seq}
     return localize_view(view) if user else view
 
 
@@ -451,12 +493,12 @@ def make_handler(runner: Runner, auth=None):
                 elif parts == ["manifest.webmanifest"]:
                     self._static("manifest.webmanifest", {"Cache-Control": "no-cache"})
                 elif parts == ["api", "projects"]:
-                    self._json([{**p, "live": p["slug"] in runner.active} for p in list_projects()])
+                    self._json([{**p, **live_fields(runner, p["slug"])} for p in list_projects()])
                 elif parts == ["api", "portfolio"]:
-                    ps = analytics.portfolio(runner.config, live=set(runner.active))
+                    ps = portfolio(runner)
                     self._json([localize_stats(p) for p in ps] if q.get("mode") == ["user"] else ps)
                 elif parts == ["api", "analytics"]:
-                    self._json(analytics.agent_analytics(analytics.portfolio(runner.config, live=set(runner.active))))
+                    self._json(analytics.agent_analytics(portfolio(runner)))
                 elif parts == ["api", "registry"]:
                     body = REGISTRY.read_bytes() if REGISTRY.exists() else b"[]"
                     self.send_response(200)
@@ -901,7 +943,10 @@ def make_handler(runner: Runner, auth=None):
                 if len(parts) == 4 and parts[3] == "stop":
                     return self._json({"stopped": runner.stop(parts[2])})
                 if len(parts) == 4 and parts[3] == "resume":
-                    runner.resume(parts[2])
+                    try:
+                        runner.resume(parts[2])
+                    except ProjectBusy as exc:  # a second manager on the same project would corrupt it
+                        return self._json({"error": str(exc), "live_elsewhere": exc.owner}, 409)
                     return self._json({"resumed": parts[2]})
                 if len(parts) == 6 and parts[3] == "tasks" and parts[5] == "comment":
                     project = self._project(parts[2])

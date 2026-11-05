@@ -21,10 +21,11 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 import tempfile
 import threading
 import time
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
@@ -67,6 +68,110 @@ def _file_lock(path: Path):
                 yield
             finally:
                 fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+# --- run ownership ----------------------------------------------------------------------------------------------
+# One manager per project across all processes (web, `artel run`/`resume`, acceptance, evolve). The process that runs
+# it holds an exclusive OS lock on <project>/.run.lock for the whole run; the OS releases it when that process dies, so
+# there is no heartbeat to go stale. <project>/.run.json says who holds it (for display only; the lock decides).
+# Every attempt on .run.lock - claim and probe alike - is made under the short blocking lock .run.gate, so a probe
+# that takes the run lock for an instant never makes a concurrent claim fail.
+RUN_LOCK, RUN_OWNER, RUN_GATE = ".run.lock", ".run.json", ".run.gate"
+
+
+class ProjectBusy(ValueError):
+    """The project's manager already runs in another process (or another object of this one)."""
+
+    def __init__(self, owner: dict):
+        self.owner = owner
+        super().__init__(f"Проект уже выполняется в другом процессе (pid {owner.get('pid', '?')})")
+
+
+def _try_lock(f) -> bool:
+    """Non-blocking exclusive lock on the first byte of open file ``f``; False when another holder has it."""
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+
+            f.seek(0)
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+
+            fcntl.flock(f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        return True
+    except OSError:
+        return False
+
+
+def _unlock(f) -> None:
+    if sys.platform == "win32":
+        import msvcrt
+
+        f.seek(0)
+        msvcrt.locking(f.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(f.fileno(), fcntl.LOCK_UN)
+
+
+def _read_owner(root: Path) -> dict:
+    try:
+        owner = json.loads((root / RUN_OWNER).read_text(encoding="utf-8"))
+        return owner if isinstance(owner, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def run_owner(root: Path) -> dict | None:
+    """Who runs the project at ``root`` now (any process, this one included): {pid, kind, host, started_at}, or None."""
+    root = Path(root)
+    if not (root / "project.json").exists():
+        return None
+    with _file_lock(root / RUN_GATE), open(root / RUN_LOCK, "a+b") as f:
+        if _try_lock(f):
+            _unlock(f)
+            return None
+        return _read_owner(root) or {"pid": None}
+
+
+def running_elsewhere(root: Path) -> dict | None:
+    """The owner of the project's run when it is another process, else None."""
+    owner = run_owner(root)
+    return owner if owner and owner.get("pid") != os.getpid() else None
+
+
+def _claim(root: Path, kind: str):
+    """Take the run lock of ``root`` or raise ProjectBusy. Returns the open lock file; closing it releases the lock."""
+    import socket
+
+    with _file_lock(root / RUN_GATE):
+        f = open(root / RUN_LOCK, "a+b")  # noqa: SIM115 - stays open for the whole run: it is the lock
+        if not _try_lock(f):
+            f.close()
+            raise ProjectBusy(_read_owner(root) or {"pid": None})
+        owner = {"pid": os.getpid(), "kind": kind, "host": socket.gethostname(), "started_at": time.time(),
+                 "argv": " ".join(sys.argv[:3])[:200]}
+        tmp = root / (RUN_OWNER + ".tmp")
+        tmp.write_text(json.dumps(owner, ensure_ascii=False), encoding="utf-8")
+        os.replace(tmp, root / RUN_OWNER)
+        return f
+
+
+def _release(root: Path, f) -> None:
+    with _file_lock(root / RUN_GATE):
+        with suppress(OSError):
+            (root / RUN_OWNER).unlink()
+        _unlock(f)
+        f.close()
+
+
+def run_kind() -> str:
+    """What kind of process this is, for the owner record: the CLI subcommand (web, run, resume, acceptance, ...)."""
+    args = [a for a in sys.argv[1:] if not a.startswith("-")]
+    return args[0] if args else Path(sys.argv[0] or "python").stem
+
 
 DEFAULT_CONFIG: dict[str, Any] = {
     "agent_env": {"pass": []},          # extra env var names agents' shells and CLIs may inherit (artel/agent_env.py)
@@ -241,6 +346,7 @@ class Project:
         (self.root / "workers").mkdir(exist_ok=True)
         (self.root / "harness" / "snapshots").mkdir(parents=True, exist_ok=True)
         self._meta_lock = threading.Lock()
+        self._run_file = None  # the open .run.lock while this object owns the project's run (claim_run)
 
     # --- lifecycle ------------------------------------------------------
     @classmethod
@@ -279,6 +385,36 @@ class Project:
         if not (p / "project.json").exists():
             raise FileNotFoundError(f"no project at {slug_or_path}")
         return cls(p, config)
+
+    # --- run ownership (see RUN_LOCK) -------------------------------------
+    def claim_run(self, kind: str | None = None) -> bool:
+        """Own the project's run: True when taken now, False when this object already owns it. Raises ProjectBusy
+        when another process (or another object) owns it."""
+        if self._run_file is not None:
+            return False
+        self._run_file = _claim(self.root, kind or run_kind())
+        return True
+
+    def release_run(self) -> None:
+        f, self._run_file = self._run_file, None
+        if f is not None:
+            _release(self.root, f)
+
+    @contextmanager
+    def running(self, kind: str | None = None):
+        """Hold the run for the block; a run already claimed by this object (e.g. by its caller) stays with it."""
+        mine = self.claim_run(kind)
+        try:
+            yield
+        finally:
+            if mine:
+                self.release_run()
+
+    def run_owner(self) -> dict | None:
+        return run_owner(self.root)
+
+    def running_elsewhere(self) -> dict | None:
+        return running_elsewhere(self.root)
 
     # --- metadata -------------------------------------------------------
     @property
@@ -433,4 +569,5 @@ def persona_from_dict(d: dict) -> Persona:
                    skills=list(d.get("skills", [])), model=d.get("model"), effort=d.get("effort"))
 
 
-__all__ = ["Persona", "Project", "artel_home", "asdict", "list_projects", "load_config", "persona_from_dict"]
+__all__ = ["Persona", "Project", "ProjectBusy", "artel_home", "asdict", "list_projects", "load_config",
+           "persona_from_dict", "run_owner", "running_elsewhere"]

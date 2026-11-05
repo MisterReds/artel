@@ -25,7 +25,7 @@ import time
 from pathlib import Path
 
 from .manager import human_comment, new_kernel, resume, run_goal
-from .project import Project, list_projects, load_config
+from .project import Project, ProjectBusy, list_projects, load_config
 from .tz import fmt_ts
 
 ICONS = {"todo": "·", "ready": "○", "running": "▶", "review": "◎", "done": "✓", "blocked": "✗", "cancelled": "–"}
@@ -140,7 +140,13 @@ def cmd_run(args) -> int:
 def cmd_resume(args) -> int:
     stop = threading.Event()
     holder: dict = {}
-    th = threading.Thread(target=lambda: holder.update(r=resume(args.project, _cfg(args), stop_event=stop, via="cli")))
+    def target():
+        try:
+            holder["r"] = resume(args.project, _cfg(args), stop_event=stop, via="cli")
+        except ProjectBusy as exc:  # another process runs it: a second manager would corrupt the board
+            holder["busy"] = exc
+
+    th = threading.Thread(target=target)
     th.start()
     try:
         while th.is_alive():
@@ -149,6 +155,9 @@ def cmd_resume(args) -> int:
         stop.set()
         th.join()
         _note_owner_stop(holder.get("r"))
+    if "busy" in holder:
+        print(f"artel resume: {holder['busy']}", file=sys.stderr)
+        return 3
     project, status = holder["r"]
     print_board(project)
     print(f"status: {status}")

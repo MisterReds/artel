@@ -34,7 +34,7 @@ from . import guardian, netprobe, policy, prompts
 from .agent import Outcome
 from .agent_env import agent_env, missing_programs, tool_inventory
 from .failures import classify, gate_failure_class
-from .project import INSTRUCTIONS_TRUNCATED, Persona, Project, find_instructions, persona_from_dict
+from .project import INSTRUCTIONS_TRUNCATED, Persona, Project, ProjectBusy, find_instructions, persona_from_dict
 from .runtimes import run_agent
 from .snapshot import Snapshot
 from .tooling import ToolContext, window_text
@@ -1229,6 +1229,20 @@ class Manager:
         return any(t["needs_human"] for t in open_work)
 
     def run(self) -> str:
+        """Drive the project to a final status. Only one manager runs a project at a time across all processes:
+        raises ProjectBusy (and touches nothing) when another one runs it (Project.claim_run)."""
+        try:
+            mine = self.project.claim_run()  # False: the caller (resume) claimed it before reopening tasks
+        except ProjectBusy:
+            self.pool.shutdown(wait=False)
+            raise
+        try:
+            return self._run()
+        finally:
+            if mine:
+                self.project.release_run()
+
+    def _run(self) -> str:
         budget = self.kernel.get("budget")
         skills = self.kernel.get("skills")
         sk = self.cfg["skills"]
@@ -1420,10 +1434,11 @@ def resume(slug: str, config: dict, stop_event: threading.Event | None = None, k
     kernel = kernel or new_kernel(config)
     try:
         project = Project.open(slug, config)
-        if via:
-            project.log.append("owner/resume", via=via)
-        continue_after_human(project)
-        return project, Manager(kernel, project, stop_event).run()
+        with project.running():  # before reopening tasks: a project another process runs is left alone
+            if via:
+                project.log.append("owner/resume", via=via)
+            continue_after_human(project)
+            return project, Manager(kernel, project, stop_event).run()
     finally:
         if own:
             kernel.shutdown(reason="run_end")
