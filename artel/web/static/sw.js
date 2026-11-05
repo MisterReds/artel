@@ -1,7 +1,7 @@
 /* Artel service worker: caches only the app shell (page, fonts, icons) so the installed app opens fast and
    shows its frame offline. Live data is never cached: /api/* (JSON and the SSE event stream), the login
    endpoints and any non-GET request always go straight to the network. */
-const SHELL = 'artel-shell-v3';
+const SHELL = 'artel-shell-v4';
 const ASSETS = [
   '/',
   '/manifest.webmanifest',

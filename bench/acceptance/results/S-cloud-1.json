@@ -1,0 +1,56 @@
+{
+ "metrics": {
+  "duration_h": 0.09,
+  "ended": "done",
+  "stopped_by_limit": false,
+  "limit_waits": 0,
+  "expensive_token_share": 0.275,
+  "expensive_call_share": 0.176,
+  "tokens_total": 356129,
+  "cached_tokens": 1980785,
+  "usage_missing_runs": 0,
+  "tokens_incomplete": false,
+  "token_note": "токены — как их сообщает рантайм: вход (с записью в кэш) + выход, чтения кэша отдельно (cached_tokens); если у части запусков рантайм не сообщил расход (usage_missing_runs), итог занижен",
+  "tasks_done": 6,
+  "tokens_per_accepted": 59355,
+  "success_rate": 1.0,
+  "steps": 17,
+  "owner_asks": 0,
+  "owner_interventions": 0,
+  "autonomy_share": 1.0,
+  "tokens_by_runtime": {
+   "claude_code": 356129
+  },
+  "cost_usd": 2.310067,
+  "cost_note": null,
+  "decision_log_coverage": null,
+  "verdict": null
+ },
+ "check": {
+  "expensive_token_share_max": {
+   "value": 0.275,
+   "limit": 0.05,
+   "ok": false
+  },
+  "expensive_call_share_max": {
+   "value": 0.176,
+   "limit": 0.05,
+   "ok": false
+  },
+  "autonomy_min": {
+   "value": 1.0,
+   "limit": 0.95,
+   "ok": true
+  },
+  "owner_interventions_max": {
+   "value": 0,
+   "limit": 1,
+   "ok": true
+  },
+  "no_limit_stop": {
+   "value": false,
+   "limit": true,
+   "ok": true
+  }
+ }
+}

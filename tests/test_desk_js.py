@@ -92,3 +92,32 @@ def test_shown_ids_are_read_from_storage_each_time():
     out = subprocess.run(["node", "-e", src], capture_output=True, text=True, timeout=30)
     assert out.returncode == 0, out.stderr
     assert json.loads(out.stdout) == [["a"], ["a", "b"], [], [], []]
+
+
+VERDICT = ("Цель достигнута. Проверка по критериям: (1) импорт CSV завершается с кодом 0; (2) report создаёт HTML без "
+           "http(s)-ссылок; (3) pytest: 57 passed. Есть README на русском. CLI-утилита, сервер не запускается.")
+
+
+@node
+def test_auditor_verdict_splits_enumerated_criteria_into_items_and_keeps_the_rest_as_lead_and_tail():
+    v = js(f"D.verdict({json.dumps(VERDICT)})")
+    assert v["lead"] == "Цель достигнута. Проверка по критериям:"
+    assert v["items"] == [
+        "импорт CSV завершается с кодом 0",
+        "report создаёт HTML без http(s)-ссылок",
+        "pytest: 57 passed",
+    ]
+    assert v["tail"] == "Есть README на русском. CLI-утилита, сервер не запускается."
+
+
+@node
+def test_verdict_without_a_numbered_list_stays_one_paragraph():
+    for text in ("Цель достигнута.", "Пункт (2) и (3) без первого", "Смотри (1) только один пункт и всё", ""):
+        v = js(f"D.verdict({json.dumps(text)})")
+        assert v == {"lead": text, "items": [], "tail": ""}, text
+
+
+@node
+def test_verdict_never_alters_markup_characters_so_the_page_can_escape_them():
+    v = js("D.verdict(" + json.dumps("Ок: (1) <b>x</b> & y; (2) \"z\"") + ")")
+    assert v["items"] == ["<b>x</b> & y", '"z"']
