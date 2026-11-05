@@ -3,7 +3,6 @@
 The page script is a single inline block, so the notice logic is cut out of index.html and run in node with a tiny DOM.
 """
 import json
-import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -19,7 +18,8 @@ def run(steps: str, storage_throws: bool = False):
     end = HTML.index("async function pollIso")
     code = HTML[start:end]
     src = f"""
-const els={{}};const mk=id=>els[id]=els[id]||{{id,hidden:true,innerHTML:'',onclick:null,setAttribute(){{}}}};
+const els={{}};
+const mk=id=>els[id]=els[id]||{{id,hidden:true,innerHTML:'',onclick:null,setAttribute(){{}}}};
 const $=s=>mk(s.slice(1));['unisolated','isochip','iso-more','iso-x','iso-det'].forEach(mk);
 const icon=()=>'', esc=s=>String(s);
 const store={{}};
