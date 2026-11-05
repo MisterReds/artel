@@ -136,7 +136,13 @@
 
   /* ---------- helpers ---------- */
   const fmtSize = n => n == null ? '' : n < 1024 ? n + ' Б' : n < 1048576 ? (n / 1024).toFixed(n < 10240 ? 1 : 0).replace('.', ',') + ' КБ' : (n / 1048576).toFixed(1).replace('.', ',') + ' МБ';
-  const ICON = {markdown: '📝', html: '🌐', code: '📜', json: '🧾', csv: '📊', image: '🖼', pdf: '📕', video: '🎬', text: '📄', binary: '📦', toolarge: '📦', file: '📄'};
+  // file-type icons: the dashboard's inline SVG set (24px grid, 1.5px stroke, currentColor), no emoji
+  const DOC = 'M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5zM14 3v5h5';
+  const ICON = {markdown: DOC + 'M9 13h6M9 17h4', html: 'M12 3a9 9 0 1 0 0 18 9 9 0 0 0 0-18zM3 12h18M12 3c3 3 3 15 0 18M12 3c-3 3-3 15 0 18', code: DOC + 'M10 12l-2 2 2 2M14 12l2 2-2 2',
+    json: 'M9 4C7 4 7 6 7 8s0 3-2 4c2 1 2 2 2 4s0 4 2 4M15 4c2 0 2 2 2 4s0 3 2 4c-2 1-2 2-2 4s0 4-2 4', csv: 'M4 5h16v14H4zM4 10h16M4 15h16M10 5v14',
+    image: 'M4 5h16v14H4zM4 16l5-5 4 4 3-3 4 4M9 9h.01', pdf: DOC + 'M9 15h6', video: 'M4 6h12v12H4zM16 10l5-3v10l-5-3', text: DOC + 'M9 13h6M9 17h6',
+    binary: 'M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM12 12l8-4.5M12 12v9M12 12L4 7.5', toolarge: 'M12 3l8 4.5v9L12 21l-8-4.5v-9L12 3zM12 12l8-4.5M12 12v9M12 12L4 7.5', file: DOC,
+    dir: 'M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7z', dirOpen: 'M3 8a2 2 0 0 1 2-2h4l2 2h7a2 2 0 0 1 2 2M3 8v9a2 2 0 0 0 2 2h12.5a2 2 0 0 0 1.9-1.4L21 11H7.5a2 2 0 0 0-1.9 1.4L3 17'};
   const KINDRU = {markdown: 'Markdown', html: 'Веб-страница', code: 'Код', json: 'JSON', csv: 'Таблица', image: 'Изображение', pdf: 'PDF', video: 'Видео', text: 'Текст', binary: 'Двоичный файл', toolarge: 'Большой файл'};
   const el = (tag, attrs, ...kids) => {
     const e = document.createElement(tag);
@@ -144,6 +150,7 @@
     kids.flat().forEach(c => e.append(c == null ? '' : c));
     return e;
   };
+  const icon = (d, cls) => { const s = el('span', {class: 'fi ' + (cls || ''), 'aria-hidden': 'true'}); s.innerHTML = '<svg viewBox="0 0 24 24"><path d="' + d + '"/></svg>'; return s; };
   const MAX_LINES = 5000;
 
   function codeView(text, lang) {
@@ -243,12 +250,12 @@
       if (i.dir) {
         const open = S.openDirs.has(i.path) && !i.collapsed;
         a.setAttribute('aria-expanded', i.collapsed ? 'false' : String(open));
-        a.append(el('span', {class: 'ic', 'aria-hidden': 'true'}, i.collapsed ? '📁' : open ? '📂' : '📁'), el('span', {class: 'nm'}, name));
+        a.append(icon(open ? ICON.dirOpen : ICON.dir, 'dir'), el('span', {class: 'nm'}, name));
         if (i.collapsed) a.append(el('span', {class: 'stat'}, 'скрыто'));
         else a.onclick = () => { if (open) S.openDirs.delete(i.path); else S.openDirs.add(i.path); drawTree(); };
         if (i.collapsed) a.disabled = true;
       } else {
-        a.append(el('span', {class: 'ic', 'aria-hidden': 'true'}, ICON[i.kind] || ICON.file), el('span', {class: 'nm'}, name),
+        a.append(icon(ICON[i.kind] || ICON.file), el('span', {class: 'nm'}, name),
           i.changed ? el('span', {class: 'chg', title: 'Изменён последней задачей'}, 'изменён') : '', el('span', {class: 'sz'}, fmtSize(i.size)));
         a.onclick = () => openFile(i.path);
       }
