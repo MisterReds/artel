@@ -1,11 +1,11 @@
-﻿# Artel installer for Windows (PowerShell 5+).
+﻿# Arteliq installer for Windows (PowerShell 5+).
 #
 #   powershell -ExecutionPolicy Bypass -File install.ps1 [-Dir PATH] [-WithCodex] [-WithClaude] [-Service] [-NoStart] [-Reinstall] [-Yes]
 #
 # One command (private repository, GitHub CLI signed in):
-#   iex (gh api repos/MisterReds/artel/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String)
+#   iex (gh api repos/MisterReds/arteliq/contents/install.ps1 -H "Accept: application/vnd.github.raw" | Out-String)
 # Public repository:
-#   irm https://raw.githubusercontent.com/MisterReds/artel/master/install.ps1 | iex
+#   irm https://raw.githubusercontent.com/MisterReds/arteliq/master/install.ps1 | iex
 # `iex` cannot pass parameters, so options may also be given as environment variables: ARTEL_REINSTALL=1, ARTEL_YES=1,
 # ARTEL_NOSTART=1, ARTEL_SERVICE=1, ARTEL_WITH_CODEX=1, ARTEL_WITH_CLAUDE=1. The script does not depend on its own path.
 #
@@ -15,11 +15,11 @@
 # "not sure"); otherwise it is MOVED to <dir>.bak-<time>, never deleted. Same for a venv that is not the default one.
 # An empty path, a drive root, the home directory, ARTEL_HOME itself or a dir holding artel.yaml / projects is refused.
 #
-# Installs only what Artel itself needs (git, Python 3.12, and the GitHub CLI when the private repository is not
-# reachable) with winget, signs in to GitHub with a device code, clones Artel into %USERPROFILE%\.artel\app (a git
-# clone, so the built-in updater works), creates a virtual environment, puts `artel` on the user PATH and starts the
+# Installs only what Arteliq itself needs (git, Python 3.12, and the GitHub CLI when the private repository is not
+# reachable) with winget, signs in to GitHub with a device code, clones Arteliq into %USERPROFILE%\.artel\app (a git
+# clone, so the built-in updater works), creates a virtual environment, puts `arteliq` (and the `artel` alias) on the user PATH and starts the
 # dashboard. Safe to run again: it updates in place. Agent CLIs (Codex, Claude Code) are installed only when needed:
-# dashboard "Провайдеры" → "Установить", or `artel providers install codex|claude` (into ~\.artel\tools).
+# dashboard "Провайдеры" → "Установить", or `arteliq providers install codex|claude` (into ~\.artel\tools).
 # Environment overrides: ARTEL_REPO (URL or local path to clone), ARTEL_DIR (the clone), ARTEL_VENV (the venv).
 # No param() block on purpose: it does not work through `iex`. Options come from $args (-File) or the environment.
 $Opt = @{}
@@ -34,7 +34,7 @@ $Service = Flag "service" "ARTEL_SERVICE"; $NoStart = Flag "nostart" "ARTEL_NOST
 $Reinstall = Flag "reinstall" "ARTEL_REINSTALL"; $Yes = Flag "yes" "ARTEL_YES"
 $ErrorActionPreference = "Stop"
 try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch {}
-$Repo = if ($env:ARTEL_REPO) { $env:ARTEL_REPO } else { "https://github.com/MisterReds/artel.git" }
+$Repo = if ($env:ARTEL_REPO) { $env:ARTEL_REPO } else { "https://github.com/MisterReds/arteliq.git" }
 $Venv = if ($env:ARTEL_VENV) { $env:ARTEL_VENV } else { "$env:USERPROFILE\.artel\venv" }
 
 function Step($t) { Write-Host "▲ " -ForegroundColor DarkYellow -NoNewline; Write-Host $t }
@@ -78,20 +78,20 @@ function Inside-Path($child, $parent) {  # $child is $parent or lies below it
   if (-not $c -or -not $p) { return $false }
   return ($c.Equals($p, [StringComparison]::OrdinalIgnoreCase) -or $c.StartsWith($p + "\", [StringComparison]::OrdinalIgnoreCase))
 }
-function Artel-Home { if ($env:ARTEL_HOME) { $env:ARTEL_HOME } else { Join-Path $env:USERPROFILE ".artel" } }
+function Arteliq-Home { if ($env:ARTEL_HOME) { $env:ARTEL_HOME } else { Join-Path $env:USERPROFILE ".artel" } }
 function Refuse-Path($label, $p) {
   $c = Canon $p
   if (-not $p -or -not $c) { throw "refusing: $label is empty or invalid" }
   if (-not (Split-Path -Parent $c)) { throw "refusing: $label is a drive root ($p)" }
   if (Same-Path $c $env:USERPROFILE) { throw "refusing: $label is your home directory ($p)" }
-  if (Same-Path $c (Artel-Home)) { throw "refusing: $label is the Artel data directory itself ($p)" }
+  if (Same-Path $c (Arteliq-Home)) { throw "refusing: $label is the Arteliq data directory itself ($p)" }
   if ((Test-Path -LiteralPath (Join-Path $c "artel.yaml")) -or (Test-Path -LiteralPath (Join-Path $c "projects") -PathType Container)) {
-    throw "refusing: $label ($p) contains Artel data (artel.yaml or projects)"
+    throw "refusing: $label ($p) contains Arteliq data (artel.yaml or projects)"
   }
-  if ((Inside-Path (Artel-Home) $c) -or (Inside-Path $env:USERPROFILE $c)) { throw "refusing: $label ($p) contains the Artel data or home directory" }
+  if ((Inside-Path (Arteliq-Home) $c) -or (Inside-Path $env:USERPROFILE $c)) { throw "refusing: $label ($p) contains the Arteliq data or home directory" }
 }
 function Is-Default-Path($p, $name) {
-  return ((Same-Path $p (Join-Path (Join-Path $env:USERPROFILE ".artel") $name)) -or (Same-Path $p (Join-Path (Artel-Home) $name)))
+  return ((Same-Path $p (Join-Path (Join-Path $env:USERPROFILE ".artel") $name)) -or (Same-Path $p (Join-Path (Arteliq-Home) $name)))
 }
 function App-Is-Disposable {  # $true only when nothing in $Dir can be lost; any git failure = not sure = $false
   if (-not (Test-Path -LiteralPath (Join-Path $Dir ".git") -PathType Container)) { return $false }
@@ -129,10 +129,10 @@ function Reinstall-Prepare {
   if ($appAction -eq "delete") { Note "will remove: $Dir (clean app clone, nothing to lose)" }
   elseif ($appAction -eq "move") { Note "will move aside, NOT delete ($why): $Dir -> $Dir.bak-$script:Ts" }
   Note "kept untouched: everything else (config, projects, credentials, tools)"
-  if (-not (Confirm-Step "Reinstall Artel?")) { throw "cancelled" }
+  if (-not (Confirm-Step "Reinstall Arteliq?")) { throw "cancelled" }
   if ($env:ARTEL_PARENT_PID) { try { Wait-Process -Id ([int]$env:ARTEL_PARENT_PID) -Timeout 60 -ErrorAction SilentlyContinue } catch {} }
-  $task = Get-ScheduledTask -TaskName "Artel dashboard" -ErrorAction SilentlyContinue
-  if ($task) { Stop-ScheduledTask -TaskName "Artel dashboard" -ErrorAction SilentlyContinue; $script:Service = $true }
+  $task = Get-ScheduledTask -TaskName "Arteliq dashboard" -ErrorAction SilentlyContinue
+  if ($task) { Stop-ScheduledTask -TaskName "Arteliq dashboard" -ErrorAction SilentlyContinue; $script:Service = $true }
   Get-Process -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith("$Venv\", [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force -ErrorAction SilentlyContinue
   Start-Sleep -Milliseconds 500
   if ($appAction -eq "delete") { Remove-Item -LiteralPath $Dir -Recurse -Force } elseif ($appAction -eq "move") { Move-Aside $Dir "app" }
@@ -141,7 +141,7 @@ function Reinstall-Prepare {
 function Check($what) { if ($LASTEXITCODE -ne 0) { throw "$what failed (exit $LASTEXITCODE)" } }
 function Py { $rest = @($script:py | Select-Object -Skip 1); & $script:py[0] @rest @args }
 
-Step "Artel installer — Windows"
+Step "Arteliq installer — Windows"
 Step "Dependencies"
 if (-not (Have git)) { Note "installing git"; Winget "Git.Git" }
 $py = Find-Python
@@ -161,7 +161,7 @@ Note "ok"
 
 if ($Reinstall) { Reinstall-Prepare }
 
-Step "Artel → $Dir"
+Step "Arteliq → $Dir"
 if (Test-Path -LiteralPath "$Dir\.git") {
   if (-not (Git-Run -C $Dir pull --ff-only --quiet).Ok) { throw "git pull failed" }
   Note ("updated to " + (Git-Run -C $Dir rev-parse --short HEAD).Out)
@@ -188,18 +188,18 @@ if ($Service) {
   Step "Dashboard at sign-in (Task Scheduler)"
   $action = New-ScheduledTaskAction -Execute "$Venv\Scripts\artel.exe" -Argument "web"
   $trigger = New-ScheduledTaskTrigger -AtLogOn -User $env:USERNAME
-  Register-ScheduledTask -TaskName "Artel dashboard" -Action $action -Trigger $trigger -Force | Out-Null
-  Start-ScheduledTask -TaskName "Artel dashboard"
-  Note "task 'Artel dashboard' registered"
+  Register-ScheduledTask -TaskName "Arteliq dashboard" -Action $action -Trigger $trigger -Force | Out-Null
+  Start-ScheduledTask -TaskName "Arteliq dashboard"
+  Note "task 'Arteliq dashboard' registered"
   $NoStart = $true
 }
 
 Step "Check"
 & "$Venv\Scripts\artel.exe" providers
-Write-Host "`n▲ Artel установлен." -ForegroundColor DarkYellow
-Note "дашборд:    artel web  →  http://127.0.0.1:8765"
+Write-Host "`n▲ Arteliq установлен." -ForegroundColor DarkYellow
+Note "дашборд:    arteliq web  →  http://127.0.0.1:8765"
 Note "Codex / Claude Code: по необходимости — «Провайдеры» → «Установить», затем вход"
-Note "обновление: кнопка в дашборде или artel update"
+Note "обновление: кнопка в дашборде или arteliq update"
 if (-not $NoStart) {
   Start-Job { Start-Sleep 2; Start-Process "http://127.0.0.1:8765" } | Out-Null
   & "$Venv\Scripts\artel.exe" web

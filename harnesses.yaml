@@ -1,12 +1,12 @@
-# Main harnesses: significance metrics (snapshot), their signature mechanisms and whether Artel has them.
-# Rendered with roadmap.yaml into docs/roadmap.html by `artel roadmap html`. Score: artel/roadmap.py significance().
+# Main harnesses: significance metrics (snapshot), their signature mechanisms and whether Arteliq has them.
+# Rendered with roadmap.yaml into docs/roadmap.html by `arteliq roadmap html`. Score: artel/roadmap.py significance().
 snapshot: '2026-10-07'
 source: 'метрики: repos.ecosyste.ms (зеркало GitHub) на дату снимка; кураторы — 10 awesome-списков в artel/data/harnesses.json'
 findings:
 - '<b>Опоры взяты у лидеров — да.</b> Скиллы — от Hermes Agent (2-е место из 43), души — от OpenClaw (1-е), модульность —
   от DeepSeek Harness (значимый); работа до готовности — от Prime Agent (по популярности нишевый, но первоисточник цикла целей).
   Из Codex (4-е место) взят весь контур безопасности: песочница, execpolicy, guardian.'
-- '<b>Основные фишки главных coding-агентов — нет, не все.</b> Из 52 ключевых механизмов харнессов ядра в Artel есть 21 (40%),
+- '<b>Основные фишки главных coding-агентов — нет, не все.</b> Из 52 ключевых механизмов харнессов ядра в Arteliq есть 21 (40%),
   ещё 9 частично, 10 запланированы, 12 — пробелы. Самые заметные пробелы повторяются у нескольких лидеров сразу: файлы инструкций
   проекта (AGENTS.md / CLAUDE.md / GEMINI.md), подключение внешних MCP-серверов, субагенты по запросу, пользовательские хуки,
   запуск из CI и GitHub, веб-поиск, диагностика после правки, repo map, откат по кнопке.'
@@ -18,7 +18,7 @@ findings:
   roadmap study</code>) берёт сначала главные харнессы, чей код ещё не разобран — Superpowers, Spec Kit, CrewAI, LangGraph,
   Mem0, SWE-agent, AutoGen, Aider. В план добавлено 17 пунктов с приоритетом «ядро» (волна 3) — по одному на каждый пробел
   у лидеров; ещё 4 уже запланированных пункта (plan review, двухфазная память, автоматизации, устойчивое исполнение) подняты
-  в тот же приоритет. Эволюция (<code>artel evolve --roadmap</code>) берёт их первыми.
+  в тот же приоритет. Эволюция (<code>arteliq evolve --roadmap</code>) берёт их первыми.
 - <b>Чего брать не нужно.</b> Производные проекты (claw-code, Qwen Code, ECC, Ruflo, oh-my-claudecode, nanobot) популярны,
   но механизмов не вводят — их полезные находки уже учтены; дальше они изучаются только после первоисточников.
 harnesses:
@@ -58,7 +58,7 @@ harnesses:
     what: подключение любых MCP-серверов к агенту
     artel: done
     ref: C-mcp-client
-    note: Artel сам отдаёт инструменты по MCP CLI-агентам, но внешние MCP-серверы подключить нельзя
+    note: Arteliq сам отдаёт инструменты по MCP CLI-агентам, но внешние MCP-серверы подключить нельзя
   - name: Plan mode
     what: только чтение и план, затем подтверждение
     artel: planned
@@ -67,7 +67,7 @@ harnesses:
     what: вернуть код и разговор к точке
     artel: partial
     ref: C-rewind
-    note: теневые git-снимки есть, откат делает только Artel при отклонении
+    note: теневые git-снимки есть, откат делает только Arteliq при отклонении
   - name: Headless и GitHub (@claude)
     what: запуск в CI, ответы на issue и PR
     artel: gap
@@ -534,7 +534,7 @@ harnesses:
     what: Canvas, экран и камера как узлы устройства агента
     artel: gap
     ref: C-worker-screen
-    note: в Artel — свой виртуальный экран у каждого воркера, не экран владельца
+    note: в Arteliq — свой виртуальный экран у каждого воркера, не экран владельца
 - repo: NousResearch/hermes-agent
   name: Hermes Agent
   class: personal-agent
@@ -583,7 +583,7 @@ harnesses:
   name: DeepSeek Harness
   class: personal-agent
   origin: school
-  origin_note: Всё — плагин (Cordis), журнал сессии только на добавление; опора модульности Artel
+  origin_note: Всё — плагин (Cordis), журнал сессии только на добавление; опора модульности Arteliq
   studied: code
   metrics:
     stars: 244113
@@ -597,7 +597,7 @@ harnesses:
     artel: done
     ref: P1-modularity
   - name: dsh как рантайм
-    what: плагины dsh внутри Artel
+    what: плагины dsh внутри Arteliq
     artel: done
     ref: W3-dsh-runtime
 - repo: HKUDS/nanobot
@@ -842,7 +842,7 @@ harnesses:
   - name: Экспорт/импорт команды
     what: шаблоны организаций
     artel: skip
-    note: не берём — у Artel одна команда на проект, собирается планировщиком под цель; шаблоны организаций не нужны
+    note: не берём — у Arteliq одна команда на проект, собирается планировщиком под цель; шаблоны организаций не нужны
 - repo: ruvnet/ruflo
   name: Ruflo (Claude Flow)
   class: multi-agent
@@ -1079,7 +1079,7 @@ harnesses:
   name: Prime Agent
   class: self-improvement
   origin: school
-  origin_note: Цели, работа до готовности, автономный режим — опора цикла Artel
+  origin_note: Цели, работа до готовности, автономный режим — опора цикла Arteliq
   studied: code
   metrics:
     stars: 21522
@@ -1170,7 +1170,7 @@ harnesses:
     what: что наблюдалось и чего не удалось установить
     artel: partial
     ref: W1-evidence-window
-    note: в Artel доказательства — вывод команд и проверок
+    note: в Arteliq доказательства — вывод команд и проверок
   - name: Демо-сессии на приватном виртуальном экране
     what: Xvfb, рабочий стол владельца не трогается
     artel: planned

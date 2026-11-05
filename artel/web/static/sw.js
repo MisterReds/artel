@@ -1,4 +1,4 @@
-/* Artel service worker: caches only the app shell (page, fonts, icons) so the installed app opens fast and
+/* Arteliq service worker: caches only the app shell (page, fonts, icons) so the installed app opens fast and
    shows its frame offline. Live data is never cached: /api/* (JSON and the SSE event stream), the login
    endpoints and any non-GET request always go straight to the network. */
 const SHELL = 'artel-shell-v4';
@@ -6,7 +6,6 @@ const ASSETS = [
   '/',
   '/manifest.webmanifest',
   '/static/favicon.svg',
-  '/static/mark.svg',
   '/static/desk.js',
   '/static/fonts/fonts.css',
   '/static/fonts/Onest-cyrillic-dea2c9.woff2',

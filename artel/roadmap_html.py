@@ -1,5 +1,5 @@
-"""docs/roadmap.html — the roadmap as a page: which harnesses matter and why, what Artel took from each, what is
-planned, where every item comes from. Generated from roadmap.yaml + harnesses.yaml by `artel roadmap html`."""
+"""docs/roadmap.html — the roadmap as a page: which harnesses matter and why, what Arteliq took from each, what is
+planned, where every item comes from. Generated from roadmap.yaml + harnesses.yaml by `arteliq roadmap html`."""
 
 from __future__ import annotations
 
@@ -130,11 +130,11 @@ def render_html(repo: Path, today: str | None = None) -> str:
     n_major = sum(1 for s, _ in rows if s["tier"] == "major")
 
     out = ['<!doctype html><html lang="ru"><head><meta charset="utf-8">'
-           '<meta name="viewport" content="width=device-width,initial-scale=1"><title>Дорожная карта Artel</title>'
+           '<meta name="viewport" content="width=device-width,initial-scale=1"><title>Дорожная карта Arteliq</title>'
            '<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="stylesheet" '
            'href="https://fonts.googleapis.com/css2?family=Onest:wght@400;600&family=Unbounded:wght@600'
            '&family=JetBrains+Mono&display=swap">', f"<style>{CSS}</style></head><body>",
-           f'<header><div class="wrap">{MARK}<div><h1>Дорожная карта Artel</h1><div class="sub">харнессы, от которых '
+           f'<header><div class="wrap">{MARK}<div><h1>Дорожная карта Arteliq</h1><div class="sub">харнессы, от которых '
            f'берём, и что внедряем · снимок метрик {E(snap)} · сгенерировано из roadmap.yaml и harnesses.yaml</div></div>'
            '<nav><a href="#summary">Итог</a><a href="#criteria">Критерии</a><a href="#rating">Рейтинг</a>'
            '<a href="#coverage">Что взято</a><a href="#plan">План</a></nav></div></header><main class="wrap">']
@@ -145,7 +145,8 @@ def render_html(repo: Path, today: str | None = None) -> str:
 
     out.append('<div class="kpis">'
                f'<div class="kpi"><b>{len(rows)}</b><span>харнессов оценено ({n_core} в ядре, {n_major} значимых)</span></div>'
-               f'<div class="kpi"><b>{pct(cc, "done")}%</b><span>механизмов ядра уже есть в Artel ({cc["done"]} из {sum(cc.values())})</span></div>'
+               f'<div class="kpi"><b>{pct(cc, "done")}%</b><span>механизмов ядра уже есть в Arteliq '
+               f'({cc["done"]} из {sum(cc.values())})</span></div>'
                f'<div class="kpi"><b>{pct(cc, "done", "partial")}%</b><span>есть хотя бы частично</span></div>'
                f'<div class="kpi"><b>{cc["gap"] + cc["planned"]}</b><span>механизмов ядра в плане или пробелы</span></div>'
                f'<div class="kpi"><b>{done_items}/{len(rm.items)}</b><span>пунктов дорожной карты готово</span></div>'
@@ -177,7 +178,7 @@ def render_html(repo: Path, today: str | None = None) -> str:
     out.append('<h2 id="rating">Рейтинг харнессов</h2><div class="legend">'
                + "".join(f'<span style="--sw:{PART_COLORS[k]}">{E(lbl)}</span>' for k, _, lbl, _ in SIGNIFICANCE)
                + '</div><div class="tbl"><table><tr><th>#</th><th>Харнесс</th><th class="n">Индекс</th>'
-                 '<th>Из чего</th><th class="n">★</th><th>Код</th><th>Взято в Artel</th></tr>')
+                 '<th>Из чего</th><th class="n">★</th><th>Код</th><th>Взято в Arteliq</th></tr>')
     leaders = {}
     for s, h in rows:
         leaders.setdefault(h["class"], h["repo"])
@@ -200,7 +201,8 @@ def render_html(repo: Path, today: str | None = None) -> str:
 
     # --- coverage cards -----------------------------------------------------------------------------------------
     out.append('<h2 id="coverage">Что взято из главных харнессов</h2><p class="sub">Ядро и значимые харнессы: их '
-               'основные механизмы и есть ли они в Artel. Ссылка ведёт на пункт плана, который механизм закрывает.</p>'
+               'основные механизмы и есть ли они в Arteliq. Ссылка ведёт на пункт плана, который механизм закрывает.'
+               '</p>'
                '<div class="cards">')
     for s, h in rows:
         if s["tier"] == "niche" or not h.get("features"):
@@ -223,7 +225,7 @@ def render_html(repo: Path, today: str | None = None) -> str:
     # --- plan ---------------------------------------------------------------------------------------------------
     out.append('<h2 id="plan">План: откуда взято и что будет внедрено</h2>'
                '<p class="sub">Порядок исполнения: сначала пункты с приоритетом «ядро» (механизмы главных харнессов, '
-               'которых в Artel нет), затем по волнам. Режим <b>evolve</b> реализует сам Artel (ветка, тесты, '
+               'которых в Arteliq нет), затем по волнам. Режим <b>evolve</b> реализует сам Arteliq (ветка, тесты, '
                'бенчмарк, слияние), <b>design</b> — делается вручную.</p>'
                '<div class="filters"><button data-f="all" aria-pressed="true">Все</button>'
                '<button data-f="core" aria-pressed="false">Приоритет «ядро»</button>'
@@ -256,8 +258,8 @@ def render_html(repo: Path, today: str | None = None) -> str:
             acc = it.get("acceptance") or []
             plan = E(str(it.get("plan") or it.get("title"))).strip()
             result = f'<p style="margin-top:6px"><b>Итог:</b> {E(str(it["result"]))}</p>' if it.get("result") else ""
-            target = f'<p class="sub" style="margin-top:6px">Где в Artel: <code>{E(", ".join(it.get("target") or []))}</code></p>' \
-                if it.get("target") else ""
+            target = (f'<p class="sub" style="margin-top:6px">Где в Arteliq: '
+                      f'<code>{E(", ".join(it.get("target") or []))}</code></p>') if it.get("target") else ""
             cl = closes.get(it["id"], [])
             closes_txt = ('<div class="closes">Закрывает: ' + "; ".join(
                 f'{E(hn)} — {E(fn)}' for hn, fn, _ in cl[:8]) + (" …" if len(cl) > 8 else "") + "</div>") if cl else ""
@@ -271,7 +273,7 @@ def render_html(repo: Path, today: str | None = None) -> str:
                 + (f'<p class="sub" style="margin-top:4px">Готово, когда: {E("; ".join(map(str, acc)))}</p>' if acc else "")
                 + f"{target}{result}</div></div>{closes_txt}</div>")
         out.append("</div>")
-    out.append(f'</main><footer class="wrap">Artel · страница генерируется командой <code>artel roadmap html</code> '
-               f'из <code>roadmap.yaml</code> и <code>harnesses.yaml</code>; метрики харнессов — снимок {E(snap)}.</footer>'
+    out.append(f'</main><footer class="wrap">Arteliq · страница генерируется командой '
+               f'<code>arteliq roadmap html</code> из <code>roadmap.yaml</code> и <code>harnesses.yaml</code>; метрики харнессов — снимок {E(snap)}.</footer>'
                f"<script>{JS}</script></body></html>")
     return "\n".join(out)

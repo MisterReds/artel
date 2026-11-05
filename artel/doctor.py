@@ -3,11 +3,11 @@
 `diagnose()` collects the facts a person would otherwise dig out by hand — the error, the project's recent
 failures and the task's history, provider and sandbox state, the embeddings server log, proxy settings — matches
 them against known causes, and gives them to a read-only `doctor` agent on an available runtime (preferably not the
-one that is failing). The agent may read Artel's logs and the project's files and must answer with
+one that is failing). The agent may read Arteliq's logs and the project's files and must answer with
 `diagnosis_report`: the cause, the evidence, who fixes it and the steps. With no model available, or when the
 model does not answer, the known-cause rules answer on their own. Reports are kept in ARTEL_HOME/doctor/.
 
-Used by: the "Почему?" buttons in the dashboard, `artel why`, and automatically when a task stops for a person.
+Used by: the "Почему?" buttons in the dashboard, `arteliq why`, and automatically when a task stops for a person.
 """
 
 from __future__ import annotations
@@ -22,11 +22,11 @@ import time
 import uuid
 from pathlib import Path
 
-PROMPT = """You are Artel's diagnostician. Something in Artel does not work and a person wants to know why, in plain
-Russian, and what to do. You get the error and the facts Artel collected; you may read the listed log files and
+PROMPT = """You are Arteliq's diagnostician. Something in Arteliq does not work and a person wants to know why, in plain
+Russian, and what to do. You get the error and the facts Arteliq collected; you may read the listed log files and
 project files (read-only) to check. Rules:
 - Name the actual cause, not the symptom. Quote the line of evidence that proves it.
-- Say who fixes it: "artel" (a bug or setting inside Artel), "owner" (something on the person's machine or
+- Say who fixes it: "artel" (a bug or setting inside Arteliq), "owner" (something on the person's machine or
   account), or "provider" (the model service: limits, outage).
 - Give concrete steps the person can follow now (commands, buttons in the dashboard), shortest path first.
 - If the facts are not enough, say what exactly is unknown and how to find out; never invent a cause.
@@ -38,18 +38,18 @@ KNOWN = [
     (r"bwrap: .*(uid map|loopback|RTM_NEWADDR|Operation not permitted|Permission denied)|setting up uid map",
      "Песочница Codex (bubblewrap) не может запуститься на этой машине: система запрещает пользовательские "
      "пространства имён или настройку сети в них.", "owner",
-     ["Обновите Artel: он сам переключит Codex в режим без песочницы, права и политика команд Artel продолжат действовать.",
+     ["Обновите Arteliq: он сам переключит Codex в режим без песочницы, права и политика команд Arteliq продолжат действовать.",
       "Чтобы вернуть песочницу (Ubuntu 24.04+): sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0"]),
-    (r"no module named pytest", "В окружении Artel нет pytest, а проверки обновления его используют.", "owner",
-     ["~/.artel/venv/bin/pip install pytest", "затем artel update"]),
+    (r"no module named pytest", "В окружении Arteliq нет pytest, а проверки обновления его используют.", "owner",
+     ["~/.artel/venv/bin/pip install pytest", "затем arteliq update"]),
     (r"llama-server не ответил|llama-server завершился", "Локальный сервер эмбеддингов не запустился или не ответил.",
      "owner", ["Посмотрите ~/.artel/tools/models/llama-server.log — последние строки называют причину.",
                "«Подключения» → «Поиск по смыслу» → «Удалить» и «Установить» заново; без модели поиск идёт по словам."]),
     (r"usage limit|session limit|rate limit|hit your .*limit|\b429\b", "Подписка упёрлась в лимит провайдера.", "provider",
-     ["Artel переключит работу на другой подключённый рантайм, если он есть («Подключения»).",
+     ["Arteliq переключит работу на другой подключённый рантайм, если он есть («Подключения»).",
       "Или дождитесь сброса лимита — время сброса указано в ошибке."]),
-    (r"no terminal tool|without a terminal tool", "Агент закончил работу, не вызвав завершающий инструмент Artel "
-     "(task_submit, audit_verdict…). Чаще всего инструменты Artel не подключились к CLI (мост MCP), реже модель не "
+    (r"no terminal tool|without a terminal tool", "Агент закончил работу, не вызвав завершающий инструмент Arteliq "
+     "(task_submit, audit_verdict…). Чаще всего инструменты Arteliq не подключились к CLI (мост MCP), реже модель не "
      "следовала инструкции.", "artel",
      ["Откройте ход работы агента: если он пишет, что инструмента mcp__artel__… нет, мост MCP не подключился — "
       "отправьте отчёт разработчикам («Сбои» → «Отправить»).",
@@ -68,7 +68,7 @@ KNOWN = [
 PROXY_SYMPTOM = r"127\.0\.0\.1|localhost|не ответил|connection refused|urlopen error|timed out|ProxyError"
 PROXY_HINT = {"cause": "Задан системный HTTP-прокси, а ошибка похожа на обрыв локального соединения: запросы к 127.0.0.1 "
                        "могли уходить через прокси.", "who": "owner",
-              "steps": ["Обновите Artel: соединения с 127.0.0.1 идут напрямую.",
+              "steps": ["Обновите Arteliq: соединения с 127.0.0.1 идут напрямую.",
                         "Либо добавьте в окружение: export no_proxy=127.0.0.1,localhost"]}
 
 
@@ -254,7 +254,7 @@ class Jobs:
 
 
 def format_report(rep: dict) -> str:
-    who = {"artel": "Artel", "owner": "владелец (на этой машине или в аккаунте)", "provider": "провайдер модели"}.get(
+    who = {"artel": "Arteliq", "owner": "владелец (на этой машине или в аккаунте)", "provider": "провайдер модели"}.get(
         rep.get("who"), "неизвестно")
     steps = "\n".join(f"{i}. {s}" for i, s in enumerate(rep.get("steps") or [], 1))
     by = "по правилам" if rep.get("by") == "rules" else f"модель: {rep.get('by')}"

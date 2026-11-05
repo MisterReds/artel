@@ -21,7 +21,7 @@ mcp_servers:
 - `allow` lists the roles that see the server; without it no role does.
 - Native runtime: tools appear as `mcp__<server>__<tool>`, are logged (`mcp/call`) and checked against the command
   policy (the rule prefix is matched against `mcp__server__tool {json args}`).
-- Claude Code and Codex get the same servers in their own MCP config next to Artel's bridge.
+- Claude Code and Codex get the same servers in their own MCP config next to Arteliq's bridge.
 - Playwright (preset, or any `@playwright/mcp` command) is always run with `--headless`; `--headed`,
   `--no-headless` and `--headless=false` are dropped, so a browser never opens on the owner's screen.
 - A server that fails to start is skipped (see `kernel.failed["mcp:<name>"]`), never fatal.
@@ -33,7 +33,7 @@ REA (github.com/morluto/rea, MIT) подключается как **навык +
 загружается, только когда задача его требует, а сам REA вызывается командой с ограничением вывода.
 
 ```sh
-artel skills import morluto/rea --include reverse-engineer-anything   # навык в библиотеку Artel
+arteliq skills import morluto/rea --include reverse-engineer-anything   # навык в библиотеку Arteliq
 ```
 
 Воркеру нужен Node.js 22+ (REA запускается через `npx -y rea-agents@6.5.0 …`). Сразу работают статический разбор

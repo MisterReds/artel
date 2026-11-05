@@ -1,6 +1,6 @@
 # Command policy (`policy.yaml`)
 
-Before a command runs, Artel checks it against a policy: the `bash` tool, the Codex runtime and the Claude Code
+Before a command runs, Arteliq checks it against a policy: the `bash` tool, the Codex runtime and the Claude Code
 runtime all consult it. Design adapted from OpenAI Codex `codex-rs/execpolicy` (Apache-2.0).
 
 ## Files

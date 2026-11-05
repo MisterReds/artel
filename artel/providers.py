@@ -1,4 +1,4 @@
-"""What Artel can talk to, and how it is signed in — the data behind the dashboard's "Подключения" page.
+"""What Arteliq can talk to, and how it is signed in — the data behind the dashboard's "Подключения" page.
 
 - Codex (ChatGPT subscription): device-code login driven through the official CLI (`codex login --device-auth`);
   the code and link are shown in the dashboard, the CLI stores and refreshes the tokens itself.
@@ -94,7 +94,7 @@ class CodexLogin:
 class ClaudeLogin:
     """Claude subscription login through the official CLI (`claude auth login --claudeai`): it prints an authorize
     link; after signing in, the page shows a code that the person pastes into the dashboard, which hands it to the
-    waiting CLI on stdin. The CLI stores and refreshes the tokens; Artel never sees them."""
+    waiting CLI on stdin. The CLI stores and refreshes the tokens; Arteliq never sees them."""
 
     def __init__(self, config: dict):
         self.config = config
@@ -209,7 +209,7 @@ def _codex_sandbox(cfg: dict) -> str:
     return {"sandbox": "песочница Codex работает",
             "sandbox+network": "песочница Codex работает (с доступом к сети)",
             "none": "песочница Codex на этой машине не запускается — команды идут без неё, действуют права и политика "
-                    "команд Artel" + (f" ({sandbox_note(cfg)[-160:]})" if sandbox_note(cfg) else "")}.get(mode, mode)
+                    "команд Arteliq" + (f" ({sandbox_note(cfg)[-160:]})" if sandbox_note(cfg) else "")}.get(mode, mode)
 
 
 def logout_codex(config: dict) -> dict:
@@ -238,7 +238,7 @@ def claude_code_status(config: dict) -> dict:
     return {"installed": True, "by_artel": installed_by_artel("claude"), "version": ver.splitlines()[-1] if ver else "",
             "logged_in": bool(st.get("loggedIn")),
             "method": method, "model": cc.get("model", "sonnet"),
-            "detail": "вход: кнопка «Войти» ниже или `artel providers login claude`"}
+            "detail": "вход: кнопка «Войти» ниже или `arteliq providers login claude`"}
 
 
 def runtimes(config: dict) -> list[str]:

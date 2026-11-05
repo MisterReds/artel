@@ -1,4 +1,4 @@
-"""Self-update: an installed Artel pulls the improvements made since it was installed.
+"""Self-update: an installed Arteliq pulls the improvements made since it was installed.
 
 The installation is a git clone. `status` fetches the update channel (remote + branch, default origin/master,
 where evolution merges only tested changes) and reports what is new: commits, roadmap items that became done,
@@ -180,7 +180,7 @@ class Updater:
 
     @staticmethod
     def _ensure_pytest() -> bool:
-        """The checks need pytest; installations made by the installer do not have it. Install it into Artel's
+        """The checks need pytest; installations made by the installer do not have it. Install it into Arteliq's
         own environment on first use (small, no other effect); False when that is impossible (e.g. offline)."""
         import importlib.util
 

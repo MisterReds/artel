@@ -79,7 +79,7 @@ def _toml(value) -> str:
 def sandbox_mode(cc: dict, refresh: bool = False, config: dict | None = None) -> str:
     """How Codex's own sandbox can run on this machine, probed once with `codex sandbox -- true`:
     "sandbox" (as configured), "sandbox+network" (works only with network on — e.g. bubblewrap may not set up a
-    loopback in a new network namespace), or "none" (unusable; Artel's grants and command policy still apply)."""
+    loopback in a new network namespace), or "none" (unusable; Arteliq's grants and command policy still apply)."""
     from ...tools import resolve
 
     key = (cc.get("binary"), cc.get("home"))
@@ -140,10 +140,11 @@ def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url
             "-c", f"mcp_servers.artel.args={_toml([PROXY_SCRIPT, bridge_url, bridge_token])}",
             "-c", f"mcp_servers.artel.env={{PYTHONPATH={_toml(pkg_root)}}}",
             "-c", "mcp_servers.artel.tool_timeout_sec=900",
-            # Autonomous: Codex never stops to ask. Its own commands stay inside the sandbox below and Artel's command
-            # policy; Artel's coordination tools run without a per-call approval, or the planner cannot submit its plan.
+            # Autonomous: Codex never stops to ask. Its own commands stay inside the sandbox below and Arteliq's command
+            # policy; Arteliq's coordination tools run without a per-call approval, or the planner cannot submit
+            # its plan.
             "-c", 'approval_policy="never"', "-c", 'mcp_servers.artel.default_tools_approval_mode="approve"']
-    for name, srv in (mcp_servers or {}).items():  # external MCP servers (mcp_client.cli_config), next to Artel's
+    for name, srv in (mcp_servers or {}).items():  # external MCP servers (mcp_client.cli_config), next to Arteliq's
         if name == "artel":
             continue
         pre = f"mcp_servers.{name}"

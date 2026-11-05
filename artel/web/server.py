@@ -1,7 +1,7 @@
 """Dashboard server (stdlib only). Read APIs + SSE event stream + a few control actions.
 
 Binds to 127.0.0.1 by default: the control endpoints start agents that execute
-shell commands. Remote mode (`artel web --remote`, docs/REMOTE.md) binds beyond localhost and then every page,
+shell commands. Remote mode (`arteliq web --remote`, docs/REMOTE.md) binds beyond localhost and then every page,
 /api/* call and event stream needs a login session (see auth.py); put it behind HTTPS.
 """
 
@@ -936,7 +936,7 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
     else:
         host = host or "127.0.0.1"
         if not _loopback(host):
-            raise SystemExit(f"artel web: {host} is beyond localhost; that needs login - use `artel web --remote`"
+            raise SystemExit(f"arteliq web: {host} is beyond localhost; that needs login - use `arteliq web --remote`"
                              " (see docs/REMOTE.md)")
     runner = Runner(config)
     runner.start_update_loop()
@@ -977,14 +977,14 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
                   f"  {token}", flush=True)
         else:
             print("Вход по ранее выпущенному токену. Новый токен (старые сессии закроются): "
-                  "artel web token --new", flush=True)
+                  "arteliq web token --new", flush=True)
         print("Без HTTPS токен и сессия идут по сети открытым текстом - см. docs/REMOTE.md", flush=True)
     try:
         httpd.serve_forever()
     except KeyboardInterrupt:  # Ctrl+C is how a person stops the dashboard: say so, no traceback
         live = sorted(getattr(runner, "active", {}) or {})
-        print("\nArtel остановлен." + (f" Незавершённые проекты ({len(live)}) продолжатся кнопкой «Продолжить» "
-                                       "после следующего `artel web`." if live else ""), flush=True)
+        print("\nArteliq остановлен." + (f" Незавершённые проекты ({len(live)}) продолжатся кнопкой «Продолжить» "
+                                       "после следующего `arteliq web`." if live else ""), flush=True)
     finally:
         httpd.server_close()
         runner.results.stop_all()

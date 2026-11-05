@@ -118,7 +118,7 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "runtime": "auto",                   # auto | native | claude_code | codex (auto: whatever is connected)
     "runtime_by_role": {},               # e.g. {reviewer: native}
     "evolve": {"runtimes": [],           # e.g. [claude_code, codex]: on a limit evolution moves to the next one
-               "auto_resume": True},     # artel web resumes a generation whose process died (evolve/supervisor.py)
+               "auto_resume": True},     # arteliq web resumes a generation whose process died (evolve/supervisor.py)
     "claude_code": {"model": "sonnet", "permission_mode": "bypassPermissions", "max_resumes": 3,
                     "timeout_s": 2400},
     "web": {                             # dashboard; remote mode = beyond localhost, login required (docs/REMOTE.md)

@@ -8,7 +8,7 @@
       up with the owner's consent; never raw sudo), brew on macOS, winget (user scope) on Windows.
 
 Every install is a decision event (``provision/install``: tool, method, version, path, why) and is recorded in
-ARTEL_HOME/tools/installed.json, so ``remove`` can undo what Artel put there. Failures are ``provision/failed``.
+ARTEL_HOME/tools/installed.json, so ``remove`` can undo what Arteliq put there. Failures are ``provision/failed``.
 """
 
 from __future__ import annotations
@@ -302,11 +302,11 @@ def ensure(tool: str, why: str = "", log: Log = None, cfg: dict | None = None) -
 
 
 def remove(tool: str, log: Log = None) -> dict:
-    """Undo an install Artel made. System packages are left to the owner (the wrapper has no removals)."""
+    """Undo an install Arteliq made. System packages are left to the owner (the wrapper has no removals)."""
     data = installed()
     rec = data.get(tool)
     if not rec:
-        return {"ok": False, "error": f"{tool} is not installed by Artel; remove it the way it was installed"}
+        return {"ok": False, "error": f"{tool} is not installed by Arteliq; remove it the way it was installed"}
     method, path = rec.get("method"), rec.get("path") or ""
     if method == "download":
         if Path(path).parent == tools.bin_dir():
@@ -319,7 +319,7 @@ def remove(tool: str, log: Log = None) -> dict:
         if Path(path).exists() and conda_env() in Path(path).parents:
             Path(path).unlink(missing_ok=True)
     else:
-        return {"ok": False, "error": f"{tool} was installed system-wide by {method}; Artel has no way to remove system "
+        return {"ok": False, "error": f"{tool} was installed system-wide by {method}; Arteliq has no way to remove system "
                                       f"packages — run `{method} remove` yourself"}
     data.pop(tool, None)
     _save(data)
@@ -406,7 +406,7 @@ def _skippable(seg: str) -> bool:
 
 
 def known_tools() -> set:
-    """Names Artel knows how to install: the pinned catalogue (names and binaries) and the package map. Nothing else
+    """Names Arteliq knows how to install: the pinned catalogue (names and binaries) and the package map. Nothing else
     is ever installed, whoever asks."""
     known = set(packages())
     for name, e in catalogue().items():
@@ -426,7 +426,7 @@ def leading_absent(cmd, path: str) -> bool:
 
 
 def prepare_checks(checks, cfg: dict | None = None, log: Log = None) -> list:
-    """Before the gates run: make the missing first programs available. Only names Artel knows how to install (the
+    """Before the gates run: make the missing first programs available. Only names Arteliq knows how to install (the
     catalogue and the package map) are installed; anything else is returned as missing, never guessed at."""
     known = known_tools()
     missing = []

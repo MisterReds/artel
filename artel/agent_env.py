@@ -1,6 +1,6 @@
 """The environment an agent's shell and the agent CLIs start with: an allowlist, never all of ``os.environ``.
 
-A prompt-injected agent can run ``env``; Artel's own secrets (ARTEL_TELEGRAM_TOKEN, GITHUB_TOKEN, cloud keys ...)
+A prompt-injected agent can run ``env``; Arteliq's own secrets (ARTEL_TELEGRAM_TOKEN, GITHUB_TOKEN, cloud keys ...)
 must not be in there. Only what the child needs is passed, plus the runtime's own auth variables and the names a
 person lists in config ``agent_env: {pass: [...]}``.
 """
@@ -17,7 +17,7 @@ COMMON = {"PATH", "HOME", "USER", "LOGNAME", "SHELL", "LANG", "LANGUAGE", "TERM"
           "PROCESSOR_ARCHITECTURE", "NUMBER_OF_PROCESSORS", "OS", "COMPUTERNAME", "CURL_CA_BUNDLE", "GIT_SSL_CAINFO",
           "SSL_CERT_FILE", "SSL_CERT_DIR", "REQUESTS_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "VIRTUAL_ENV",
           "PYTHONIOENCODING", "ARTEL_SHARED", "ARTEL_WORKSPACE",
-          "ARTEL_HOME",  # the policy hook and Artel's MCP proxy find policy.yaml through it (a path, not a secret)
+          "ARTEL_HOME",  # the policy hook and Arteliq's MCP proxy find policy.yaml through it (a path, not a secret)
           "HTTP_PROXY", "HTTPS_PROXY", "NO_PROXY", "ALL_PROXY", "http_proxy", "https_proxy", "no_proxy", "all_proxy"}
 # package-manager settings MCP presets (npx, uvx) need behind a private registry or CA; never their auth tokens
 COMMON_RE = re.compile(r"^(LC_.*|XDG_.*|(?i:npm_config_(registry|proxy|https_proxy|cafile|strict_ssl|cache|prefix|userconfig))"
@@ -50,7 +50,7 @@ def agent_env(runtime: str, extra: dict | None = None, config: dict | None = Non
         env.update({k: v for k, v in src.items() if k.upper() in up})
     env.update(extra or {})
     env = with_python_shim(with_loopback_bypass(env))
-    if env.get("PATH"):  # PATH order: Artel's tools/bin, the python shim, the rest, its conda environment last
+    if env.get("PATH"):  # PATH order: Arteliq's tools/bin, the python shim, the rest, its conda environment last
         from .tools import with_tool_dirs
 
         env["PATH"] = with_tool_dirs(env["PATH"])

@@ -1,8 +1,8 @@
-# Дорожная карта Artel
+# Дорожная карта Arteliq
 
-Сгенерировано из `roadmap.yaml` командой `artel roadmap render`. Правки — только в yaml. Что уже взято и откуда — [ADOPTED.md](ADOPTED.md); опоры — [ARCHITECTURE.md](ARCHITECTURE.md).
+Сгенерировано из `roadmap.yaml` командой `arteliq roadmap render`. Правки — только в yaml. Что уже взято и откуда — [ADOPTED.md](ADOPTED.md); опоры — [ARCHITECTURE.md](ARCHITECTURE.md).
 
-Режимы: **pillar** — опора, контракт закреплён `tests/test_invariants.py`; **design** — структурное изменение, делается вручную; **evolve** — реализует сам Artel (`artel evolve --roadmap`).
+Режимы: **pillar** — опора, контракт закреплён `tests/test_invariants.py`; **design** — структурное изменение, делается вручную; **evolve** — реализует сам Arteliq (`arteliq evolve --roadmap`).
 
 ## Опоры
 
@@ -20,18 +20,18 @@
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
-| D-self-update | Self-update from the dashboard and CLI, verified by the pillar tests before switching, rollback | Artel (`MisterReds/artel`) | design | готово |
-| D-brand | Brand identity: A-frame mark, copper palette, bundled fonts, role icons, terminal colours | Artel (`MisterReds/artel`) | design | готово |
+| D-self-update | Self-update from the dashboard and CLI, verified by the pillar tests before switching, rollback | Arteliq (`MisterReds/arteliq`) | design | готово |
+| D-brand | Brand identity: A-frame mark, copper palette, bundled fonts, role icons, terminal colours | Arteliq (`MisterReds/arteliq`) | design | готово |
 | D-codex-runtime | Codex runtime (ChatGPT subscription) with device-code login | Codex / Hermes Agent (`openai/codex`) | design | готово |
-| D-providers | Провайдеры page: subscriptions, keys (set/unset only), local model, per-role routing, CLIs installed on demand without Node.js | Artel (`MisterReds/artel`) | design | готово |
-| D-installers | Installers for Linux/macOS and Windows that install only what Artel needs | Artel (`MisterReds/artel`) | design | готово |
-| D-failure-classes | No crash, no endless loop: auto executor, setup errors to a person, limits wait, replan cap | Artel (`MisterReds/artel`) | design | готово |
-| D-evolution-ops | Evolution operations: adopt mode for roadmap items, resume after restart, pause on provider limits, journal on GitHub | Artel (`MisterReds/artel`) | design | готово |
-| D-provider-failover | Provider failover on limits, disabling runtimes, model lists from the CLIs, Claude and Codex sign-in from the dashboard, live agents panel | Artel (`MisterReds/artel`) | design | готово |
+| D-providers | Провайдеры page: subscriptions, keys (set/unset only), local model, per-role routing, CLIs installed on demand without Node.js | Arteliq (`MisterReds/arteliq`) | design | готово |
+| D-installers | Installers for Linux/macOS and Windows that install only what Arteliq needs | Arteliq (`MisterReds/arteliq`) | design | готово |
+| D-failure-classes | No crash, no endless loop: auto executor, setup errors to a person, limits wait, replan cap | Arteliq (`MisterReds/arteliq`) | design | готово |
+| D-evolution-ops | Evolution operations: adopt mode for roadmap items, resume after restart, pause on provider limits, journal on GitHub | Arteliq (`MisterReds/arteliq`) | design | готово |
+| D-provider-failover | Provider failover on limits, disabling runtimes, model lists from the CLIs, Claude and Codex sign-in from the dashboard, live agents panel | Arteliq (`MisterReds/arteliq`) | design | готово |
 | D-semantic-retrieval | Meaning-based search, local and private: EmbeddingGemma 2 via llama.cpp, hybrid with BM25, skills by relevance, `search` tool | Google EmbeddingGemma 2 (`google/embeddinggemma-2`) | design | готово |
 | D-multimodal-retrieval | Multimodal memory: images, audio and video in deliverables and across projects; fully local RAG with Gemma 4 | Google EmbeddingGemma 2 (`google/embeddinggemma-2`) | design | план |
-| D-doctor | Diagnostician: when something fails, a read-only worker on an available model (not the failing one) explains the cause and the steps; rules without a model; automatic note in tasks that stop for a person; 'Почему?' buttons and artel why | Artel (`MisterReds/artel`) | design | готово |
-| D-failure-reports | Failure reports: every failure is a redacted text report with the diagnosis — to the owner's Telegram, to the developers as a GitHub issue (one per failure, repeats as comments) | Artel (`MisterReds/artel`) | design | готово |
+| D-doctor | Diagnostician: when something fails, a read-only worker on an available model (not the failing one) explains the cause and the steps; rules without a model; automatic note in tasks that stop for a person; 'Почему?' buttons and arteliq why | Arteliq (`MisterReds/arteliq`) | design | готово |
+| D-failure-reports | Failure reports: every failure is a redacted text report with the diagnosis — to the owner's Telegram, to the developers as a GitHub issue (one per failure, repeats as comments) | Arteliq (`MisterReds/arteliq`) | design | готово |
 
 ## Волна 1 — 8/8 готово
 
@@ -57,18 +57,18 @@
 | W2-fs-grants | Explicit read/write grants per path | OpenScience (`synthetic-sciences/openscience`) | evolve | готово — evolve/gen-5 (evolve/g5-2-w2-fs-grants-explicit-read-write) |
 | W2-cost-down | Bring cost back down — wave 1 raised the benchmark cost from $4.57 to $5.99 (+31%) | Claude Code / Codex (`anthropics/claude-code`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
 | W2-ci | CI on Linux, macOS and Windows — tests, installer and a scripted first run on every push | OpenHands / Codex (`openai/codex`) | design | частично — .github/workflows/ci.yml: ubuntu/macos/windows x Python 3.10/3.13 run the full suite, install.sh / install.ps1 into a temporary home cloning the checkout, then scripts/ci_smoke.py (scripted first run ends done, dashboard answers /api/ready). Code made portable (UTF-8 I/O, POSIX shell via Git Bash on Windows, process-tree stop, POSIX paths in journal keys, restart without execv on Windows). Open: a green run on macOS/Windows is not yet observed; blocking merges on CI needs branch protection, and the evolution publish gate is not wired to it. |
-| W2-remote-and-notify | Use from the phone — authenticated remote dashboard and notifications (Telegram / webhook) | Hermes Agent / OpenClaw (`NousResearch/hermes-agent`) | design | готово — Telegram bot (control, answers, notifications, one-time pairing) and `artel web --remote`: token login (scrypt hash only, rotatable), server-side HttpOnly SameSite=Strict sessions, per-IP rate limit, HTTPS recipes (Caddy, Tailscale) with an insecure-connection banner; installable PWA (manifest, icons, shell-only service worker) |
-| W2-timezone | User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin | Artel (`MisterReds/artel`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
-| W2-evolve-two-subscriptions | Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it | Artel (`MisterReds/artel`) | design | готово — evolve.runtimes [claude_code, codex]: a limit moves implementation and benchmark to the next runtime, pause only when all are limited; baselines per (commit, runtime) (tests/test_evolve_runtimes.py) |
+| W2-remote-and-notify | Use from the phone — authenticated remote dashboard and notifications (Telegram / webhook) | Hermes Agent / OpenClaw (`NousResearch/hermes-agent`) | design | готово — Telegram bot (control, answers, notifications, one-time pairing) and `arteliq web --remote`: token login (scrypt hash only, rotatable), server-side HttpOnly SameSite=Strict sessions, per-IP rate limit, HTTPS recipes (Caddy, Tailscale) with an insecure-connection banner; installable PWA (manifest, icons, shell-only service worker) |
+| W2-timezone | User time zone for every time shown (dashboard, CLI, notifications), e.g. Asia/Sakhalin | Arteliq (`MisterReds/arteliq`) | evolve | готово — evolve/gen-4 (merged by hand after a conflict with the System One change) |
+| W2-evolve-two-subscriptions | Evolution across two subscriptions (Claude Code and Codex) so one provider's limit does not stop it | Arteliq (`MisterReds/arteliq`) | design | готово — evolve.runtimes [claude_code, codex]: a limit moves implementation and benchmark to the next runtime, pause only when all are limited; baselines per (commit, runtime) (tests/test_evolve_runtimes.py) |
 
 ## Волна 3 — 6/31 готово
 
 | Пункт | Что | Откуда | Режим | Статус |
 |---|---|---|---|---|
-| W3-acp-runtime | ACP runtime plugin — any ACP agent (Claude Code, Codex, Gemini, OpenHands) as a worker | OpenHands (`OpenHands/OpenHands`) | design | готово — feat/acp-runtime — runtime `acp` (artel/runtimes/acp.py): ACP v1 client over stdio with presets chosen per role (`acp:gemini`, `acp:claude`…); Artel's MCP proxy passed in session/new; session/update mirrored to the event log; permissions and fs/* by role policy; resume in the same session; tests with a stand-in ACP agent; handshake checked against the real Gemini CLI and the Claude ACP adapter. |
-| W3-dsh-runtime | DeepSeek Harness as a runtime plugin, so dsh plugins work inside Artel workers | DeepSeek Harness (`deepseek-ai/deepseek-harness`) | design | готово — Runtime `dsh` (artel/runtimes/dsh.py) on the official Python SDK; dsh plugins (profile packages and patch layers) load unchanged, Artel tools over dsh-mcp-client; verified for real (boot, MCP tool discovery, missing-key classification, no key used) and end to end against a stand-in SDK (tests/test_dsh.py) |
+| W3-acp-runtime | ACP runtime plugin — any ACP agent (Claude Code, Codex, Gemini, OpenHands) as a worker | OpenHands (`OpenHands/OpenHands`) | design | готово — feat/acp-runtime — runtime `acp` (artel/runtimes/acp.py): ACP v1 client over stdio with presets chosen per role (`acp:gemini`, `acp:claude`…); Arteliq's MCP proxy passed in session/new; session/update mirrored to the event log; permissions and fs/* by role policy; resume in the same session; tests with a stand-in ACP agent; handshake checked against the real Gemini CLI and the Claude ACP adapter. |
+| W3-dsh-runtime | DeepSeek Harness as a runtime plugin, so dsh plugins work inside Arteliq workers | DeepSeek Harness (`deepseek-ai/deepseek-harness`) | design | готово — Runtime `dsh` (artel/runtimes/dsh.py) on the official Python SDK; dsh plugins (profile packages and patch layers) load unchanged, Arteliq tools over dsh-mcp-client; verified for real (boot, MCP tool discovery, missing-key classification, no key used) and end to end against a stand-in SDK (tests/test_dsh.py) |
 | W3-durable | Durable turns and idempotent run receipts — resume mid-turn after a crash | Pi / OpenScience (`badlogic/pi-mono`) | design | план |
-| W3-plugin-packages | Plugin packages (install from git/pip), lifecycle events before_agent_start / session_shutdown | Pi (`badlogic/pi-mono`) | design | готово — feat/plugin-packages: artel plugins install|list|show|enable|disable|update|remove (git, pip, path; ARTEL_HOME/plugins + plugins.json; static manifest, installed disabled), lifecycle events project_start / before_agent_start / agent_end / task_done / project_end / session_shutdown, failing plugins disabled with the error, dashboard section, examples/artel-plugin-hello |
+| W3-plugin-packages | Plugin packages (install from git/pip), lifecycle events before_agent_start / session_shutdown | Pi (`badlogic/pi-mono`) | design | готово — feat/plugin-packages: arteliq plugins install|list|show|enable|disable|update|remove (git, pip, path; ARTEL_HOME/plugins + plugins.json; static manifest, installed disabled), lifecycle events project_start / before_agent_start / agent_end / task_done / project_end / session_shutdown, failing plugins disabled with the error, dashboard section, examples/artel-plugin-hello |
 | W3-state-machine | Task as a state machine with executable transition gates | StateM (`henryqin1997/statem`) | evolve | план |
 | W3-fresh-context-steps | Fresh context per step, verified state outside the context | LongHorizon-Harness (`AMAP-ML/LongHorizon-Harness`) | evolve | план |
 | W3-plan-review | Plan review before execution; built-in Explore / Plan / Verification subagents | Fusion / Claude Code (`lintsinghua/claude-code-book`) | evolve | план |
@@ -82,7 +82,7 @@
 | C-task-tool | Subagents on demand — a worker delegates a sub-question to a child agent with a fresh context and gets a summary back | Claude Code / OpenCode / Deep Agents / Hermes (`anomalyco/opencode`) | design | план |
 | C-web-tools | web_search and web_fetch for the native runtime (CLI runtimes already have their own) | Gemini CLI / OpenCode (`anomalyco/opencode`) | evolve | план |
 | C-user-hooks | User hooks from the config — shell commands on before_tool / after_tool / task_done / project_end, can block a tool call | Claude Code / Crush / Qwen Code (`anthropics/claude-code`) | evolve | план |
-| C-headless-ci | Headless runs and GitHub — `artel run --json`, a GitHub Action, @artel in issues and pull requests | Claude Code / Gemini CLI / Codex / OpenHands (`openai/codex`) | design | план |
+| C-headless-ci | Headless runs and GitHub — `arteliq run --json`, a GitHub Action, @artel in issues and pull requests | Claude Code / Gemini CLI / Codex / OpenHands (`openai/codex`) | design | план |
 | C-lsp | Diagnostics after every edit — language server or linter errors returned in the same turn | OpenCode / Crush / Qwen Code / Aider (`anomalyco/opencode`) | evolve | план |
 | C-repo-map | Repo map — a ranked map of the codebase's files and symbols in the worker's context | Aider (`Aider-AI/aider`) | evolve | план |
 | C-rewind | Rewind from the dashboard — every accepted step is a checkpoint a person can return a task or the deliverables to | Claude Code / Cline / Gemini CLI (`anomalyco/opencode`) | evolve | план |
@@ -94,8 +94,8 @@
 | C-worker-screen | Each worker has its own screen — a private virtual display in its workspace, never the owner's screen | Anthropic computer-use reference / OpenClaw (`anthropics/claude-quickstarts`) | design | план |
 | C-best-of-n | Best of N for hard tasks — several workers (or runtimes) on one task in separate worktrees, the reviewer picks | Orca / Qwen Code Agent Arena (`stablyai/orca`) | design | план |
 | C-evolution-archive | Evolution keeps an archive of variants, not only a champion — parents sampled for diversity | Darwin Gödel Machine / OpenEvolve (`jennyzzt/dgm`) | design | план |
-| C-acp-server | Artel as an ACP agent — drive the whole team from Zed, JetBrains or any ACP client | Gemini CLI / Claude Code / goose (IDE integration) (`agentclientprotocol/agent-client-protocol`) | design | план |
-| C-rea-pack | Reverse-engineering pack (REA) — workers can investigate binaries, JS/Electron bundles, .NET, APKs and websites | REA (Reverse Engineer Anything) (`morluto/rea`) | evolve | готово — REA as skill + CLI (artel skills import morluto/rea); not MCP: 207 tool schemas would cost every run |
+| C-acp-server | Arteliq as an ACP agent — drive the whole team from Zed, JetBrains or any ACP client | Gemini CLI / Claude Code / goose (IDE integration) (`agentclientprotocol/agent-client-protocol`) | design | план |
+| C-rea-pack | Reverse-engineering pack (REA) — workers can investigate binaries, JS/Electron bundles, .NET, APKs and websites | REA (Reverse Engineer Anything) (`morluto/rea`) | evolve | готово — REA as skill + CLI (arteliq skills import morluto/rea); not MCP: 207 tool schemas would cost every run |
 
 ## Волна 4 (найдено разбором проектов) — 0/14 готово
 
@@ -118,7 +118,7 @@
 
 ## Изученные проекты — 7
 
-Код прочитан агентом-аналитиком (`artel absorb` / `artel evolve --cycle`); найденное стало пунктами выше.
+Код прочитан агентом-аналитиком (`arteliq absorb` / `arteliq evolve --cycle`); найденное стало пунктами выше.
 
 | Проект | Лицензия | Найдено | В карту | Итог |
 |---|---|---|---|---|

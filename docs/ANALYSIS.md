@@ -1,4 +1,4 @@
-# Анализ харнессов: что берём в Artel
+# Анализ харнессов: что берём в Arteliq
 
 Исходники изучены по клонам (`git clone --depth 1`, октябрь 2026). Ниже — только механизмы, проверенные в коде, с путями.
 
@@ -53,7 +53,7 @@
 
 - `docs/reference/templates/`: `SOUL.md` (кто ты, ценности, границы), `IDENTITY.md` (имя, вайб), `AGENTS.md` (конвенции workspace), `USER.md` (директивы о пользователе с `observed/status`), `MEMORY.md` (долговременные факты). «These files are your memory. Read them. Update them.»
 
-## Синтез → Artel
+## Синтез → Arteliq
 
 | Требование | Механизм | Источник |
 |---|---|---|

@@ -1,6 +1,6 @@
-"""The roadmap (roadmap.yaml) is the single source of truth for what Artel adopts, from where, and in what order.
+"""The roadmap (roadmap.yaml) is the single source of truth for what Arteliq adopts, from where, and in what order.
 
-Evolution follows it: ``artel evolve --roadmap N`` turns the next N ``mode: evolve`` items into hypotheses,
+Evolution follows it: ``arteliq evolve --roadmap N`` turns the next N ``mode: evolve`` items into hypotheses,
 hands the donor harness's sources to the implementing team, and marks merged items done. ``design`` items
 are structural and are implemented by hand; ``pillar`` entries are foundations guarded by tests/test_invariants.py.
 
@@ -49,7 +49,7 @@ class Roadmap:
         harnesses), then the lowest wave, in file order."""
         open_items = [it for it in self.items if it.get("mode") == mode and it.get("status") in ("planned", "partial")
                       and it["id"] not in skip and (wave is None or it.get("wave") == wave) and self.ready(it)]
-        # what the main harnesses have and Artel lacks goes first (harnesses.yaml), then by wave; file order within
+        # what the main harnesses have and Arteliq lacks goes first (harnesses.yaml), then by wave; file order within
         open_items.sort(key=lambda it: (it.get("priority") != "core", it.get("wave", 99)))
         return open_items[:n]
 
@@ -133,7 +133,7 @@ class Roadmap:
                     ("copying allowed with attribution; keep the notice in a comment."
                      if lic in ("MIT", "Apache-2.0", "BSD") else "reimplement the idea; do not copy code."))
         return Hypothesis(title=f"{it['id']}: {it['title']}", rationale=f"Roadmap item {it['id']} (wave {it.get('wave')}).",
-                          plan=str(it.get("plan") or f"{it['title']}. Port it into {', '.join(it.get('target', [])) or 'Artel'}.").strip(), expected="; ".join(it.get("acceptance", [])),
+                          plan=str(it.get("plan") or f"{it['title']}. Port it into {', '.join(it.get('target', [])) or 'Arteliq'}.").strip(), expected="; ".join(it.get("acceptance", [])),
                           files=list(it.get("target", [])), refs=refs, source=f"roadmap:{it['id']}",
                           license_note=note)
 
@@ -143,7 +143,7 @@ class Roadmap:
         if not rows:
             return []
         out = ["", f"## Изученные проекты — {len(rows)}", "",
-               "Код прочитан агентом-аналитиком (`artel absorb` / `artel evolve --cycle`); найденное стало пунктами выше.",
+               "Код прочитан агентом-аналитиком (`arteliq absorb` / `arteliq evolve --cycle`); найденное стало пунктами выше.",
                "", "| Проект | Лицензия | Найдено | В карту | Итог |", "|---|---|---|---|---|"]
         for r in rows:
             out.append(f"| `{r['repo']}` | {r.get('license', '')} | {r.get('found', 0)} | "
@@ -151,11 +151,11 @@ class Roadmap:
         return out
 
     def render_markdown(self) -> str:
-        out = ["# Дорожная карта Artel", "",
-               "Сгенерировано из `roadmap.yaml` командой `artel roadmap render`. Правки — только в yaml. "
+        out = ["# Дорожная карта Arteliq", "",
+               "Сгенерировано из `roadmap.yaml` командой `arteliq roadmap render`. Правки — только в yaml. "
                "Что уже взято и откуда — [ADOPTED.md](ADOPTED.md); опоры — [ARCHITECTURE.md](ARCHITECTURE.md).", "",
                "Режимы: **pillar** — опора, контракт закреплён `tests/test_invariants.py`; **design** — структурное "
-               "изменение, делается вручную; **evolve** — реализует сам Artel (`artel evolve --roadmap`).", "",
+               "изменение, делается вручную; **evolve** — реализует сам Arteliq (`arteliq evolve --roadmap`).", "",
                "## Опоры", "", "| Опора | Что | Источник | Статус |", "|---|---|---|---|"]
         for p in self.pillars:
             s = p.get("source") or {}
@@ -198,7 +198,7 @@ def load_studied(repo: Path) -> list[dict]:
 def add_studied(repo: Path, row: dict) -> None:
     rows = [r for r in load_studied(repo) if r["repo"] != row["repo"]] + [row]
     (Path(repo) / "studied.yaml").write_text(
-        "# Harnesses whose code Artel's absorber has read. Written by `artel absorb` / `artel evolve --cycle`.\n"
+        "# Harnesses whose code Arteliq's absorber has read. Written by `arteliq absorb` / `arteliq evolve --cycle`.\n"
         + yaml.safe_dump(rows, sort_keys=False, allow_unicode=True, width=110), encoding="utf-8")
 
 
@@ -252,7 +252,7 @@ def _log_scale(x: float, top: float) -> float:
 
 def significance(h: dict, today: str | None = None) -> dict:
     """Score 0..100 with its parts, from the metrics snapshot in harnesses.yaml. Openness is reported separately
-    (it decides how deeply Artel can borrow, not how important a harness is)."""
+    (it decides how deeply Arteliq can borrow, not how important a harness is)."""
     import datetime as dt
 
     m = h.get("metrics") or {}

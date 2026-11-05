@@ -1,7 +1,7 @@
 """The agent loop both CLI runtimes share (Claude Code, Codex): written once, driven by a codec module.
 
 A codec (artel/adapters/agent/claude_code.py, codex.py) knows one CLI: its settings, environment, arguments and how to
-turn one stdout line into :class:`AgentEvent` objects. This module does the rest: the Artel tool bridge (MCP proxy),
+turn one stdout line into :class:`AgentEvent` objects. This module does the rest: the Arteliq tool bridge (MCP proxy),
 process start in its own group with a stderr tail and a timeout kill, the stdout line loop, mirroring of the events
 into the project journal, the policy gate, loop detection, the terminal tool and its usage grace, resume attempts and
 the :class:`Outcome` the callers use.
@@ -39,7 +39,7 @@ from ...prompts import CONTINUATION
 from ...tooling import ToolContext, present_output
 from ...tools import StderrTail, group_popen_kwargs, terminate_tree
 
-# The CLIs ship better versions of these; do not expose Artel's duplicates.
+# The CLIs ship better versions of these; do not expose Arteliq's duplicates.
 NATIVE_DUPLICATES = {"bash", "read_file", "write_file", "edit_file", "list_files"}
 BROKEN_KEY = "codex_sandbox_broken"  # ctx.state key: the CLI's own sandbox failed to start a command
 
@@ -160,7 +160,7 @@ class StdoutReader:
 
 
 class ToolBridge:
-    """Localhost HTTP endpoint that executes Artel tools for one run."""
+    """Localhost HTTP endpoint that executes Arteliq tools for one run."""
 
     def __init__(self, kernel, project, ctx: ToolContext, role: str, tool_names: list | None, actor: str,
                  runtime: str = "claude_code"):
@@ -196,13 +196,13 @@ class ToolBridge:
                 self.wfile.write(body)
 
             def do_GET(self):
-                if not hmac.compare_digest(self.headers.get("X-Artel-Token") or "", bridge.token):
+                if not hmac.compare_digest(self.headers.get("X-Arteliq-Token") or "", bridge.token):
                     return self._reply({"error": "forbidden"}, 403)
                 self._reply({"tools": [{"name": s.name, "description": s.description, "inputSchema": s.input_schema}
                                        for s in bridge.specs]})
 
             def do_POST(self):
-                if not hmac.compare_digest(self.headers.get("X-Artel-Token") or "", bridge.token):
+                if not hmac.compare_digest(self.headers.get("X-Arteliq-Token") or "", bridge.token):
                     return self._reply({"error": "forbidden"}, 403)
                 req = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
                 self._reply(bridge.call(req["name"], req.get("args") or {}))
@@ -279,7 +279,7 @@ class Run:
         self.model = ""
         self.pending: dict = {}        # call id -> (tool name, input, observe late)
         self.proc = None
-        self.stopped = False           # the process was ended by Artel (loop, limit, policy, terminal tool)
+        self.stopped = False           # the process was ended by Arteliq (loop, limit, policy, terminal tool)
         self.got_usage = False
         self.failed = False
         self.failure = ""
@@ -381,7 +381,7 @@ class Run:
         name, inp = d["name"], thaw(d["input"])
         if d.get("turn"):
             out.turns += 1
-        if d.get("bridged"):  # an Artel tool: the bridge logged the call and its result
+        if d.get("bridged"):  # an Arteliq tool: the bridge logged the call and its result
             out.digest.append(f"TOOL {d.get('label') or name}({_short(inp)})")
             return
         observe = d.get("observe")
@@ -444,7 +444,7 @@ def _read(run: Run, reader: StdoutReader, proc, grace_s: float | None) -> thread
             events = []
         run.consume(events)
         if grace_s is not None and ctx.terminal and not run.stopped:
-            # the run is finished as soon as Artel accepted a terminal tool; do not let the CLI continue. Its closing
+            # the run is finished as soon as Arteliq accepted a terminal tool; do not let the CLI continue. Its closing
             # usage event follows shortly: keep reading until it arrives or the grace passes, but stop at once if the
             # CLI starts anything new.
             if any(e.kind == "usage" or e.data.get("phase") == "start" for e in events) or \

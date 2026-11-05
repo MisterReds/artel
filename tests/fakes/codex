@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Stand-in for the OpenAI Codex CLI in tests: device login, login status, and `exec --json` that does some work
-and finishes by calling Artel's terminal tool through the MCP bridge configured with -c mcp_servers.artel.args."""
+and finishes by calling Arteliq's terminal tool through the MCP bridge configured with -c mcp_servers.artel.args."""
 import json, os, sys, time, urllib.request
 from pathlib import Path
 
@@ -57,7 +57,7 @@ if os.environ.get("FAKE_CODEX_BADLINES"):  # off-type fields a real CLI may send
     emit({"type": "item.completed", "item": {"id": "b2", "type": "mcp_tool_call", "tool": None, "status": None}})
 if os.environ.get("FAKE_CODEX_LIMIT"):
     emit({"type": "turn.failed", "error": {"message": "You've hit your usage limit. Try again at 4:20 PM."}}); sys.exit(1)
-if os.environ.get("FAKE_CODEX_CMD"):  # a command about to run: Artel's policy must stop the process
+if os.environ.get("FAKE_CODEX_CMD"):  # a command about to run: Arteliq's policy must stop the process
     emit({"type": "item.started", "item": {"id": "c1", "type": "command_execution", "command": os.environ["FAKE_CODEX_CMD"], "status": "in_progress"}})
     time.sleep(5); sys.exit(0)
 if os.environ.get("FAKE_CODEX_SANDBOX") == "exec-broken" and "--dangerously-bypass-approvals-and-sandbox" not in args:
@@ -72,14 +72,14 @@ Path("hello.py").write_text("print('hi')\n")
 if os.environ.get("FAKE_CODEX_WRITE"):  # a misbehaving agent writing outside its own directory
     Path(os.environ["FAKE_CODEX_WRITE"]).write_text("changed by the agent\n")
 emit({"type": "item.completed", "item": {"id": "i3", "type": "command_execution", "command": "python hello.py", "aggregated_output": "hi\n", "exit_code": 0, "status": "completed"}})
-if os.environ.get("FAKE_CODEX_LAZY") and not resumed:  # first run ends without a terminal tool -> Artel resumes
+if os.environ.get("FAKE_CODEX_LAZY") and not resumed:  # first run ends without a terminal tool -> Arteliq resumes
     emit({"type": "turn.completed", "usage": {"input_tokens": 100, "cached_input_tokens": 10, "output_tokens": 20}}); sys.exit(0)
 if os.environ.get("FAKE_CODEX_FLOOD"):  # output that never stops while the tool call is made
     import threading
     for _ in range(4):
         threading.Thread(target=lambda: [os.write(1, noise * 15) for _ in iter(int, 1)], daemon=True).start()
-def call(name, a):  # through Artel's real MCP proxy code, like the real Codex
-    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # this checkout's artel (Artel sets PYTHONPATH)
+def call(name, a):  # through Arteliq's real MCP proxy code, like the real Codex
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2]))  # this checkout's artel (Arteliq sets PYTHONPATH)
     from artel.runtimes.mcp_proxy import _http, read_token
     assert token.startswith("@"), "the bridge token must not be on the command line"
     return _http(url, read_token(token), "", {"name": name, "args": a})
@@ -93,4 +93,4 @@ if os.environ.get("FAKE_CODEX_NO_USAGE"):  # never sends turn.completed
     time.sleep(30)
 time.sleep(float(os.environ.get("FAKE_CODEX_USAGE_DELAY", "0")))  # turn.completed arrives late
 emit({"type": "turn.completed", "usage": {"input_tokens": 1000, "cached_input_tokens": 400, "output_tokens": 200}})
-time.sleep(30)  # Artel stops the run right after the turn is closed
+time.sleep(30)  # Arteliq stops the run right after the turn is closed

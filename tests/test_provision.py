@@ -211,7 +211,7 @@ def test_remove_undoes_artel_installs_only(home, server, monkeypatch):
     assert "fakerg" not in provision.installed() and "pdftk" not in provision.installed()
     assert log[0][0] == "provision/remove"
     res = provision.remove("never-installed")
-    assert not res["ok"] and "not installed by Artel" in res["error"]
+    assert not res["ok"] and "not installed by Arteliq" in res["error"]
     sysexe = home / "sysbin" / "sysonly"
     sysexe.write_text("#!/bin/sh\n")
     sysexe.chmod(0o755)

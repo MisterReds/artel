@@ -154,7 +154,7 @@ def doctor(code: Path | None, project_dirs: Iterable[Path], bench: dict | None =
 
 
 def render_markdown(rep: dict) -> str:
-    lines = ["# Artel doctor", ""]
+    lines = ["# Arteliq doctor", ""]
     h = rep.get("health")
     if h:
         t = h["tests"]

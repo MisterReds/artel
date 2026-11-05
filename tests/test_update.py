@@ -114,7 +114,7 @@ def test_without_pytest_the_update_is_smoke_checked_not_refused(repos, monkeypat
 
 
 def test_ctrl_c_stops_the_dashboard_and_commands_without_a_traceback(tmp_path, monkeypatch, capsys):
-    """A person stops `artel web` with Ctrl+C; a KeyboardInterrupt traceback looked like a crash."""
+    """A person stops `arteliq web` with Ctrl+C; a KeyboardInterrupt traceback looked like a crash."""
     import socketserver
 
     from artel import cli
@@ -131,6 +131,6 @@ def test_ctrl_c_stops_the_dashboard_and_commands_without_a_traceback(tmp_path, m
                                       "update": {"check_interval_min": 0}})
     server.serve(port=0, config=cfg)
     out = capsys.readouterr()
-    assert "Artel остановлен." in out.out and "Traceback" not in out.out + out.err
+    assert "Arteliq остановлен." in out.out and "Traceback" not in out.out + out.err
     monkeypatch.setattr(cli, "cmd_web", interrupted)
     assert cli.main(["web"]) == 130 and "Остановлено." in capsys.readouterr().err

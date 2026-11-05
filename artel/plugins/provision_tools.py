@@ -1,4 +1,4 @@
-"""``tool_install``: an agent asks Artel for a missing program instead of asking the owner (artel/provision.py)."""
+"""``tool_install``: an agent asks Arteliq for a missing program instead of asking the owner (artel/provision.py)."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def tool_install(ctx: ToolContext, name: str, reason: str) -> str:
 
 def setup(kernel):
     kernel.register_tool(ToolSpec(
-        "tool_install", "Make a missing program available (ripgrep `rg`, `jq`, `gh`, `uv`, pandoc ...). Artel installs it "
+        "tool_install", "Make a missing program available (ripgrep `rg`, `jq`, `gh`, `uv`, pandoc ...). Arteliq installs it "
         "itself: a checksum-verified release binary, else conda-forge, else a system package. Returns the program's path, "
         "or why it could not be installed; then use the path or run the program by name. `reason` is logged.",
         {"type": "object", "additionalProperties": False,

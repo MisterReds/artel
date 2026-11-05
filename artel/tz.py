@@ -1,4 +1,4 @@
-"""User time zone (ui.timezone, an IANA name) for every time Artel shows: CLI, notifications, dashboard."""
+"""User time zone (ui.timezone, an IANA name) for every time Arteliq shows: CLI, notifications, dashboard."""
 from __future__ import annotations
 
 import os

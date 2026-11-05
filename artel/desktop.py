@@ -1,5 +1,5 @@
-"""Desktop client, step 1 (no new dependencies): `artel app` opens the dashboard in its own browser window
-(Chromium `--app` mode, separate profile), starting `artel web` in the background when nothing answers, and
+"""Desktop client, step 1 (no new dependencies): `arteliq app` opens the dashboard in its own browser window
+(Chromium `--app` mode, separate profile), starting `arteliq web` in the background when nothing answers, and
 `--install-shortcut` puts a launcher into the OS menu. Everything OS-specific takes the system name and the
 environment as arguments, so it is tested with fake paths."""
 
@@ -89,10 +89,10 @@ def _detached() -> dict:
 
 
 def server_alive(port: int) -> bool:
-    """True when an Artel dashboard answers on this port (any other server on it does not count)."""
+    """True when an Arteliq dashboard answers on this port (any other server on it does not count)."""
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/manifest.webmanifest", timeout=2) as r:
-            return json.load(r).get("name") == "Artel"
+            return json.load(r).get("name") == "Arteliq"
     except Exception:
         return False
 
@@ -177,7 +177,7 @@ def _take_lock(lock: Path) -> bool:
 
 def ensure_server(port: int, *, home: Path, config: str | None = None, popen=subprocess.Popen, probe=server_alive,
                   port_open=port_open, sleep=time.sleep, clock=time.monotonic, wait_s: float = 30) -> str:
-    """'running' when a dashboard already answers; else start `artel web` detached (log: home/logs/web.log) and wait
+    """'running' when a dashboard already answers; else start `arteliq web` detached (log: home/logs/web.log) and wait
     until it answers -> 'started'. A port answered by another program is an error, never opened; a child that
     exits early is reported with the log tail; a lock file keeps two callers from starting two servers."""
     if probe(port):
@@ -241,11 +241,11 @@ def _cmd_arg(s: str) -> str:
 def _paths(system: str, home: Path, env) -> dict:
     home = Path(home)
     if system == "Darwin":
-        return {"app": home / "Applications/Artel.app"}
+        return {"app": home / "Applications/Arteliq.app"}
     if system == "Windows":
         programs = Path(env.get("APPDATA") or home / "AppData/Roaming") / "Microsoft/Windows/Start Menu/Programs"
         local = Path(env.get("LOCALAPPDATA") or home / "AppData/Local")
-        return {"lnk": programs / "Artel.lnk", "cmd": programs / "Artel.cmd", "ico": local / "Artel/Artel.ico"}
+        return {"lnk": programs / "Arteliq.lnk", "cmd": programs / "Arteliq.cmd", "ico": local / "Arteliq/Arteliq.ico"}
     return {"entry": home / ".local/share/applications/artel.desktop", "icon": home / ".local/share/icons/artel.png"}
 
 
@@ -271,7 +271,7 @@ def icns_from_png(png: bytes) -> bytes:
 
 # no path text inside: the paths travel in the environment, so nothing needs quoting or escaping
 _LNK_SCRIPT = ("$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:ARTEL_LNK);"
-               "$s.TargetPath=$env:ARTEL_TARGET;$s.Arguments='app';$s.Description='Artel';"
+               "$s.TargetPath=$env:ARTEL_TARGET;$s.Arguments='app';$s.Description='Arteliq';"
                "$s.IconLocation=$env:ARTEL_ICON;$s.Save()")
 
 
@@ -286,19 +286,19 @@ def install_shortcut(system: str, home: Path, *, env=None, launcher: str | None 
     p = _paths(system, home, env)
     if system == "Darwin":
         app = p["app"]
-        exe = app / "Contents/MacOS/Artel"
+        exe = app / "Contents/MacOS/Arteliq"
         exe.parent.mkdir(parents=True, exist_ok=True)
         exe.write_text(f"#!/bin/sh\nexec {shlex.quote(launcher)} app\n")
         exe.chmod(0o755)
         (app / "Contents/Info.plist").write_text(
             '<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>\n'
-            "<key>CFBundleExecutable</key><string>Artel</string>\n"
+            "<key>CFBundleExecutable</key><string>Arteliq</string>\n"
             "<key>CFBundleIdentifier</key><string>app.artel.desktop</string>\n"
-            "<key>CFBundleName</key><string>Artel</string>\n"
-            "<key>CFBundleIconFile</key><string>Artel</string>\n"
+            "<key>CFBundleName</key><string>Arteliq</string>\n"
+            "<key>CFBundleIconFile</key><string>Arteliq</string>\n"
             "<key>CFBundlePackageType</key><string>APPL</string>\n</dict></plist>\n")
         (app / "Contents/Resources").mkdir(exist_ok=True)
-        (app / "Contents/Resources/Artel.icns").write_bytes(icns_from_png(ICON.read_bytes()))
+        (app / "Contents/Resources/Arteliq.icns").write_bytes(icns_from_png(ICON.read_bytes()))
         return app
     if system == "Windows":
         p["lnk"].parent.mkdir(parents=True, exist_ok=True)
@@ -318,9 +318,9 @@ def install_shortcut(system: str, home: Path, *, env=None, launcher: str | None 
     p["entry"].parent.mkdir(parents=True, exist_ok=True)
     p["icon"].parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(ICON, p["icon"])
-    p["entry"].write_text("[Desktop Entry]\nType=Application\nName=Artel\nComment=Команда агентов доводит цель до результата\n"
+    p["entry"].write_text("[Desktop Entry]\nType=Application\nName=Arteliq\nComment=Команда агентов доводит цель до результата\n"
                           f"Exec={_exec_arg(launcher)} app\nIcon={p['icon']}\nTerminal=false\n"
-                          "Categories=Development;Utility;\nStartupWMClass=Artel\n")
+                          "Categories=Development;Utility;\nStartupWMClass=Arteliq\n")
     return p["entry"]
 
 

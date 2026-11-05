@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""First-run smoke check of an installed Artel, the same on Linux, macOS and Windows (used by CI).
+"""First-run smoke check of an installed Arteliq, the same on Linux, macOS and Windows (used by CI).
 
   python scripts/ci_smoke.py [--artel PATH] [--port 8799] [--timeout 20] [--logs DIR]
 
-1. `artel run "любая цель" --provider scripted` must exit 0 and report `status: done`;
-2. `artel web --port PORT` must answer GET /api/ready within --timeout seconds; it is stopped afterwards.
+1. `arteliq run "любая цель" --provider scripted` must exit 0 and report `status: done`;
+2. `arteliq web --port PORT` must answer GET /api/ready within --timeout seconds; it is stopped afterwards.
 
 `--artel` is the installed command (default: `artel` on PATH). Output of both steps goes to --logs (default: a
 temporary directory) so a failing CI job can upload it. Standard library only; exits non-zero on any failure.

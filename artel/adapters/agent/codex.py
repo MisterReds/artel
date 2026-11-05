@@ -1,7 +1,7 @@
 """OpenAI Codex CLI codec (ChatGPT subscription via device-code login, or an API key): ``codex exec --json``.
 
-Codex works with its own tools (shell, apply_patch, web search) inside its sandbox and receives Artel's coordination
-tools over MCP through the loop's bridge. Login: ``artel providers login codex`` or the dashboard's "Подключения".
+Codex works with its own tools (shell, apply_patch, web search) inside its sandbox and receives Arteliq's coordination
+tools over MCP through the loop's bridge. Login: ``arteliq providers login codex`` or the dashboard's "Подключения".
 """
 
 from __future__ import annotations
@@ -26,7 +26,7 @@ from .codex_support import (  # noqa: F401
 )
 
 NAME, LABEL = "codex", "codex"
-INSTALL_HINT = "Codex CLI не установлен: «Подключения» → «Установить» или `artel providers install codex`"
+INSTALL_HINT = "Codex CLI не установлен: «Подключения» → «Установить» или `arteliq providers install codex`"
 NO_SESSION = "codex produced no thread"
 OK_EXIT, TRACK_STOP, LOG_ROLE, STRIP_STDERR = (0, None, -15), True, False, True
 GATE_TOOL, SHELL_TOOL = None, "shell"
@@ -59,7 +59,7 @@ def note(run) -> str:
     from ...tooling import READONLY_ROLES
 
     specs, ctx = run.bridge.specs, run.ctx
-    return (f"\n\n## Runtime\nYou run inside OpenAI Codex. Use your own shell and apply_patch for files. Artel "
+    return (f"\n\n## Runtime\nYou run inside OpenAI Codex. Use your own shell and apply_patch for files. Arteliq "
             f"coordination tools come from the MCP server `artel`: {', '.join(s.name for s in specs)}. The ONLY way to "
             f"finish is calling {' or '.join(s.name for s in specs if s.terminal)} on that server. Your working "
             f"directory is your workspace; the team's shared deliverables directory is {ctx.shared_dir}.{ctx.shared_note}"
@@ -91,7 +91,7 @@ def launch(run) -> dict:
         ctx.state["codex_sandbox_noted"] = True
         journal.append(("codex/sandbox", dict(mode=mode, reason=sandbox_note(cc), note=(
             "Codex's sandbox cannot start commands on this machine; running without it — "
-            "Artel's file grants and command policy still apply"))))
+            "Arteliq's file grants and command policy still apply"))))
     servers, ext_env = mcp_client.codex_secrets(mcp_client.cli_config(config, run.role))
     args = build_args(cc, workspace=run.state["run_dir"], shared=ctx.shared_dir, role=run.role,
                       bridge_url=run.bridge.url, bridge_token=run.bridge.token_arg, effort=ctx.state.get("effort"),
@@ -110,7 +110,7 @@ def sandbox_recover(cc: dict, broken: str) -> dict:
     _sandbox_mode[key] = "none"
     _sandbox_mode[(key, "why")] = broken.strip()[-300:]
     return {"journal": ("codex/sandbox", dict(mode="none", reason=broken[-300:], note=(
-        "Codex's sandbox failed to start a command; continuing without it — Artel's file grants and command "
+        "Codex's sandbox failed to start a command; continuing without it — Arteliq's file grants and command "
         "policy still apply"))),
         "prompt": "Your last command did not run: the sandbox on this machine failed to start it. That is fixed now — "
                   "shell commands and file edits work. Repeat the step and continue the task."}

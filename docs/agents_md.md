@@ -1,6 +1,6 @@
 # Project instruction files (AGENTS.md)
 
-Artel reads the de-facto standard instruction files used by Codex, Claude Code, Gemini CLI and Cline and puts
+Arteliq reads the de-facto standard instruction files used by Codex, Claude Code, Gemini CLI and Cline and puts
 them into agent prompts. Discovery is adapted from Codex (openai/codex, Apache-2.0).
 
 ## Discovery order

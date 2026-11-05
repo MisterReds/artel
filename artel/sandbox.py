@@ -20,7 +20,7 @@ deliverables worktree, the agent's workspace, the temp directory and ``writable`
   writable subpaths, optionally deny the network).
 * Elsewhere, or when the tool is missing or cannot create namespaces (e.g. unprivileged containers) and the mode is
   ``auto``: there is no backend; the command runs unsandboxed, the result carries a clear note and ``status()``
-  says so once for the dashboard and ``artel providers``.
+  says so once for the dashboard and ``arteliq providers``.
 
 Inside the sandbox secrets are unreadable (~/.ssh, ~/.aws, ~/.gnupg, ~/.config/gh, ~/.netrc, ~/.docker/config.json,
 ~/.kube and ARTEL_HOME except the current project and the shims/tools directories) and the owner's configuration
@@ -28,7 +28,7 @@ Inside the sandbox secrets are unreadable (~/.ssh, ~/.aws, ~/.gnupg, ~/.config/g
 
 Ideas from OpenAI Codex codex-rs/linux-sandbox (bwrap.rs: read-only root bind, writable re-binds, fresh
 /dev and /proc, --unshare-pid/--unshare-net, --new-session, --die-with-parent) and codex-rs/core seatbelt
-policies — Apache-2.0, Copyright OpenAI. Reimplemented here for Artel.
+policies — Apache-2.0, Copyright OpenAI. Reimplemented here for Arteliq.
 """
 
 from __future__ import annotations
@@ -52,7 +52,7 @@ _probe_cache: dict[tuple, tuple[bool, str]] = {}
 DEFAULTS = {"mode": "auto", "network": True, "writable": [], "temp": True, "require": True, "gates": True}
 HOME_SECRETS = (".ssh", ".aws", ".gnupg", ".config/gh", ".netrc", ".docker/config.json", ".kube")
 # Start detection never reads what the command printed (a command can print anything). Inside the sandbox a tiny
-# launcher writes one byte to a pipe Artel owns and only then execs the command: no byte, no start. The byte is
+# launcher writes one byte to a pipe Arteliq owns and only then execs the command: no byte, no start. The byte is
 # written before the command exists, so the command cannot unsend it, and a started command is never re-run.
 _FD = "@@ARTEL_FD@@"
 _LAUNCHER = f'printf s > /dev/fd/{_FD}; exec /bin/sh -c "$1"'
@@ -322,7 +322,7 @@ def refusal(run: Plan, config: dict) -> str:
 
 
 def status(config: dict) -> dict:
-    """What the dashboard and ``artel providers`` show: ``{mode, active, backend, message, failure}``."""
+    """What the dashboard and ``arteliq providers`` show: ``{mode, active, backend, message, failure}``."""
     s = settings(config)
     failure = next(iter(_failures.values()), "")
     if s["mode"] == "off":
