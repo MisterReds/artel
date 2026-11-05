@@ -30,3 +30,28 @@ def test_redirect_targets_are_files_not_programs():
     assert missing_programs(["python3 -m pytest -q > out-file.txt 2>&1 < in-file.txt",
                              "no-such-tool-xyz 2>&1 >> log.txt & other-missing-abc"]) == [
         "no-such-tool-xyz", "other-missing-abc"]
+
+
+def test_process_substitution_runs_a_program():
+    assert missing_programs(["diff <(no-such-tool-xyz) >(other-missing-abc)"]) == [
+        "no-such-tool-xyz", "other-missing-abc"]
+
+
+def test_command_substitution_inside_double_quotes_runs_a_program():
+    assert missing_programs(['echo "total: $(no-such-tool-xyz)"', 'echo "`other-missing-abc`"']) == [
+        "no-such-tool-xyz", "other-missing-abc"]
+
+
+def test_heredoc_body_is_data():
+    assert missing_programs(["cat <<EOF\nnot-a-program x\nEOF\nno-such-tool-xyz",
+                             "python3 - <<'PY'\nimport sys; print(1)\nPY"]) == ["no-such-tool-xyz"]
+
+
+def test_line_continuation_joins_arguments():
+    assert missing_programs(["python3 -m pytest \\\n  not-a-program"]) == []
+
+
+def test_commands_after_keywords_are_checked():
+    assert missing_programs(["if no-such-tool-xyz; then other-missing-abc; fi", "time third-missing-def",
+                             "! fourth-missing-ghi", "for f in a b; do true; done"]) == [
+        "no-such-tool-xyz", "other-missing-abc", "third-missing-def", "fourth-missing-ghi"]

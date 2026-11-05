@@ -129,30 +129,53 @@ _NOT_PROGRAMS = {"if", "then", "else", "elif", "fi", "for", "while", "until", "d
                  "exec", "alias", "type", "ulimit", "umask", "wait", "trap", "read", "shift", "true", "false", "echo",
                  "printf", "test", "[", "pwd", "command", "builtin", "local", "declare"}
 _OPERATORS = "();<>|&`\n"
+_PREFIX_WORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "time"}  # a command follows them
+_HEREDOC = re.compile(r"(?<!<)<<-?\s*(['\"]?)([A-Za-z_][A-Za-z0-9_]*)\1")
+_SUBSTITUTION = re.compile(r"\$\(([^()]*)\)|`([^`]*)`")
+
+
+def _drop_heredoc_bodies(check: str) -> str:
+    """Remove the data lines of here-documents; the line that opens one stays (its command still runs)."""
+    out: list = []
+    end = None
+    for line in check.split("\n"):
+        if end is not None:
+            if line.strip() == end:
+                end = None
+            continue
+        out.append(line)
+        m = _HEREDOC.search(line)
+        if m:
+            end = m.group(2)
+    return "\n".join(out)
 
 
 def _command_words(check: str) -> list:
     """Words of every simple command in a shell line, in order. Quoting is honoured, so code passed as a quoted
-    argument (``python3 -c "a; b | c"``) stays one word instead of being split at its own operators."""
-    lex = shlex.shlex(check, posix=True, punctuation_chars=_OPERATORS)
+    argument (``python3 -c "a; b | c"``) stays one word instead of being split at its own operators; command
+    substitutions inside words (``"$(cmd)"``) are commands of their own."""
+    lex = shlex.shlex(_drop_heredoc_bodies(check.replace("\\\n", " ")), posix=True, punctuation_chars=_OPERATORS)
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
     lex.commenters = ""
     commands: list = [[]]
-    target = False  # the word after a redirect (``> out``, ``2>&1``) is a file or descriptor, not a command
+    nested: list = []
+    target = False  # the word after a redirect (``> out``, ``2>&1``, ``<<EOF``) is a file or tag, not a command
     try:
         for tok in lex:
             if tok and set(tok) <= set(_OPERATORS):
-                target = "<" in tok or ">" in tok
+                target = ("<" in tok or ">" in tok) and "(" not in tok
                 if not target:
                     commands.append([])
             elif target:
                 target = False
             else:
                 commands[-1].append(tok)
+                for m in _SUBSTITUTION.finditer(tok):
+                    nested.extend(_command_words(m.group(1) if m.group(1) is not None else m.group(2)))
     except ValueError:  # unbalanced quote: the words read so far still name the program
         pass
-    return [c for c in commands if c]
+    return [c for c in commands if c] + nested
 
 
 def missing_programs(checks: list, config: dict | None = None) -> list:
@@ -163,7 +186,7 @@ def missing_programs(checks: list, config: dict | None = None) -> list:
     out: list = []
     for check in checks or []:
         for words in _command_words(str(check)):
-            while words and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0]):
+            while words and (words[0] in _PREFIX_WORDS or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0])):
                 words = words[1:]
             if not words:
                 continue
