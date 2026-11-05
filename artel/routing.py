@@ -11,8 +11,6 @@ is counted from the project's own events, so a resumed project keeps its account
 
 from __future__ import annotations
 
-from typing import Optional
-
 TIERS = ("cheap", "medium", "expensive")
 
 DEFAULTS = {
@@ -41,7 +39,7 @@ def settings(config: dict) -> dict:
     return out
 
 
-def _tokens(usage: Optional[dict]) -> int:
+def _tokens(usage: dict | None) -> int:
     """What budgets and shares count: input (cache creation included) + output. Cache reads are billed at a small
     fraction of input and are reported apart (``cached``); no price table, so no weighted figure."""
     u = usage or {}
@@ -87,7 +85,7 @@ def tier_for(config: dict, role: str, project=None, budget: bool = True) -> str:
     return tier
 
 
-def model_for(config: dict, runtime: str, role: str, project=None) -> Optional[str]:
+def model_for(config: dict, runtime: str, role: str, project=None) -> str | None:
     """The model name for this role on this runtime, or None to keep the runtime's own model."""
     s = settings(config)
     if not s["enabled"]:
@@ -140,4 +138,4 @@ def efficiency(project) -> dict:
             "hit_limit": limited is not None}
 
 
-__all__ = ["TIERS", "settings", "tier_for", "model_for", "record", "expensive_used", "efficiency"]
+__all__ = ["TIERS", "efficiency", "expensive_used", "model_for", "record", "settings", "tier_for"]

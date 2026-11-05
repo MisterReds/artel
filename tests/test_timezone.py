@@ -1,5 +1,5 @@
-import yaml
 import pytest
+import yaml
 
 from artel import tz
 from artel.providers import overview, save_timezone
@@ -75,10 +75,10 @@ def test_post_timezone_endpoint(tmp_path, monkeypatch):
     import threading
     import urllib.error
     import urllib.request
-    from artel.httpd import LocalHTTPServer
 
     import yaml
 
+    from artel.httpd import LocalHTTPServer
     from artel.project import DEFAULT_CONFIG, deep_merge
     from artel.web.server import Runner, make_handler
 

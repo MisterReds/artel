@@ -28,19 +28,17 @@ import threading
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
-from . import netprobe, prompts
+from . import guardian, netprobe, policy, prompts
 from .agent import Outcome
-from .failures import classify
-from . import guardian, policy
 from .agent_env import agent_env, missing_programs, tool_inventory
-from .failures import gate_failure_class
+from .failures import classify, gate_failure_class
+from .project import INSTRUCTIONS_TRUNCATED, Persona, Project, find_instructions, persona_from_dict
 from .runtimes import run_agent
 from .snapshot import Snapshot
-from .tools import shell_env, shell_run
-from .project import INSTRUCTIONS_TRUNCATED, Persona, Project, find_instructions, persona_from_dict
 from .tooling import ToolContext, window_text
+from .tools import shell_env
 from .tz import fmt_ts, zone_name
 from .worktree import Isolation, IsolationError, isolation_enabled
 
@@ -81,7 +79,7 @@ def _fmt_list(items: list) -> str:
 
 
 class Manager:
-    def __init__(self, kernel, project: Project, stop_event: Optional[threading.Event] = None):
+    def __init__(self, kernel, project: Project, stop_event: threading.Event | None = None):
         self.kernel = kernel
         self.project = project
         self.board = project.board
@@ -101,11 +99,11 @@ class Manager:
         self.snapper = Snapshot(project.root / "snapshot.git", project.shared)
         self.last_refine = 0.0
         self.proxy_holds: dict[str, dict] = {}  # task id -> {"n", "since"}: gate results held for a dead loopback proxy
-        self.net_wait: Optional[dict] = None  # proxy/provider unreachable: nothing new starts until a probe succeeds
+        self.net_wait: dict | None = None  # proxy/provider unreachable: nothing new starts until a probe succeeds
         self.audit_backoff_until = 0.0  # a failed goal audit waits (provider limit reset, growing delay) before the next
         self.audit_failures = 0         # consecutive audits that ended without a verdict
-        self.audit_blocked: Optional[str] = None  # why the audit cannot run without a person (setup, repeated failures)
-        self.iso: Optional[Isolation] = None  # per-task worktrees (W2-worktree-isolation), opt-in
+        self.audit_blocked: str | None = None  # why the audit cannot run without a person (setup, repeated failures)
+        self.iso: Isolation | None = None  # per-task worktrees (W2-worktree-isolation), opt-in
         if isolation_enabled(self.cfg):
             if Isolation.available():
                 self.iso = Isolation(project)
@@ -126,7 +124,7 @@ class Manager:
     def _bg(self, fn, *args) -> None:
         self.background.append(self.pool.submit(fn, *args))
 
-    def ask_doctor(self, task_id: Optional[str], problem: str) -> None:
+    def ask_doctor(self, task_id: str | None, problem: str) -> None:
         """A task (or the project) stopped for a person: the diagnostician explains why, on an available model,
         and writes the answer into the task — so the person sees a cause and steps, not only an error."""
         if not (self.cfg.get("doctor") or {}).get("auto", True):
@@ -157,7 +155,7 @@ class Manager:
     def _roster(self) -> list[Persona]:
         return self.project.personas()
 
-    def _assignee(self, name: Optional[str]) -> str:
+    def _assignee(self, name: str | None) -> str:
         roster = self._roster()
         names = {p.name.lower(): p.name for p in roster}
         if name and name.lower() in names:
@@ -165,7 +163,7 @@ class Manager:
         return roster[0].name
 
     @property
-    def root_id(self) -> Optional[str]:
+    def root_id(self) -> str | None:
         return self.project.meta.get("root_task")
 
     # --- project instructions --------------------------------------------
@@ -188,7 +186,7 @@ class Manager:
         return f"{system}\n\n{block}" if block else system
 
     # --- planning -------------------------------------------------------
-    def intake(self) -> Optional[dict]:
+    def intake(self) -> dict | None:
         """A cheap model turns the raw request into a strict task contract, so the expensive architect plans from a
         clean, short input (docs/ORCHESTRATION.md). Never blocks a project: on any failure planning uses the goal."""
         if not (self.cfg.get("intake") or {}).get("enabled", True) or getattr(self, "_intake_done", False):
@@ -201,7 +199,7 @@ class Manager:
             out = run_agent(self.kernel, self.project, role="intake", system=prompts.INTAKE,
                             first_user=f"<request>\n{self.project.goal}\n</request>\n\nWrite the contract now.",
                             ctx=ctx, max_turns=3, purpose="intake", stop_event=self.stop, tool_names=["submit_contract"])
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             self.note("intake_skipped", reason=repr(exc)[:300])
             return None
         if out.name != "submit_contract":  # stopped, a limit, or no contract: the planner works from the goal
@@ -292,7 +290,7 @@ class Manager:
         for name in persona.skills:
             try:
                 preloaded.append(f"<skill name=\"{name}\">\n{skills.view(name)}\n</skill>")
-            except Exception:  # noqa: BLE001 - a missing preload must not block work
+            except Exception:
                 continue
         notes = self.project.prompt_notes().strip()
         return prompts.WORKER.format(
@@ -361,7 +359,7 @@ class Manager:
             out = run_agent(self.kernel, self.project, role="worker", system=self._with_instructions(self.worker_system(persona), "worker"),
                            first_user=self.task_card(task), ctx=ctx, max_turns=int(self.b["max_turns_per_run"]),
                            purpose="work", persona=persona, stop_event=self.stop)
-        except Exception as exc:  # noqa: BLE001 - a crashed run is retried, never fatal
+        except Exception as exc:
             out = Outcome(status="error", error=repr(exc))
         status = {"task_submit": "submitted", "task_block": "blocked"}.get(out.name or "", out.status)
         summary = out.payload.get("summary") or out.payload.get("reason") or out.error
@@ -382,7 +380,7 @@ class Manager:
                 self.risk[task["id"]] = "high"
                 self.board.comment(task["id"], "guardian", f"HIGH RISK ({res['score']}): {res['reason']}. "
                                    "Later runs need blocking review of every shell command.")
-        except Exception as exc:  # noqa: BLE001 - the guardian must never break a run
+        except Exception as exc:
             self.note("guardian_error", task_id=task["id"], error=repr(exc))
 
     def _gate_env(self, cwd) -> dict:
@@ -978,7 +976,7 @@ class Manager:
                 ok = bool(trees) and self.snapper.export(trees[0], tmp)
             yield Path(tmp) if ok else None
 
-    def _rewrite_checks(self, task: dict, new: list, vet: Optional[dict]) -> bool:
+    def _rewrite_checks(self, task: dict, new: list, vet: dict | None) -> bool:
         """Accept a rewrite of the checks that was vetted by ``_vet_rewrite`` (in the job pool): a problem refuses
         it; reasons for confirmation are journaled with the evidence and the reviewer must confirm them. The task
         goes through review, whose brief carries the old and the new checks. Without a sandbox a weak rewrite was not
@@ -1173,7 +1171,7 @@ class Manager:
             kind, _, tid = key.partition(":")
             try:
                 res = fut.result()
-            except Exception as exc:  # noqa: BLE001 - surface and retry
+            except Exception as exc:
                 self.note("job_crashed", job=key, error=repr(exc))
                 if kind == "work":
                     self._retry_later(self.board.get(tid), f"crash: {exc!r}")
@@ -1249,7 +1247,7 @@ class Manager:
                     self.plan()
                     exc = None
                     break
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     exc = e
                     if classify(str(e)) == "network":  # wait for the network, then plan again; not an attempt
                         self._enter_network_wait(str(e))
@@ -1314,7 +1312,7 @@ class Manager:
         for fut in list(self.jobs.values()):
             try:
                 fut.result(timeout=600)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
         self.collect()
         if final == "done":
@@ -1325,14 +1323,14 @@ class Manager:
         for fut in self.background:
             try:
                 fut.result(timeout=900)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self.note("background_error", error=repr(exc))
                 try:
                     from . import reports
 
                     reports.record("exception", f"фоновая ошибка менеджера: {exc!r}"[:200], repr(exc),
                                    project=self.project.slug, config=self.cfg)
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
         self.pool.shutdown(wait=True)
         self.project.set_meta(status=final)
@@ -1389,7 +1387,7 @@ def new_kernel(config: dict):
     return kernel
 
 
-def run_goal(goal: str, config: dict, name: Optional[str] = None, stop_event: Optional[threading.Event] = None,
+def run_goal(goal: str, config: dict, name: str | None = None, stop_event: threading.Event | None = None,
              kernel=None, workdir=None, refs: tuple = (), seed=None) -> tuple[Project, str]:
     """Create a project and drive it. A kernel built here is shut down at the end (``session_shutdown``)."""
     own = kernel is None
@@ -1416,8 +1414,8 @@ def continue_after_human(project: Project) -> list:
     return reopened
 
 
-def resume(slug: str, config: dict, stop_event: Optional[threading.Event] = None, kernel=None,
-           via: Optional[str] = None) -> tuple[Project, str]:
+def resume(slug: str, config: dict, stop_event: threading.Event | None = None, kernel=None,
+           via: str | None = None) -> tuple[Project, str]:
     own = kernel is None
     kernel = kernel or new_kernel(config)
     try:
@@ -1431,4 +1429,4 @@ def resume(slug: str, config: dict, stop_event: Optional[threading.Event] = None
             kernel.shutdown(reason="run_end")
 
 
-__all__ = ["Manager", "human_comment", "new_kernel", "run_goal", "resume", "json"]
+__all__ = ["Manager", "human_comment", "json", "new_kernel", "resume", "run_goal"]

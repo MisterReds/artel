@@ -13,7 +13,6 @@ import os
 import re
 import stat
 from pathlib import Path
-from typing import Optional
 from urllib.parse import quote
 
 PREVIEW_MAX = 2 * 1024 * 1024  # larger files are offered for download only
@@ -40,7 +39,7 @@ TYPES = {".html": "text/html; charset=utf-8", ".htm": "text/html; charset=utf-8"
          ".woff2": "font/woff2", ".woff": "font/woff", ".wasm": "application/wasm"}
 
 
-def resolve(base: Path, rel: str) -> Optional[Path]:
+def resolve(base: Path, rel: str) -> Path | None:
     """The real path of `rel` inside `base`, or None when it points outside (.., absolute, symlink out)."""
     if "\0" in rel:
         return None
@@ -55,7 +54,7 @@ def resolve(base: Path, rel: str) -> Optional[Path]:
     return target if target == base or target.is_relative_to(base) else None
 
 
-def _fd_path(fd: int) -> Optional[str]:
+def _fd_path(fd: int) -> str | None:
     """Where an open file really is: /proc on Linux, F_GETPATH on macOS; None when the platform cannot say."""
     try:
         return os.readlink(f"/proc/self/fd/{fd}")
@@ -71,7 +70,7 @@ def _fd_path(fd: int) -> Optional[str]:
     return None
 
 
-def open_inside(base: Path, rel: str) -> Optional[tuple[int, Path]]:
+def open_inside(base: Path, rel: str) -> tuple[int, Path] | None:
     """Open `rel` (a regular file inside `base`) once and return (fd, real path), or None. The check is made on the
     descriptor that is then read, so a path swapped for a symlink after resolve() cannot lead outside: the last
     component is opened with O_NOFOLLOW and the descriptor's own location is verified."""
@@ -103,7 +102,7 @@ def open_inside(base: Path, rel: str) -> Optional[tuple[int, Path]]:
     return fd, real
 
 
-def lang_of(path: Path) -> Optional[str]:
+def lang_of(path: Path) -> str | None:
     return LANGS.get(path.suffix.lower())
 
 
@@ -214,7 +213,7 @@ def csv_rows(text: str, ext: str = ".csv") -> dict:
     return {"header": header, "rows": rows, "total_rows": total}
 
 
-def preview(base: Path, rel: str) -> Optional[dict]:
+def preview(base: Path, rel: str) -> dict | None:
     """Preview payload for one file, or None when the path is refused / not a file."""
     opened = open_inside(base, rel)
     if opened is None:

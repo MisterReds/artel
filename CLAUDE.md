@@ -53,10 +53,16 @@ Adapted in our own words from Robert C. Martin's ub-mode (github.com/unclebob/ub
    enforced by structure (lock, single owner). Operations are idempotent: twice, or after a crash midway, ends the
    same.
 8. **Small verified units.** Finish one unit, check it, commit it (why, what, how proven), then the next. A branch
-   reaches master only with green CI on all six jobs.
-9. **Quality gates on changed code** (when the tools are present; skip a missing tool and say so): CRAP < 10 per
-   changed function (radon complexity + coverage), no duplicate blocks (pylint duplicate-code), mutation run
-   (mutmut) on changed files with no surviving mutants left unexplained.
+   reaches master only with green CI on all jobs (the six-job test matrix and the gate jobs).
+9. **Quality gates** (docs/SPEC.md §11; install with `pip install -e ".[dev,gates]"`; skip a missing tool and say so).
+   Run `scripts/gates.sh` (everything; `--quick` for the static part), or one by one: `python3 scripts/archcheck.py`
+   (import cycles, module-level mutable state, vendor names outside adapters/config, core purity), `ruff check`
+   and `mypy` (their ratchet variants: `python3 scripts/lint_ratchet.py ruff|mypy`). Existing debt is a ratchet in
+   `scripts/*_baseline.json`: a new violation fails, so does an entry that no longer occurs (delete it);
+   `--update-baseline` never adds entries without a reviewed `--allow-add`. On changed code: CRAP < 10 per changed
+   function (radon complexity + coverage), no duplicate blocks (pylint duplicate-code), mutation run (mutmut) with no
+   surviving mutants left unexplained in `scripts/mutation_explained.txt`. Total coverage may not fall below
+   `scripts/coverage_threshold.txt`, which only goes up.
 
 ## Project rules
 

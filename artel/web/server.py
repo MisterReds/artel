@@ -17,16 +17,15 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler
-
-from ..httpd import LocalHTTPServer
-from . import filesview
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
 from .. import analytics, chat, guardian
+from ..httpd import LocalHTTPServer
 from ..humanize import happenings, localize_stats, localize_view, ru
 from ..manager import human_comment, new_kernel, resume, run_goal
 from ..project import Project, list_projects
+from . import filesview
 
 STATIC = Path(__file__).parent / "index.html"
 LOGIN = Path(__file__).parent / "login.html"
@@ -103,7 +102,7 @@ class Runner:
                     last = time.time()
                     try:
                         self.updater.status(fetch=True)
-                    except Exception:  # noqa: BLE001 - offline is fine; the next check retries
+                    except Exception:
                         pass
                 time.sleep(2.0)
 
@@ -120,7 +119,7 @@ class Runner:
 
         try:
             Manager(self.kernel, project, stop).run()
-        except Exception as exc:  # noqa: BLE001 - surface in the log, keep serving
+        except Exception as exc:
             project.log.append("manager/fatal", error=repr(exc))
             project.set_meta(status="error")
 
@@ -430,7 +429,7 @@ def make_handler(runner: Runner, auth=None):
         def _project(self, slug: str) -> Project:
             return Project.open(slug, runner.config)
 
-        def do_GET(self):  # noqa: N802
+        def do_GET(self):
             url = urlparse(self.path)
             parts = [unquote(p) for p in url.path.strip("/").split("/") if p]
             q = parse_qs(url.query)
@@ -594,7 +593,7 @@ def make_handler(runner: Runner, auth=None):
                 fn(*args)
             except (BrokenPipeError, ConnectionResetError, FileNotFoundError):
                 raise
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 self.log_error("file route failed: %r", exc)
                 try:
                     self._json({"error": "internal error"}, 500)
@@ -733,7 +732,7 @@ def make_handler(runner: Runner, auth=None):
                 # The writer may be another process or another EventLog instance: poll the file.
                 time.sleep(0.7)
 
-        def do_POST(self):  # noqa: N802
+        def do_POST(self):
             parts = [unquote(p) for p in urlparse(self.path).path.strip("/").split("/") if p]
             forged = self._forged()
             if forged:
@@ -864,9 +863,8 @@ def make_handler(runner: Runner, auth=None):
                     except ValueError as e:
                         return self._json({"error": str(e)}, 400)
                 if parts == ["api", "providers", "embeddings"]:
-                    from ..providers import save_embeddings
-
                     from .. import embeddings
+                    from ..providers import save_embeddings
 
                     embeddings.reset()
                     try:
@@ -964,7 +962,7 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
                 from .. import reports
 
                 reports.record("exception", tb.strip().splitlines()[-1][:200], tb, config=runner.config)
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
     httpd = Server((host, port), make_handler(runner, auth))
@@ -993,4 +991,4 @@ def serve(port: int = 8765, config: dict | None = None, host: str | None = None,
         runner.kernel.shutdown(reason="server_stop")
 
 
-__all__ = ["serve", "resume", "run_goal"]
+__all__ = ["resume", "run_goal", "serve"]

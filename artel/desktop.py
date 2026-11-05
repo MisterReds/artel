@@ -93,7 +93,7 @@ def server_alive(port: int) -> bool:
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/manifest.webmanifest", timeout=2) as r:
             return json.load(r).get("name") == "Artel"
-    except Exception:  # noqa: BLE001 - refused, timeout, not JSON: no dashboard there
+    except Exception:
         return False
 
 

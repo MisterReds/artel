@@ -4,10 +4,29 @@ import json
 
 import pytest
 
-from artel.contracts import (AgentEvent, AmplifiedTaskContract, CapabilityProfile, ContractError, DecisionLogEntry,
-                             EscalationRequest, Event, ExecutorResult, Intent, ManagerInput, ModelCard,
-                             NormRequest, NormResponse, REQUIRED_FIELDS, RangeResearchTask, RewriteProposal,
-                             RewriteTaskContract, TaskContract, ToolResult, Usage, ErrorClass)
+from artel.contracts import (
+    REQUIRED_FIELDS,
+    AgentEvent,
+    AmplifiedTaskContract,
+    CapabilityProfile,
+    ContractError,
+    DecisionLogEntry,
+    ErrorClass,
+    EscalationRequest,
+    Event,
+    ExecutorResult,
+    Intent,
+    ManagerInput,
+    ModelCard,
+    NormRequest,
+    NormResponse,
+    RangeResearchTask,
+    RewriteProposal,
+    RewriteTaskContract,
+    TaskContract,
+    ToolResult,
+    Usage,
+)
 
 USAGE = {"in": 1, "out": 2, "cached": 0}
 TASK = {"id": "t1", "intent_ref": "i1", "title": "x", "input": "do", "refs": ["a"], "criteria": ["c"],

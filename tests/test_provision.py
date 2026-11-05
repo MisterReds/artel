@@ -3,8 +3,6 @@ import hashlib
 import io
 import os
 import re
-import stat
-import sys
 import tarfile
 import threading
 from functools import partial

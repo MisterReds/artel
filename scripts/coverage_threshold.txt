@@ -1,0 +1,3 @@
+# Minimum total coverage (line + branch, percent) enforced by `scripts/coverage_gate.py check`.
+# It is a ratchet: CI fails if this number is lower than on master. Raise it with `coverage_gate.py raise`.
+79

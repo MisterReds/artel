@@ -3,10 +3,9 @@ import threading
 import time
 from http.server import BaseHTTPRequestHandler
 
-from artel.httpd import LocalHTTPServer
-
 import pytest
 
+from artel.httpd import LocalHTTPServer
 from artel.project import DEFAULT_CONFIG, deep_merge
 
 
@@ -21,7 +20,7 @@ class FakeTelegram:
             def log_message(self, *a):
                 pass
 
-            def do_POST(self):  # noqa: N802
+            def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
                 method = self.path.rsplit("/", 1)[-1]
                 if method == "getUpdates":

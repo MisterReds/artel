@@ -1,0 +1,3 @@
+# Purely mechanical commits that the changed-code gates (CRAP, duplicates, mutation) skip via git blame --ignore-revs-file.
+# Add a commit here only if it is a formatter / ruff --fix style rewrite with no behaviour change, and say so in its message.
+27085b6fcc89d29a36ac11a22fa14f82eb704431  # ruff --fix: safe autofixes only

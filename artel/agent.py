@@ -17,7 +17,7 @@ import json
 import threading
 import time
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import Any
 
 from .contracts import REQUIRED_FIELDS, Event
 from .contracts._base import ContractError
@@ -103,7 +103,7 @@ def _render(messages: list, limit: int = 400) -> str:
     return "\n".join(lines)
 
 
-def compact_messages(messages: list, summarize=None, keep_turns: int = COMPACT_KEEP_TURNS) -> Optional[list]:
+def compact_messages(messages: list, summarize=None, keep_turns: int = COMPACT_KEEP_TURNS) -> list | None:
     """Summarize everything before the last ``keep_turns`` turns into the first user message.
 
     ``summarize(transcript) -> str`` may call an LLM; on failure or empty output a deterministic transcript
@@ -139,7 +139,7 @@ class LoopDetector:
     """
 
     def __init__(self) -> None:
-        self._tool_key: Optional[str] = None
+        self._tool_key: str | None = None
         self._tool_count = 0
         self._tool_warned = False
         self._text_warned = False
@@ -149,7 +149,7 @@ class LoopDetector:
         self._text = ""
         self._chunks: dict[str, list[int]] = {}
 
-    def observe_tool(self, name: str, args: Any) -> Optional[str]:
+    def observe_tool(self, name: str, args: Any) -> str | None:
         key = f"{name}:{json.dumps(args, sort_keys=True, default=str)}"
         if key != self._tool_key:
             self._tool_key, self._tool_count, self._tool_warned = key, 1, False
@@ -162,7 +162,7 @@ class LoopDetector:
             return "warn"
         return None
 
-    def observe_text(self, text: str) -> Optional[str]:
+    def observe_text(self, text: str) -> str | None:
         start = len(self._text)
         self._text += text
         if len(self._text) > TEXT_HISTORY_CAP:
@@ -191,7 +191,7 @@ class LoopDetector:
         return "warn"
 
 
-def journal_agent_event(log, kind: str, **payload: Any) -> Optional[dict]:
+def journal_agent_event(log, kind: str, **payload: Any) -> dict | None:
     """Append an agent event to the journal only if it satisfies the Event contract (artel/contracts/events.py).
     An invalid event is never written: a ``contract/violation`` (event_kind, missing fields, problem, actor) takes its
     place and the run goes on. Returns the written event, or None when it was rejected."""
@@ -208,7 +208,7 @@ def journal_agent_event(log, kind: str, **payload: Any) -> Optional[dict]:
 @dataclass
 class Outcome:
     status: str                      # terminal | stalled | turn_limit | refused | error | budget | stopped
-    terminal: Optional[tuple] = None
+    terminal: tuple | None = None
     turns: int = 0
     tool_calls: int = 0
     usage: dict = field(default_factory=lambda: {"input_tokens": 0, "output_tokens": 0, "cached": 0})
@@ -217,7 +217,7 @@ class Outcome:
     cost_usd: float = 0.0
 
     @property
-    def name(self) -> Optional[str]:
+    def name(self) -> str | None:
         return self.terminal[0] if self.terminal else None
 
     @property
@@ -229,7 +229,7 @@ class Outcome:
         return text if len(text) <= limit else text[: limit // 3] + "\n…\n" + text[-2 * limit // 3:]
 
 
-def get_llm(kernel, role: Optional[str] = None) -> tuple[Any, Optional[str]]:
+def get_llm(kernel, role: str | None = None) -> tuple[Any, str | None]:
     """The provider for a role and an optional model override.
 
     ``provider_by_role`` routes a role to another provider; names in ``providers`` are
@@ -279,15 +279,15 @@ def execute_tool(kernel, ctx: ToolContext, name: str, args: dict) -> tuple[str, 
             return str(exc), True
         except TypeError as exc:
             return f"bad arguments: {exc}", True
-        except Exception as exc:  # noqa: BLE001 - tool crashes go back to the model
+        except Exception as exc:
             return f"tool crashed: {exc!r}", True
 
     return kernel.waterfall("tool/execute", {"name": name, "args": args, "ctx": ctx}, final)
 
 
 def run_loop(kernel, project, *, role: str, system: str, first_user: str, ctx: ToolContext, max_turns: int,
-             purpose: str, persona=None, stop_event: Optional[threading.Event] = None,
-             tool_names: Optional[list] = None) -> Outcome:
+             purpose: str, persona=None, stop_event: threading.Event | None = None,
+             tool_names: list | None = None) -> Outcome:
     llm, model_override = get_llm(kernel, role)
     specs = kernel.tools_for(role, tool_names)
     tools = [s.schema() for s in specs]
@@ -455,7 +455,7 @@ def budget_guard(config: dict):
     """Return a callable that names the exhausted budget, or None while within limits."""
     b = config.get("budgets", {})
 
-    def check(project) -> Optional[str]:
+    def check(project) -> str | None:
         meta = project.meta
         u = meta["usage"]
         if b.get("max_total_tokens") and u["input_tokens"] + u["output_tokens"] >= b["max_total_tokens"]:

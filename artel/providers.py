@@ -16,7 +16,6 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -30,7 +29,7 @@ KEY_VARS = {"ANTHROPIC_API_KEY": "Anthropic API", "OPENAI_API_KEY": "OpenAI API"
             "DEEPSEEK_API_KEY": "DeepSeek"}
 
 
-def _run(args: list, env: Optional[dict] = None, timeout: int = 20) -> tuple[int, str]:
+def _run(args: list, env: dict | None = None, timeout: int = 20) -> tuple[int, str]:
     try:
         p = subprocess.run(args, capture_output=True, text=True, timeout=timeout, env=env, encoding="utf-8", errors="replace")
         return p.returncode, ANSI.sub("", (p.stdout + p.stderr)).strip()
@@ -44,7 +43,7 @@ class CodexLogin:
     def __init__(self, config: dict):
         self.config = config
         self.state: dict = {"phase": "idle"}
-        self.proc: Optional[subprocess.Popen] = None
+        self.proc: subprocess.Popen | None = None
         self.lock = threading.Lock()
 
     def start(self, wait_s: float = 20.0) -> dict:
@@ -100,10 +99,10 @@ class ClaudeLogin:
     def __init__(self, config: dict):
         self.config = config
         self.state: dict = {"phase": "idle"}
-        self.proc: Optional[subprocess.Popen] = None
+        self.proc: subprocess.Popen | None = None
         self.lock = threading.Lock()
 
-    def _binary(self) -> Optional[str]:
+    def _binary(self) -> str | None:
         return resolve((self.config.get("claude_code") or {}).get("binary", "claude"))
 
     def start(self, wait_s: float = 20.0) -> dict:
@@ -315,7 +314,7 @@ def routing(config: dict) -> dict:
             "catalogs": {rt: model_catalog(config, rt) for rt in ("claude_code", "codex")}}
 
 
-def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
+def save_routing(config: dict, data: dict, path: Path | None = None) -> dict:
     """Persist runtime choices to ARTEL_HOME/artel.yaml and apply them to the live config."""
     from .project import artel_home, deep_merge
 
@@ -356,7 +355,7 @@ def save_routing(config: dict, data: dict, path: Optional[Path] = None) -> dict:
     return routing(config)
 
 
-def save_timezone(config: dict, name, path: Optional[Path] = None) -> dict:
+def save_timezone(config: dict, name, path: Path | None = None) -> dict:
     """Persist ui.timezone; an empty name clears it (system zone). Invalid IANA names raise ValueError, nothing is saved."""
     from .project import artel_home
     from .tz import info, valid_zone
@@ -388,7 +387,7 @@ def embeddings_status(config: dict) -> dict:
     return status(config)
 
 
-def save_embeddings(config: dict, data: dict, path: Optional[Path] = None) -> dict:
+def save_embeddings(config: dict, data: dict, path: Path | None = None) -> dict:
     """embeddings.backend (auto | local | http | off), dim (768/512/256/128), url/model for http."""
     from .embeddings import DIMS
     from .project import artel_home, deep_merge
@@ -420,4 +419,4 @@ def overview(config: dict) -> dict:
             "timezone": __import__("artel.tz", fromlist=["info"]).info(config)}
 
 
-__all__ = ["save_embeddings", "embeddings_status", "CodexLogin", "ClaudeLogin", "logout_claude", "overview", "model_catalog", "save_routing", "save_timezone", "logout_codex", "json"]
+__all__ = ["ClaudeLogin", "CodexLogin", "embeddings_status", "json", "logout_claude", "logout_codex", "model_catalog", "overview", "save_embeddings", "save_routing", "save_timezone"]

@@ -12,7 +12,6 @@ import shutil
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
 MAX_EDIT_CHARS = 2000
 
@@ -93,7 +92,7 @@ def trajectory_digest(project, limit: int = 400) -> str:
     return "\n".join(lines) or "(no notable events)"
 
 
-def setup_refiner(kernel) -> Optional[Refiner]:
+def setup_refiner(kernel) -> Refiner | None:
     r = Refiner()
     kernel.provide("refine", r)
     return r

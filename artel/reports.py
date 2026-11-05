@@ -25,7 +25,6 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
 DEFAULTS = {"telegram": True, "github": "ask"}  # github: ask | auto | off
 LABEL = "artel-report"
@@ -134,8 +133,8 @@ _lock = threading.Lock()
 _listeners: list = []  # callables(report) — e.g. the Telegram bot
 
 
-def record(kind: str, title: str, text: str, diagnosis: Optional[dict] = None, project: Optional[str] = None,
-           task_id: Optional[str] = None, config: Optional[dict] = None) -> dict:
+def record(kind: str, title: str, text: str, diagnosis: dict | None = None, project: str | None = None,
+           task_id: str | None = None, config: dict | None = None) -> dict:
     """Store a failure report (redacted) and tell the listeners; sends to GitHub when `reports.github: auto`."""
     rep = {"id": uuid.uuid4().hex[:10], "ts": time.time(), "kind": kind, "title": redact(title)[:200],
            "text": redact(text)[-6000:], "fingerprint": fingerprint(kind, title + "\n" + (text or "")[:400]),
@@ -144,13 +143,12 @@ def record(kind: str, title: str, text: str, diagnosis: Optional[dict] = None, p
     if diagnosis:
         rep["diagnosis"] = {k: (redact(v) if isinstance(v, str) else [redact(x) for x in v] if isinstance(v, list) else v)
                             for k, v in diagnosis.items() if k in ("cause", "who", "steps", "evidence", "by", "confidence")}
-    with _lock:
-        with (_dir() / "reports.jsonl").open("a", encoding="utf-8") as fh:
-            fh.write(json.dumps(rep, ensure_ascii=False) + "\n")
-    for fn in list(_listeners):
+    with _lock, (_dir() / "reports.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rep, ensure_ascii=False) + "\n")
+    for fn in _listeners:
         try:
             fn(rep)
-        except Exception:  # noqa: BLE001 - a listener never breaks recording
+        except Exception:
             pass
     if config is not None and settings(config)["github"] == "auto":
         threading.Thread(target=lambda: send_github(rep["id"]), daemon=True, name="report-github").start()
@@ -168,7 +166,7 @@ def load(limit: int = 200) -> list[dict]:
     return rows[-limit:][::-1]
 
 
-def get(rid: str) -> Optional[dict]:
+def get(rid: str) -> dict | None:
     return next((r for r in load(10_000) if r["id"] == rid), None)
 
 
@@ -202,7 +200,7 @@ def markdown(rep: dict) -> str:
     return "\n".join(p for p in parts if p is not None)
 
 
-def github_repo() -> Optional[str]:
+def github_repo() -> str | None:
     """owner/name of the repository this installation came from (its origin)."""
     root = Path(__file__).resolve().parents[1]
     try:
@@ -227,7 +225,7 @@ def github_ready() -> dict:
     return {"ok": True, "repo": repo}
 
 
-def _gh(*args: str, input_text: Optional[str] = None) -> subprocess.CompletedProcess:
+def _gh(*args: str, input_text: str | None = None) -> subprocess.CompletedProcess:
     return subprocess.run([shutil.which("gh") or "gh", *args], capture_output=True, text=True, timeout=60,
                           input=input_text, encoding="utf-8", errors="replace")
 
@@ -273,5 +271,15 @@ def telegram_text(rep: dict) -> str:
     return "\n".join(lines)[:1500]
 
 
-__all__ = ["record", "load", "get", "redact", "fingerprint", "markdown", "send_github", "github_ready",
-           "telegram_text", "settings"]
+__all__ = [
+    "fingerprint",
+    "get",
+    "github_ready",
+    "load",
+    "markdown",
+    "record",
+    "redact",
+    "send_github",
+    "settings",
+    "telegram_text",
+]

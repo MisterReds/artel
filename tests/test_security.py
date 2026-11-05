@@ -100,8 +100,8 @@ def test_pypi_plugins_install_as_wheels_only(tmp_path):
 
 
 def test_artel_home_is_private_and_the_bridge_token_stays_off_command_lines(home, tmp_path):
-    from artel.manager import new_kernel
     from artel.adapters.agent.loop import ToolBridge
+    from artel.manager import new_kernel
     from artel.runtimes.mcp_proxy import read_token
     from artel.tooling import ToolContext
 
@@ -182,9 +182,9 @@ def test_the_mcp_proxy_works_from_a_workspace_that_is_another_artel_checkout(hom
     and the agents lost every Artel tool (generation 6: the auditor could not call audit_verdict)."""
     import subprocess
 
-    from artel.manager import new_kernel
     from artel.adapters.agent.claude_code import PROXY_SCRIPT
     from artel.adapters.agent.loop import ToolBridge
+    from artel.manager import new_kernel
     from artel.tooling import ToolContext
 
     shadow = tmp_path / "ws" / "artel" / "runtimes"
@@ -215,6 +215,7 @@ def test_the_mcp_proxy_works_from_a_workspace_that_is_another_artel_checkout(hom
 def test_policy_hook_ignores_a_planted_workspace_policy(home, tmp_path):
     import shlex
     import subprocess
+
     from artel.adapters.agent.claude_code import policy_hook_settings
 
     ws = tmp_path / "ws"

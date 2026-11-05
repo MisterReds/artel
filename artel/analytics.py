@@ -9,7 +9,6 @@ from __future__ import annotations
 import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Optional
 
 from .humanize import block_ask_id, block_question
 from .project import Project, artel_home
@@ -29,7 +28,7 @@ STAGES = ("planning", "execution", "review", "audit", "done", "waiting_human", "
 _cache: dict = {}
 
 
-def cost_usd(model: Optional[str], tokens_in: int, tokens_out: int) -> Optional[float]:
+def cost_usd(model: str | None, tokens_in: int, tokens_out: int) -> float | None:
     p = PRICES.get(model or "")
     if p is None:
         return None
@@ -239,16 +238,16 @@ def project_stats(project: Project, live: bool = False) -> dict:
     }
 
 
-def _efficiency(project) -> Optional[dict]:
+def _efficiency(project) -> dict | None:
     try:
         from .routing import efficiency
 
         return efficiency(project)
-    except Exception:  # noqa: BLE001 - metrics never hide a project
+    except Exception:
         return None
 
 
-def _budget_state(project: Project) -> Optional[dict]:
+def _budget_state(project: Project) -> dict | None:
     b = project.config.get("budgets", {})
     cap = b.get("max_total_tokens") or 0
     if not cap:
@@ -260,7 +259,7 @@ def _budget_state(project: Project) -> Optional[dict]:
             "alert": "exhausted" if frac >= 1 else "warning" if frac >= 0.8 else None}
 
 
-def portfolio(config: dict, live: set = frozenset(), home: Optional[Path] = None) -> list[dict]:
+def portfolio(config: dict, live: set = frozenset(), home: Path | None = None) -> list[dict]:
     base = (home or artel_home()) / "projects"
     out = []
     if not base.exists():
@@ -269,7 +268,7 @@ def portfolio(config: dict, live: set = frozenset(), home: Optional[Path] = None
         if (d / "project.json").exists():
             try:
                 out.append(project_stats(Project(d, config), live=d.name in live))
-            except Exception as exc:  # noqa: BLE001 - one broken project must not hide the rest
+            except Exception as exc:
                 out.append({"slug": d.name, "name": d.name, "status": "error", "stage": "error", "error": repr(exc),
                             "progress": 0, "tasks_total": 0, "tasks_done": 0, "workers": [], "attention": [],
                             "updated_at": time.time()})

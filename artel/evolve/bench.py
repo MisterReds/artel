@@ -21,7 +21,6 @@ import sys
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
-from typing import Optional
 
 import yaml
 
@@ -32,7 +31,7 @@ DEFAULT_TASKS = Path(__file__).resolve().parents[2] / "evals" / "tasks"
 METRICS = ("pass", "partial", "cost_usd", "tokens", "duration_s", "attempts", "rejections", "stalls", "audit_rounds")
 
 
-def load_tasks(tasks_dir: Path = DEFAULT_TASKS, only: Optional[list] = None) -> list[dict]:
+def load_tasks(tasks_dir: Path = DEFAULT_TASKS, only: list | None = None) -> list[dict]:
     tasks = []
     for f in sorted(Path(tasks_dir).glob("*/task.yaml")):
         t = yaml.safe_load(f.read_text(encoding="utf-8"))
@@ -42,7 +41,7 @@ def load_tasks(tasks_dir: Path = DEFAULT_TASKS, only: Optional[list] = None) -> 
     return tasks
 
 
-def _project_dir(home: Path) -> Optional[Path]:
+def _project_dir(home: Path) -> Path | None:
     base = home / "projects"
     dirs = [d for d in base.iterdir() if (d / "project.json").exists()] if base.exists() else []
     return dirs[0] if dirs else None
@@ -137,7 +136,7 @@ def summarize(results: list[dict]) -> dict:
     }
 
 
-def run_suite(code: Path, config: dict, out_dir: Path, tasks: Optional[list] = None, parallel: int = 2,
+def run_suite(code: Path, config: dict, out_dir: Path, tasks: list | None = None, parallel: int = 2,
               label: str = "", repeats: int = 1) -> dict:
     tasks = tasks or load_tasks()
     out_dir.mkdir(parents=True, exist_ok=True)

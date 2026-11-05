@@ -42,7 +42,6 @@ import tempfile
 import threading
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Optional
 
 MODES = ("off", "auto", "bwrap", "seatbelt")
 SEATBELT = "/usr/bin/sandbox-exec"
@@ -249,7 +248,7 @@ def seatbelt_status() -> tuple[bool, str]:
 _failures: dict[str, str] = {}   # why a sandbox start failed last (shown by status(); one entry, not a log)
 
 
-def plan(config: dict, command: str, *, cwd, writable, mode: Optional[str] = None, project_root=None,
+def plan(config: dict, command: str, *, cwd, writable, mode: str | None = None, project_root=None,
          sentinel: bool = True) -> Plan:
     """Decide how to run ``command`` under the configured sandbox. Never raises; see ``Plan.note`` / ``Plan.error``."""
     s = settings(config)
@@ -347,5 +346,20 @@ def status(config: dict) -> dict:
                        f"Как включить: {how}."}
 
 
-__all__ = ["Plan", "plan", "settings", "bwrap_args", "bwrap_status", "seatbelt_profile", "seatbelt_status",
-           "temp_dirs", "MODES", "DEFAULTS", "read_policy", "protected_paths", "execute", "refusal", "status"]
+__all__ = [
+    "DEFAULTS",
+    "MODES",
+    "Plan",
+    "bwrap_args",
+    "bwrap_status",
+    "execute",
+    "plan",
+    "protected_paths",
+    "read_policy",
+    "refusal",
+    "seatbelt_profile",
+    "seatbelt_status",
+    "settings",
+    "status",
+    "temp_dirs",
+]

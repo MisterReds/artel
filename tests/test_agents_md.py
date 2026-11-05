@@ -118,6 +118,7 @@ def test_cli_runtime_not_duplicated(tmp_path, monkeypatch):
 
 def test_project_page_exposes_instruction_file(tmp_path, monkeypatch):
     from pathlib import Path as P
+
     from artel.project import DEFAULT_CONFIG, Project, deep_merge
     from artel.web.server import Runner, project_view
 

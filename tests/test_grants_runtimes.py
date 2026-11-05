@@ -1,10 +1,10 @@
 """Grants mapped to runtime arg lists (no binaries launched)."""
 import pytest
 
-from artel.kernel import Kernel
-from artel.project import Project
 from artel.adapters.agent.claude_code import WRITE_TOOLS, build_dir_args
 from artel.adapters.agent.codex import build_args
+from artel.kernel import Kernel
+from artel.project import Project
 from artel.tooling import effective_grants
 
 

@@ -7,6 +7,8 @@ dependencies = ["anthropic>=1.0", "httpx>=0.27", "PyYAML>=6", "tzdata; sys_platf
 
 [project.optional-dependencies]
 dev = ["pytest>=8"]
+# Engineering gates (docs/SPEC.md §11): `pip install -e ".[dev,gates]"`, then `scripts/gates.sh`.
+gates = ["ruff==0.17.2", "mypy==2.4.0", "types-PyYAML==6.0.12.20261103", "coverage>=7.6", "radon>=6", "pylint>=3.3", "mutmut>=3.8", "pip-audit>=2.7"]  # ruff and mypy are pinned: their counts are the ratchet baselines
 
 [project.scripts]
 artel = "artel.cli:main"
@@ -22,3 +24,54 @@ include = ["artel*"]
 "artel.web" = ["index.html", "login.html", "static/*.svg", "static/*.js", "static/*.css", "static/*.webmanifest", "static/icons/*",
                "static/fonts/*"]
 "artel.data" = ["harnesses.json", "tools.yaml", "artel-root.sh", "artel-sudoers.tpl"]
+
+# ---------------------------------------------------------------- engineering gates (docs/SPEC.md §11)
+# Existing debt is a ratchet: scripts/ruff_baseline.json / mypy_baseline.json hold today's counts; CI fails on any new
+# finding and on a baseline entry that no longer occurs (see scripts/ratchet.py). Nothing is silenced by a blanket ignore.
+
+[tool.ruff]
+line-length = 120
+target-version = "py310"
+extend-exclude = ["bench", "evals", "examples", "registry"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "B", "I", "UP", "S", "SIM", "PERF", "RUF"]
+# Russian prose in strings, docstrings and comments is intended: Cyrillic lookalike-letter checks are noise.
+ignore = ["RUF001", "RUF002", "RUF003"]
+
+[tool.ruff.lint.per-file-ignores]
+# pytest idiom and fixtures: bare asserts, fake credentials, throwaway paths, fixed git/python subprocess calls.
+"tests/**" = ["S101", "S105", "S106", "S108", "S603", "S607"]
+# CI helper scripts run fixed git/python/gh commands from the repository checkout.
+"scripts/**" = ["S603", "S607"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["artel"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["artel"]
+warn_unused_configs = true
+warn_redundant_casts = true
+# Strict zone: the core (contracts, ports) must type-check with zero errors. The rest is a per-file ratchet.
+[[tool.mypy.overrides]]
+module = ["artel.contracts", "artel.contracts.*", "artel.ports", "artel.ports.*"]
+disallow_any_generics = true
+disallow_subclassing_any = true
+disallow_untyped_calls = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+disallow_untyped_decorators = true
+warn_unused_ignores = true
+warn_return_any = true
+no_implicit_reexport = true
+no_implicit_optional = true
+strict_equality = true
+
+[tool.coverage.run]
+branch = true
+source = ["artel"]
+
+[tool.coverage.report]
+skip_empty = true

@@ -345,6 +345,10 @@ Critic'а), Telegram привязан. В облачной сессии испо
 Для кода самого Artel, поставкой вместе с П5 (archcheck): ruff и mypy (строгий для `contracts`, `ports`, `core`),
 pip-audit, покрытие с порогом, CRAP < 10 для изменённых функций, дублирование (pylint duplicate-code), мутационный
 прогон (mutmut) по изменённым файлам, actions по SHA; правила разработки — в CLAUDE.md, раздел Engineering rules.
+Реализация: `scripts/archcheck.py`, `scripts/lint_ratchet.py` (ruff, mypy), `scripts/coverage_gate.py`,
+`scripts/changed_gates.py` (CRAP, дубли, мутации), `scripts/gates.sh`; текущий долг — храповик в `scripts/*_baseline.json`
+(новое нарушение и устаревшая запись одинаково роняют CI; `--update-baseline` не добавляет записи без `--allow-add`);
+в CI — задачи `static`, `coverage`, `changed-code`.
 
 ## 12. Порядок до приёмки (внешняя оценка 2026-10-29)
 

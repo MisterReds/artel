@@ -1,8 +1,6 @@
 """Grants on the project page: API payload, index.html hook and docs."""
 from pathlib import Path
 
-import pytest
-
 from artel.project import DEFAULT_CONFIG, Project, deep_merge
 from artel.web.server import Runner, project_view
 

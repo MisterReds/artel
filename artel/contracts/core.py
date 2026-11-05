@@ -1,8 +1,9 @@
 """Port-level value objects: Usage, NormRequest, NormResponse, ToolResult, ModelCard, ErrorClass."""
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Mapping, Optional
+from typing import Any
 
 from . import _base as b
 
@@ -19,30 +20,30 @@ class Usage:
     cached: int
 
     @classmethod
-    def from_dict(cls, d: Any, path: str = "") -> "Usage":
+    def from_dict(cls, d: Any, path: str = "") -> Usage:
         path = b.check_path(path)
         d = b.obj(d, path)
         b.reject_unknown(d, cls, path)
         return cls(b.integer(d, "in", path), b.integer(d, "out", path), b.integer(d, "cached", path))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"in": self.in_, "out": self.out, "cached": self.cached}
 
 
 @dataclass(frozen=True)
 class NormRequest:
-    messages: tuple
-    tools: tuple
-    output_schema: Optional[dict]
+    messages: tuple[Any, ...]
+    tools: tuple[Any, ...]
+    output_schema: dict[str, Any] | None
     max_tokens: int
-    cache_hint: Optional[str]
+    cache_hint: str | None
 
     def __post_init__(self) -> None:
         for name in ("messages", "tools", "output_schema"):
             object.__setattr__(self, name, b.freeze(getattr(self, name)))
 
     @classmethod
-    def from_dict(cls, d: Any, path: str = "") -> "NormRequest":
+    def from_dict(cls, d: Any, path: str = "") -> NormRequest:
         path = b.check_path(path)
         d = b.obj(d, path)
         b.reject_unknown(d, cls, path)
@@ -54,7 +55,7 @@ class NormRequest:
                    b.mapping(d, "output_schema", path, nullable=True), b.integer(d, "max_tokens", path, 1),
                    b.string(d, "cache_hint", path, nullable=True))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"messages": b.thaw(self.messages), "tools": b.thaw(self.tools),
                 "output_schema": b.thaw(self.output_schema), "max_tokens": self.max_tokens, "cache_hint": self.cache_hint}
 
@@ -62,7 +63,7 @@ class NormRequest:
 @dataclass(frozen=True)
 class NormResponse:
     content: str
-    tool_calls: tuple
+    tool_calls: tuple[Any, ...]
     usage: Usage
     latency_ms: int
     model: str
@@ -72,7 +73,7 @@ class NormResponse:
         object.__setattr__(self, "tool_calls", b.freeze(self.tool_calls))
 
     @classmethod
-    def from_dict(cls, d: Any, path: str = "") -> "NormResponse":
+    def from_dict(cls, d: Any, path: str = "") -> NormResponse:
         path = b.check_path(path)
         d = b.obj(d, path)
         b.reject_unknown(d, cls, path)
@@ -80,7 +81,7 @@ class NormResponse:
                    b.nested(d, "usage", Usage, path), b.integer(d, "latency_ms", path),
                    b.string(d, "model", path), b.enum(d, "stop", STOP_REASONS, path))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"content": self.content, "tool_calls": b.thaw(self.tool_calls),
                 "usage": self.usage.to_dict(), "latency_ms": self.latency_ms, "model": self.model,
                 "stop": self.stop}
@@ -90,10 +91,10 @@ class NormResponse:
 class ToolResult:
     output: str
     is_error: bool
-    exit_code: Optional[int] = None
+    exit_code: int | None = None
 
     @classmethod
-    def from_dict(cls, d: Any, path: str = "") -> "ToolResult":
+    def from_dict(cls, d: Any, path: str = "") -> ToolResult:
         path = b.check_path(path)
         d = b.obj(d, path)
         b.reject_unknown(d, cls, path)
@@ -102,7 +103,7 @@ class ToolResult:
             raise b.ContractError(f"{path}exit_code", "expected an integer or null")
         return cls(b.string(d, "output", path), b.boolean(d, "is_error", path), code)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"output": self.output, "is_error": self.is_error, "exit_code": self.exit_code}
 
 
@@ -111,7 +112,7 @@ class ModelCard:
     id: str
     provider: str
     context_tokens: int
-    capabilities: tuple
+    capabilities: tuple[Any, ...]
     usd_per_mtok_in: float
     usd_per_mtok_out: float
 
@@ -119,7 +120,7 @@ class ModelCard:
         object.__setattr__(self, "capabilities", b.freeze(self.capabilities))
 
     @classmethod
-    def from_dict(cls, d: Any, path: str = "") -> "ModelCard":
+    def from_dict(cls, d: Any, path: str = "") -> ModelCard:
         path = b.check_path(path)
         d = b.obj(d, path)
         b.reject_unknown(d, cls, path)
@@ -127,7 +128,7 @@ class ModelCard:
                    b.integer(d, "context_tokens", path), b.strings(d, "capabilities", path),
                    b.number(d, "usd_per_mtok_in", path), b.number(d, "usd_per_mtok_out", path))
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"id": self.id, "provider": self.provider, "context_tokens": self.context_tokens,
                 "capabilities": b.thaw(self.capabilities), "usd_per_mtok_in": self.usd_per_mtok_in,
                 "usd_per_mtok_out": self.usd_per_mtok_out}
@@ -137,10 +138,10 @@ class ModelCard:
 class ErrorClass:
     kind: str
     retryable: bool
-    retry_after_s: Optional[float] = None
+    retry_after_s: float | None = None
 
     @classmethod
-    def from_dict(cls, d: Any, path: str = "") -> "ErrorClass":
+    def from_dict(cls, d: Any, path: str = "") -> ErrorClass:
         path = b.check_path(path)
         d = b.obj(d, path)
         b.reject_unknown(d, cls, path)
@@ -149,5 +150,5 @@ class ErrorClass:
             after = b.number(d, "retry_after_s", path)
         return cls(b.enum(d, "kind", ERROR_KINDS, path), b.boolean(d, "retryable", path), after)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"kind": self.kind, "retryable": self.retryable, "retry_after_s": self.retry_after_s}

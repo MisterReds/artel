@@ -11,7 +11,6 @@ import sys
 import tempfile
 import time
 from pathlib import Path
-from typing import Optional
 
 from .claude_code import PROXY_SCRIPT, child_env
 
@@ -28,7 +27,7 @@ _sandbox_mode: dict = {}  # (binary, home) -> "sandbox" | "sandbox+network" | "n
 _catalog_cache: dict = {}
 
 
-def codex_env(cfg: dict, config: Optional[dict] = None) -> dict:
+def codex_env(cfg: dict, config: dict | None = None) -> dict:
     from ...tools import env_with_tools
 
     env = env_with_tools(child_env(config, "codex"))
@@ -37,7 +36,7 @@ def codex_env(cfg: dict, config: Optional[dict] = None) -> dict:
     return env
 
 
-def model_catalog(cc: Optional[dict] = None, ttl: float = 600.0) -> list[dict]:
+def model_catalog(cc: dict | None = None, ttl: float = 600.0) -> list[dict]:
     """Models this Codex account can use (`codex debug models`), cached; [] when the CLI is missing or fails."""
     from ...tools import resolve
 
@@ -64,7 +63,7 @@ def model_catalog(cc: Optional[dict] = None, ttl: float = 600.0) -> list[dict]:
     return models
 
 
-def normalize_model(model: str, cc: Optional[dict] = None) -> str:
+def normalize_model(model: str, cc: dict | None = None) -> str:
     """Accept a display name ("GPT-6-Luna") or any capitalisation for the model id Codex expects ("gpt-6-luna")."""
     m = (model or "").strip()
     for item in model_catalog(cc):
@@ -77,7 +76,7 @@ def _toml(value) -> str:
     return json.dumps(value)  # JSON strings and arrays of strings are valid TOML
 
 
-def sandbox_mode(cc: dict, refresh: bool = False, config: Optional[dict] = None) -> str:
+def sandbox_mode(cc: dict, refresh: bool = False, config: dict | None = None) -> str:
     """How Codex's own sandbox can run on this machine, probed once with `codex sandbox -- true`:
     "sandbox" (as configured), "sandbox+network" (works only with network on — e.g. bubblewrap may not set up a
     loopback in a new network namespace), or "none" (unusable; Artel's grants and command policy still apply)."""
@@ -120,8 +119,8 @@ def sandbox_note(cc: dict) -> str:
 
 
 def build_args(cc: dict, *, workspace: Path, shared: Path, role: str, bridge_url: str, bridge_token: str,
-               effort: Optional[str], thread_id: Optional[str], last_message: Path,
-               grants: Optional[dict] = None, mode: str = "sandbox", mcp_servers: Optional[dict] = None) -> list:
+               effort: str | None, thread_id: str | None, last_message: Path,
+               grants: dict | None = None, mode: str = "sandbox", mcp_servers: dict | None = None) -> list:
     from ...tooling import READONLY_ROLES
     from ...tools import resolve
 

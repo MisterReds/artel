@@ -7,7 +7,6 @@ the page asks for ``mode=user``.
 from __future__ import annotations
 
 import re
-from typing import Optional
 
 ROLES = {"researcher": "исследователь", "engineer": "инженер", "reviewer": "ревьюер", "auditor": "аудитор",
          "planner": "планировщик", "manager": "менеджер", "tester": "тестировщик", "librarian": "библиотекарь",
@@ -48,7 +47,7 @@ FRAGMENTS = [
 ASKS = re.compile(r"Нужна настройка|Перепланирование|Менеджер передал|Подтвердите замену проверки")
 
 
-def role_ru(role: Optional[str]) -> Optional[str]:
+def role_ru(role: str | None) -> str | None:
     """A role name in Russian; names we do not know (the planner invents roles) stay as they are."""
     if not isinstance(role, str):
         return role
@@ -100,7 +99,7 @@ def _title(tasks: dict, tid) -> str:
     return f"«{t.get('title') or 'задача'}»"
 
 
-def _sentence(e: dict, tasks: dict) -> Optional[tuple[str, str, Optional[str]]]:
+def _sentence(e: dict, tasks: dict) -> tuple[str, str, str | None] | None:
     """(text, tone, task_id) for an event a person cares about, else None."""
     k, tid = e["kind"], e.get("task_id")
     if k == "board/task_moved":

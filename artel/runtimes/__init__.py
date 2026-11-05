@@ -42,7 +42,7 @@ def connected_runtimes(config: dict, ttl: float = 120.0) -> list[str]:
         try:
             if checks[name]():
                 found.append(name)
-        except Exception:  # noqa: BLE001 - a broken status check means "not connected", never a crash
+        except Exception:
             pass
     _auto_cache[key] = (found, time.time())
     return found
@@ -113,7 +113,7 @@ def run_agent(kernel, project, *, role: str, **kw):
         if configured == "expensive":  # the manager's calls are few; each one is visible in the log
             project.log.append("tier/usage", role=role, tier=tier, usage=usage, degraded=tier != planned,
                                simple_request=planned != configured)
-    except Exception:  # noqa: BLE001 - accounting never breaks a run
+    except Exception:
         pass
     return out
 

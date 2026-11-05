@@ -11,7 +11,6 @@ import math
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Optional
 
 TOKEN = re.compile(r"[\w]+", re.UNICODE)
 RRF_K = 60
@@ -49,8 +48,8 @@ def bm25(query: str, docs: list[str], k1: float = 1.5, b: float = 0.75) -> list[
     return scores
 
 
-def _semantic(emb, query: str, docs: list[str], titles: Optional[list[str]], task: str, order_lex: list[int],
-              budget: int) -> list[Optional[float]]:
+def _semantic(emb, query: str, docs: list[str], titles: list[str] | None, task: str, order_lex: list[int],
+              budget: int) -> list[float | None]:
     """Cosine scores for documents whose vectors are cached plus up to ``budget`` new ones (best lexical matches
     first); the rest are queued for background embedding and scored on a later search."""
     titles = titles or [""] * len(docs)
@@ -59,7 +58,7 @@ def _semantic(emb, query: str, docs: list[str], titles: Optional[list[str]], tas
     take = sorted({i for i, h in enumerate(have) if h} | set(new))
     qv = emb.embed([query], kind="query", task=task)[0]
     vecs = emb.embed([docs[i] for i in take], titles=[titles[i] for i in take]) if take else []
-    sem: list[Optional[float]] = [None] * len(docs)
+    sem: list[float | None] = [None] * len(docs)
     for i, v in zip(take, vecs):
         sem[i] = emb_cos(qv, v)
     rest = [i for i in range(len(docs)) if sem[i] is None]
@@ -72,8 +71,8 @@ def emb_cos(a: list[float], b: list[float]) -> float:
     return sum(x * y for x, y in zip(a, b))
 
 
-def rank(query: str, docs: list[str], config: Optional[dict] = None, task: str = "search",
-         titles: Optional[list[str]] = None, top: Optional[int] = None,
+def rank(query: str, docs: list[str], config: dict | None = None, task: str = "search",
+         titles: list[str] | None = None, top: int | None = None,
          budget: int = 48) -> list[tuple[int, float, str]]:
     """Indices of ``docs`` by relevance: [(index, score, how)], how = 'hybrid' | 'lexical'.
     ``task`` picks the embedding instruction: search | code | qa | similarity. At most ``budget`` documents are
@@ -90,7 +89,7 @@ def rank(query: str, docs: list[str], config: Optional[dict] = None, task: str =
         if emb is not None:
             try:
                 sem = _semantic(emb, query, docs, titles, task, order_lex, budget)
-            except Exception as e:  # noqa: BLE001 - any embedding failure falls back to keywords, never fails the search
+            except Exception as e:
                 embeddings.failed(config, str(e) if isinstance(e, embeddings.EmbedError) else repr(e))
                 sem = None
     if sem is None:
@@ -150,10 +149,10 @@ def chunks(root: Path, max_files: int = 2000, max_bytes: int = 400_000, size: in
     return out
 
 
-def search_files(root: Path, query: str, config: Optional[dict] = None, top: int = 8, task: str = "code") -> list[dict]:
+def search_files(root: Path, query: str, config: dict | None = None, top: int = 8, task: str = "code") -> list[dict]:
     cs = chunks(root)
     hits = rank(query, [c["text"] for c in cs], config, task=task, titles=[c["path"] for c in cs], top=top)
     return [{**cs[i], "score": s, "how": how} for i, s, how in hits]
 
 
-__all__ = ["bm25", "rank", "chunks", "search_files", "tokens"]
+__all__ = ["bm25", "chunks", "rank", "search_files", "tokens"]

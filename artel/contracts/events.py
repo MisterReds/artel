@@ -38,7 +38,7 @@ class Event:
         object.__setattr__(self, "data", b.freeze(self.data))
 
     @classmethod
-    def from_dict(cls, d: Any, path: str = "") -> "Event":
+    def from_dict(cls, d: Any, path: str = "") -> Event:
         """Extra payload fields are allowed (data is open). Accepts the flat journal line: seq, ts, kind plus the payload fields at the top level."""
         path = b.check_path(path)
         d = b.obj(d, path)
@@ -51,5 +51,5 @@ class Event:
                 raise b.ContractError(f"{path}{kind}.{field}", "required field is missing")
         return cls(seq, ts, kind, data)
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return {"seq": self.seq, "ts": self.ts, "kind": self.kind, **b.thaw(self.data)}

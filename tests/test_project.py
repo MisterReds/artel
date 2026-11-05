@@ -4,6 +4,7 @@ def test_concurrent_meta_reads_and_writes_from_two_instances(tmp_path):
     import json
     import threading
     import time
+
     from artel.project import DEFAULT_CONFIG, Project
 
     a = Project.create("race", DEFAULT_CONFIG, home=tmp_path)
@@ -17,7 +18,7 @@ def test_concurrent_meta_reads_and_writes_from_two_instances(tmp_path):
             try:
                 p.set_meta(**{f"k_{tag}": i})
                 i += 1
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 errors.append(e)
                 return
 
@@ -25,7 +26,7 @@ def test_concurrent_meta_reads_and_writes_from_two_instances(tmp_path):
         while time.time() < stop:
             try:
                 assert isinstance(p.meta, dict)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 errors.append(e)
                 return
 

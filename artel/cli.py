@@ -21,13 +21,12 @@ import argparse
 import json
 import sys
 import threading
-from pathlib import Path
-from typing import Optional
 import time
+from pathlib import Path
 
 from .manager import human_comment, new_kernel, resume, run_goal
-from .tz import fmt_ts
 from .project import Project, list_projects, load_config
+from .tz import fmt_ts
 
 ICONS = {"todo": "·", "ready": "○", "running": "▶", "review": "◎", "done": "✓", "blocked": "✗", "cancelled": "–"}
 
@@ -56,7 +55,7 @@ def _cfg(args) -> dict:
 def print_board(project: Project) -> None:
     m = project.meta
     u = m["usage"]
-    from .brand import banner, paint, status
+    from .brand import banner, status
 
     print(f"{banner()}  {m['name']}  [{status(m['status'])}]  "
           f"{project.slug}")
@@ -260,7 +259,7 @@ METRIC_LINES = (  # (key in measure(), label, threshold key in check(), format)
 )
 
 
-def format_metrics(m: dict, checks: Optional[dict] = None) -> str:
+def format_metrics(m: dict, checks: dict | None = None) -> str:
     lines = []
     for key, label, check_key, fmt in METRIC_LINES:
         v = m.get(key)
@@ -444,7 +443,7 @@ def cmd_plugins(args) -> int:
             for r in P.overview(cfg, kernel):
                 state = ("ошибка" if r.get("error") else "включён" if r["enabled"] else "выключен") + \
                     (" (ядро)" if r.get("core") else "")
-                print(f"  {r['id']:<34} {r['kind']:<8} {str(r.get('version') or ''):<8} {state:<18} "
+                print(f"  {r['id']:<34} {r['kind']:<8} {r.get('version') or ''!s:<8} {state:<18} "
                       f"{', '.join(r.get('permissions') or [])}")
                 if r.get("error"):
                     print(f"      {r['error'].splitlines()[0][:200]}")
@@ -513,7 +512,7 @@ def cmd_refine(args) -> int:
     return 0
 
 
-def _repo(args) -> "Path":
+def _repo(args) -> Path:
     from pathlib import Path
 
     from .evolve.engine import git
@@ -577,7 +576,6 @@ def cmd_doctor(args) -> int:
 def cmd_evolve(args) -> int:
     import time as _time
 
-    from .evolve.engine import InfraError
     from .evolve.supervisor import Heartbeat, Supervisor
     from .project import artel_home
 
@@ -684,9 +682,9 @@ def cmd_tools(args) -> int:
 def cmd_providers(args) -> int:
     import subprocess
 
+    from .adapters.agent.codex import codex_env, codex_settings
     from .brand import banner
     from .providers import logout_codex, overview
-    from .adapters.agent.codex import codex_env, codex_settings
 
     cfg = _cfg(args)
     rt = "claude_code" if args.name == "claude" else args.name
@@ -748,8 +746,8 @@ def cmd_providers(args) -> int:
             print(res.get("error", "failed"))
         return 0 if res.get("ok") else 1
     if args.action in ("login", "logout") and rt == "claude_code":
-        from .providers import logout_claude
         from .adapters.agent.claude_code import child_env
+        from .providers import logout_claude
         from .tools import resolve
 
         if args.action == "logout":
@@ -859,7 +857,7 @@ def cmd_telegram(args) -> int:
 
 
 def cmd_update(args) -> int:
-    from .updater import Updater, UpdateError
+    from .updater import UpdateError, Updater
 
     up = Updater(config=_cfg(args))
     try:
@@ -905,7 +903,6 @@ def cmd_reinstall(args) -> int:
     """Fresh app clone + fresh venv via the installer; user data in ARTEL_HOME is kept."""
     import os
     import shutil
-    import subprocess
     import tempfile
     from pathlib import Path
 
@@ -1025,10 +1022,7 @@ def cmd_evolution(args) -> int:
         return f"[{rt}]" if rt else ""
 
     for e in ev.ledger():
-        if e["kind"] in ("candidate", "absorb_candidate"):
-            mark = "MERGED" if e.get("merged") else ("ok" if e.get("accepted") else "rejected")
-            print(f"g{e['generation']} {mark:<8} {e['branch']:<52} {on(e):<14} {e.get('reason', '')[:110]}")
-        elif e["kind"] == "stack":
+        if e["kind"] in ("candidate", "absorb_candidate") or e["kind"] == "stack":
             mark = "MERGED" if e.get("merged") else ("ok" if e.get("accepted") else "rejected")
             print(f"g{e['generation']} {mark:<8} {e['branch']:<52} {on(e):<14} {e.get('reason', '')[:110]}")
         elif e["kind"] == "baseline":

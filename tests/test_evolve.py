@@ -1,4 +1,3 @@
-import json
 import subprocess
 import sys
 from pathlib import Path
@@ -290,7 +289,7 @@ def test_reopen_voids_decisions_and_remeasures_without_reimplementing(repo, tmp_
     impls = []
     cfg = deep_merge(DEFAULT_CONFIG, {"provider": "scripted"})
     ev = Evolution(repo, tmp_path / "evo", cfg, cfg, bench_fn=lambda code, label: next(scores),
-                   implement_fn=lambda h, wt: impls.append(h.title) or (wt / "y.txt").write_text("1", encoding="utf-8") and {})
+                   implement_fn=lambda h, wt: impls.append(h.title) or ((wt / "y.txt").write_text("1", encoding="utf-8") and {}))
     assert ev.generation(hypotheses=[Hypothesis("good idea", "r", "p")])["accepted"] == []
     ev.reopen(1, "provider outage")
     s = ev.resume()

@@ -7,7 +7,6 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Optional
 
 from .manager import Manager, new_kernel
 from .routing import TIERS
@@ -24,7 +23,7 @@ def _verify_event(e: dict) -> bool:
     return e.get("purpose") == "verify" or e.get("kind") == "acceptance/verdict"
 
 
-def _hours(events: list[dict]) -> Optional[float]:
+def _hours(events: list[dict]) -> float | None:
     """Sum of run segments: from a project/status "running" to the next status that is not "running" (or to the last
     event of the run when still open). Pauses between segments and the verification run are not counted."""
     total, start, last, seen = 0.0, None, None, False
@@ -45,7 +44,7 @@ def _hours(events: list[dict]) -> Optional[float]:
     return round(total / 3600, 2) if seen else None
 
 
-def _stopped_by_limit(events: list[dict], ended: Optional[str]) -> Optional[bool]:
+def _stopped_by_limit(events: list[dict], ended: str | None) -> bool | None:
     if ended is None or ended == "running":
         return None
     if ended not in ENDED_BY_LIMIT:
@@ -61,7 +60,7 @@ def _stopped_by_limit(events: list[dict], ended: Optional[str]) -> Optional[bool
     return True
 
 
-def _share(part: int, parts: list) -> Optional[float]:
+def _share(part: int, parts: list) -> float | None:
     total = sum(parts)
     return round(part / total, 3) if total else None
 
@@ -226,4 +225,4 @@ def verify(project, config: dict) -> dict:
     return result
 
 
-__all__ = ["measure", "check", "measure_project", "load_scenario", "verify"]
+__all__ = ["check", "load_scenario", "measure", "measure_project", "verify"]

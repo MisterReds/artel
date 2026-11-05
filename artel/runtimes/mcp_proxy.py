@@ -68,7 +68,7 @@ def main() -> None:
                 sys.stdout.flush()
                 continue
             out = {"jsonrpc": "2.0", "id": mid, "result": result}
-        except Exception as exc:  # noqa: BLE001 - report to the client, keep serving
+        except Exception as exc:
             out = {"jsonrpc": "2.0", "id": mid, "error": {"code": -32000, "message": repr(exc)}}
         sys.stdout.write(json.dumps(out, ensure_ascii=False) + "\n")
         sys.stdout.flush()

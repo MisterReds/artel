@@ -1,7 +1,12 @@
-import pytest
 
-from artel.agent import (COMPACT_PRUNE_TOKENS, COMPACT_SUMMARIZE_TOKENS, PRUNED_PLACEHOLDER, compact_messages,
-                         estimate_tokens, prune_tool_results)
+from artel.agent import (
+    COMPACT_PRUNE_TOKENS,
+    COMPACT_SUMMARIZE_TOKENS,
+    PRUNED_PLACEHOLDER,
+    compact_messages,
+    estimate_tokens,
+    prune_tool_results,
+)
 from artel.manager import run_goal
 from artel.project import DEFAULT_CONFIG, deep_merge
 

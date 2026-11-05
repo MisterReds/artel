@@ -68,6 +68,7 @@ def test_strictest_wins(home):
 
 def test_bash_forbidden_never_executes(tmp_path):
     from types import SimpleNamespace
+
     from artel.plugins import builtin_tools
     from artel.tooling import ToolContext, ToolError
     ctx = ToolContext(SimpleNamespace(config={}), SimpleNamespace(root=tmp_path, shared=tmp_path, log=SimpleNamespace(append=lambda *a, **k: None)), "worker", tmp_path)
@@ -102,7 +103,8 @@ def test_claude_code_settings_and_gate(tmp_path, monkeypatch):
     import json
     import types
 
-    from artel.adapters.agent import claude_code, loop as cc
+    from artel.adapters.agent import claude_code
+    from artel.adapters.agent import loop as cc
 
     hook = json.loads(claude_code.policy_hook_settings(tmp_path))["hooks"]["PreToolUse"][0]
     assert hook["matcher"] == "Bash" and "policy.py" in hook["hooks"][0]["command"]
@@ -119,6 +121,7 @@ def test_claude_code_settings_and_gate(tmp_path, monkeypatch):
 
 def test_bash_bad_policy_is_tool_error(home, tmp_path):
     from types import SimpleNamespace
+
     from artel.plugins import builtin_tools
     from artel.tooling import ToolContext, ToolError
     (home / "policy.yaml").write_text("rules:\n- {id: r1, prefix: foo, decision: prompt, match: ['bar x']}\n", encoding="utf-8")
@@ -131,6 +134,7 @@ def test_bash_bad_policy_is_tool_error(home, tmp_path):
 
 def test_forbidden_error_has_command_and_justification(tmp_path):
     from types import SimpleNamespace
+
     from artel.plugins import builtin_tools
     from artel.tooling import ToolContext, ToolError
     ctx = ToolContext(SimpleNamespace(config={}), SimpleNamespace(root=tmp_path, shared=tmp_path, log=SimpleNamespace(append=lambda *a, **k: None)), "worker", tmp_path)
@@ -163,7 +167,7 @@ def test_claude_code_hook_and_codex_gate_use_the_same_rules(tmp_path):
                        input=json.dumps({"tool_name": "Bash", "tool_input": {"command": "env sudo -n /usr/local/sbin/artel-root x"},
                                          "cwd": str(tmp_path)}),
                        capture_output=True, text=True, env={**__import__("os").environ})
-    assert r.returncode == 2 and "privilege-escalation" in r.stderr or "root-wrapper" in r.stderr
+    assert (r.returncode == 2 and "privilege-escalation" in r.stderr) or "root-wrapper" in r.stderr
 
 
 def test_sudo_attempts_are_logged_as_policy_sudo_events(tmp_path, monkeypatch):

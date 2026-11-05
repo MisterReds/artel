@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, fields
-from typing import Any, Optional
+from typing import Any, cast
 
 from . import _base as b
 from .core import Usage
@@ -26,11 +26,13 @@ MAX_FACTS = 7
 class _Plain:
     """to_dict shared by all schemas; Python field `in_` is serialised as `in`."""
 
-    def to_dict(self) -> dict:
-        return {("in" if f.name == "in_" else f.name): b.to_plain(getattr(self, f.name)) for f in fields(self)}
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            ("in" if f.name == "in_" else f.name): b.to_plain(getattr(self, f.name)) for f in fields(cast(Any, self))
+        }
 
 
-def _head(d: Any, path: str, cls):
+def _head(d: Any, path: str, cls: Any) -> tuple[Any, str]:
     path = b.check_path(path)
     d = b.obj(d, path)
     b.reject_unknown(d, cls, path)
@@ -45,7 +47,7 @@ class IntentBudget(_Plain):
     amplify_usd: float
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.number(d, "usd", p), b.integer(d, "expensive_tokens", p), b.number(d, "rewrite_usd", p),
                    b.number(d, "amplify_usd", p))
@@ -58,18 +60,18 @@ class Intent(_Plain):
     idea: str
     intent: str
     goal_behind_goal: str
-    success_criteria: tuple
-    constraints: tuple
-    out_of_scope: tuple
-    assumptions: tuple
-    open_questions: tuple
-    risks: tuple
+    success_criteria: tuple[Any, ...]
+    constraints: tuple[Any, ...]
+    out_of_scope: tuple[Any, ...]
+    assumptions: tuple[Any, ...]
+    open_questions: tuple[Any, ...]
+    risks: tuple[Any, ...]
     autonomy: str
     budget: IntentBudget
-    confirmed_by: Optional[str]
+    confirmed_by: str | None
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.string(d, "id", p, nonempty=True), b.integer(d, "version", p, 1), b.string(d, "idea", p),
                    b.string(d, "intent", p), b.string(d, "goal_behind_goal", p),
@@ -86,7 +88,7 @@ class ManagerBudget(_Plain):
     usd_left: float
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.integer(d, "expensive_left", p), b.number(d, "usd_left", p))
 
@@ -96,15 +98,15 @@ class ManagerInput(_Plain):
     intent_ref: str
     decision_needed: str
     goal: str
-    constraints: tuple
-    success_criteria: tuple
-    facts: tuple
-    refs: tuple
-    open_questions: tuple
+    constraints: tuple[Any, ...]
+    success_criteria: tuple[Any, ...]
+    facts: tuple[Any, ...]
+    refs: tuple[Any, ...]
+    open_questions: tuple[Any, ...]
     budget: ManagerBudget
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.string(d, "intent_ref", p), b.enum(d, "decision_needed", DECISIONS, p),
                    b.string(d, "goal", p), b.strings(d, "constraints", p), b.strings(d, "success_criteria", p),
@@ -118,17 +120,17 @@ class TaskContract(_Plain):
     intent_ref: str
     title: str
     input: str
-    refs: tuple
-    criteria: tuple
-    checks: tuple
+    refs: tuple[Any, ...]
+    criteria: tuple[Any, ...]
+    checks: tuple[Any, ...]
     output_schema: str
     max_tokens: int
     capability: str
     reversible: bool
-    depends_on: tuple
+    depends_on: tuple[Any, ...]
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.string(d, "id", p, nonempty=True), b.string(d, "intent_ref", p), b.string(d, "title", p),
                    b.string(d, "input", p), b.strings(d, "refs", p), b.strings(d, "criteria", p),
@@ -142,13 +144,13 @@ class RangeResearchTask(_Plain):
     discipline: str
     question: str
     method: str
-    raw_inputs: tuple
+    raw_inputs: tuple[Any, ...]
     output_schema: str
     critic: str
     max_tokens: int
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.string(d, "discipline", p), b.string(d, "question", p), b.string(d, "method", p),
                    b.strings(d, "raw_inputs", p), b.string(d, "output_schema", p),
@@ -161,20 +163,20 @@ class Altitude(_Plain):
     done_means: str
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.string(d, "goal_behind", p), b.string(d, "done_means", p))
 
 
 @dataclass(frozen=True)
 class Depth(_Plain):
-    raw_sources: tuple
-    methods: tuple
-    tools: tuple
-    independent_evidence: tuple
+    raw_sources: tuple[Any, ...]
+    methods: tuple[Any, ...]
+    tools: tuple[Any, ...]
+    independent_evidence: tuple[Any, ...]
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.strings(d, "raw_sources", p), b.strings(d, "methods", p), b.strings(d, "tools", p),
                    b.strings(d, "independent_evidence", p))
@@ -186,7 +188,7 @@ class RangeEntry(_Plain):
     research_task: RangeResearchTask
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.string(d, "discipline", p), b.nested(d, "research_task", RangeResearchTask, p))
 
@@ -196,13 +198,13 @@ class AmplifiedTaskContract(_Plain):
     base: TaskContract
     altitude: Altitude
     depth: Depth
-    range: tuple
-    what_changed: tuple
+    range: tuple[Any, ...]
+    what_changed: tuple[Any, ...]
     why: str
     cost_usd: float
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.nested(d, "base", TaskContract, p), b.nested(d, "altitude", Altitude, p),
                    b.nested(d, "depth", Depth, p), b.nested_list(d, "range", RangeEntry, p),
@@ -215,7 +217,7 @@ class ArtifactRef(_Plain):
     sha256: str
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.string(d, "path", p, nonempty=True), b.string(d, "sha256", p))
 
@@ -225,14 +227,14 @@ class ExecutorResult(_Plain):
     task: str
     status: str
     summary: str
-    evidence: tuple
-    artifacts: tuple
+    evidence: tuple[Any, ...]
+    artifacts: tuple[Any, ...]
     confidence: float
-    blocked_on: Optional[str]
+    blocked_on: str | None
     usage: Usage
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         status = b.enum(d, "status", RESULT_STATUS, p)
         blocked_on = b.string(d, "blocked_on", p, nullable=True)
@@ -252,11 +254,11 @@ class EscalationRequest(_Plain):
     kind: str
     to: str
     brief: ManagerInput
-    options: tuple
+    options: tuple[Any, ...]
     recommendation: str
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.string(d, "task", p), b.enum(d, "kind", ESCALATION_KINDS, p), b.enum(d, "to", ESCALATION_TO, p),
                    b.nested(d, "brief", ManagerInput, p), b.strings(d, "options", p),
@@ -269,7 +271,7 @@ class Tokens(_Plain):
     out: int
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.integer(d, "in", p), b.integer(d, "out", p))
 
@@ -284,9 +286,9 @@ class DecisionLogEntry(_Plain):
     model: str
     decision: str
     why: str
-    alternatives: tuple
+    alternatives: tuple[Any, ...]
     next: str
-    inputs: tuple
+    inputs: tuple[Any, ...]
     tokens: Tokens
     cost_usd: float
     latency_ms: int
@@ -295,7 +297,7 @@ class DecisionLogEntry(_Plain):
     intent_ref: str
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.integer(d, "seq", p), b.string(d, "ts", p), b.string(d, "actor", p),
                    b.string(d, "capability", p), b.string(d, "provider", p), b.string(d, "model", p),
@@ -312,13 +314,13 @@ class CapabilityProfile(_Plain):
     max_cost_per_mtok_usd: float
     max_latency_s: float
     min_context_tokens: int
-    needs: tuple
-    prefers: tuple
-    fallback: tuple
-    independent_of: Optional[str]
+    needs: tuple[Any, ...]
+    prefers: tuple[Any, ...]
+    fallback: tuple[Any, ...]
+    independent_of: str | None
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.string(d, "id", p, nonempty=True), b.enum(d, "reasoning", REASONING, p),
                    b.number(d, "max_cost_per_mtok_usd", p), b.number(d, "max_latency_s", p),
@@ -331,10 +333,10 @@ class RewriteModule(_Plain):
     name: str
     paradigm: str
     contract: str
-    behaviour_tests: tuple
+    behaviour_tests: tuple[Any, ...]
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.string(d, "name", p, nonempty=True), b.enum(d, "paradigm", PARADIGMS, p),
                    b.string(d, "contract", p), b.strings(d, "behaviour_tests", p))
@@ -346,7 +348,7 @@ class RewriteBudget(_Plain):
     expensive_tokens: int
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.number(d, "usd", p), b.integer(d, "expensive_tokens", p))
 
@@ -355,18 +357,18 @@ class RewriteBudget(_Plain):
 class RewriteProposal(_Plain):
     id: str
     trigger: str
-    what_is_wrong: tuple
-    why_patching_is_worse: tuple
+    what_is_wrong: tuple[Any, ...]
+    why_patching_is_worse: tuple[Any, ...]
     target: str
-    keeps: tuple
-    modules: tuple
-    parallel_groups: tuple
+    keeps: tuple[Any, ...]
+    modules: tuple[Any, ...]
+    parallel_groups: tuple[Any, ...]
     budget: RewriteBudget
-    risks: tuple
+    risks: tuple[Any, ...]
     rollback: str
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         keeps = b.strings(d, "keeps", p)
         for i, k in enumerate(keeps):
@@ -385,12 +387,12 @@ class RewriteTaskContract(_Plain):
     module: str
     paradigm: str
     public_interface: str
-    behaviour_tests: tuple
-    known_problems: tuple
-    must_not_read: tuple
+    behaviour_tests: tuple[Any, ...]
+    known_problems: tuple[Any, ...]
+    must_not_read: tuple[Any, ...]
 
     @classmethod
-    def from_dict(cls, d, path=""):
+    def from_dict(cls, d: Any, path: str = "") -> Any:
         d, p = _head(d, path, cls)
         return cls(b.nested(d, "base", TaskContract, p), b.string(d, "module", p, nonempty=True),
                    b.enum(d, "paradigm", PARADIGMS, p), b.string(d, "public_interface", p),

@@ -17,9 +17,10 @@ import json
 import threading
 import time
 from collections import defaultdict
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Optional
+from typing import Any
 
 
 class EventLog:
@@ -60,7 +61,7 @@ class EventLog:
             self._cond.notify_all()
         return event
 
-    def read(self, after: int = 0, limit: int = 10_000, kinds: Optional[set] = None) -> list[dict]:
+    def read(self, after: int = 0, limit: int = 10_000, kinds: set | None = None) -> list[dict]:
         out: list[dict] = []
         if not self.path.exists():
             return out
@@ -128,7 +129,7 @@ class Kernel:
     ``setup`` may return a callable; it runs as the last undo step on unload (close sockets, stop threads).
     """
 
-    def __init__(self, config: Optional[dict] = None):
+    def __init__(self, config: dict | None = None):
         self.config = config or {}
         self.services: dict = {}          # flat view: name -> active object
         self.tools: dict = {}             # flat view: name -> active ToolSpec
@@ -172,7 +173,7 @@ class Kernel:
     def get(self, name: str, default: Any = None) -> Any:
         return self.services.get(name, default)
 
-    def provider_of(self, name: str) -> Optional[str]:
+    def provider_of(self, name: str) -> str | None:
         stack = self._service_stacks.get(name)
         return stack[-1][0] if stack else None
 
@@ -202,7 +203,7 @@ class Kernel:
         for _, fn in list(listeners):
             try:
                 fn(**payload)
-            except Exception as exc:  # noqa: BLE001 - observers are untrusted plugins
+            except Exception as exc:
                 log = self.get("log") or getattr(payload.get("project"), "log", None)
                 if log is not None:
                     log.append("plugin/error", hook=event, error=repr(exc),
@@ -240,7 +241,7 @@ class Kernel:
 
             self._effect(undo)
 
-    def tools_for(self, role: str, names: Optional[list] = None) -> list[ToolSpec]:
+    def tools_for(self, role: str, names: list | None = None) -> list[ToolSpec]:
         specs = [t for t in self.tools.values() if role in t.roles]
         if names is not None:
             specs = [t for t in specs if t.name in names]
@@ -279,12 +280,12 @@ class Kernel:
             self._loading.pop()
             return record
 
-    def load_plugin_safe(self, dotted: str, module: Any = None) -> Optional[PluginRecord]:
+    def load_plugin_safe(self, dotted: str, module: Any = None) -> PluginRecord | None:
         """Load a third-party plugin; a failure (import error, unmet requires, crash in ``setup``) is recorded
         in :attr:`failed` and rolled back instead of crashing Artel."""
         try:
             record = self.load_plugin(dotted, module)
-        except (Exception, SystemExit) as exc:  # noqa: BLE001 - untrusted code must not take Artel down
+        except (Exception, SystemExit) as exc:
             self.failed[dotted] = f"{type(exc).__name__}: {exc}"
             return None
         self.failed.pop(dotted, None)
@@ -300,14 +301,14 @@ class Kernel:
         for name in reversed(list(self.records)):
             try:
                 self.unload_plugin(name)
-            except Exception:  # noqa: BLE001 - keep unloading the rest
+            except Exception:
                 continue
 
     def _undo(self, record: PluginRecord) -> None:
         for undo in reversed(record.effects):
             try:
                 undo()
-            except Exception as exc:  # noqa: BLE001 - keep unwinding the rest
+            except Exception as exc:
                 log = self.get("log")
                 if log is not None:
                     log.append("plugin/error", plugin=record.name, error=repr(exc))

@@ -123,7 +123,7 @@ def chromium():
     for exe in [None, *glob.glob("/opt/pw-browsers/chromium-*/chrome-linux/chrome")]:
         try:
             return ctx, ctx.chromium.launch(**({"executable_path": exe} if exe else {}))
-        except Exception:  # noqa: BLE001 - try the next browser
+        except Exception:
             continue
     ctx.stop()
     pytest.skip("no chromium available")

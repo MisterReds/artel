@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import datetime as dt
 import re
-from typing import Optional
 
 LIMIT = re.compile(r"session limit|usage limit|rate limit|hit your [a-z ]*limit|overloaded_error|credit balance|"
                    r"insufficient balance|quota exceeded|resource_exhausted|exhausted your capacity|too many requests|"
@@ -23,7 +22,7 @@ NETWORK = re.compile(r"connection refused|connection reset|connect ?error|connec
                      r"network is unreachable|no route to host|remote ?protocol ?error|server disconnected", re.I)
 
 
-def retry_at(text: str) -> Optional[float]:
+def retry_at(text: str) -> float | None:
     """Unix time of 'resets 4:20pm (UTC)' / 'Try again at 4:20 PM' in a provider message, if any."""
     r = re.search(r"(?:resets|try again at)\s*(?:at\s*)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?", text or "", re.I)
     if not r:
@@ -57,7 +56,7 @@ def classify(text: str) -> str:
 # never started. Everything else is a work failure (a dead proxy holds the gate instead, see Manager.job_review).
 
 
-def gate_failure_class(gates: list) -> Optional[str]:
+def gate_failure_class(gates: list) -> str | None:
     """None when every gate passed; 'environment' when every failing gate carries a machine-side ``env`` mark;
     otherwise 'work'."""
     failing = [g for g in gates if g.get("exit") != 0]

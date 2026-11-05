@@ -140,8 +140,9 @@ def test_audit_verdict_records_run(project):
 
 
 def test_manager_stores_run_on_complete(project):
-    from artel.manager import Manager
     from types import SimpleNamespace
+
+    from artel.manager import Manager
 
     out = SimpleNamespace(name="audit_verdict", payload={"complete": True, "summary": "ok", "missing": [],
                                                          "run": {"command": "python3 app.py"}})
@@ -275,7 +276,7 @@ def test_api_run_needs_login_in_remote_mode(web, project):
     base, _ = web(remote=True)
     for method in ("GET", "POST"):
         for tail in ("run", "archive", "open-folder"):
-            if method == "GET" and tail == "open-folder" or method == "POST" and tail == "archive":
+            if (method == "GET" and tail == "open-folder") or (method == "POST" and tail == "archive"):
                 continue
             code, _, _ = call(f"{base}/api/projects/{project.slug}/{tail}", method)
             assert code == 401, (method, tail)
@@ -531,8 +532,9 @@ def test_run_spec_ignores_unsafe_meta(project):
 
 
 def test_audit_without_run_clears_meta_run(project):
-    from artel.manager import Manager
     from types import SimpleNamespace
+
+    from artel.manager import Manager
 
     project.set_meta(run={"command": "python3 old.py"})
     out = SimpleNamespace(name="audit_verdict", payload={"complete": True, "summary": "ok", "missing": []})

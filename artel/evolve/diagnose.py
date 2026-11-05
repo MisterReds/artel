@@ -9,12 +9,11 @@ from __future__ import annotations
 import json
 import os
 import re
-import sqlite3
 import subprocess
 import sys
 from collections import Counter, defaultdict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Iterable, Optional
 
 
 def code_health(code: Path, timeout: int = 900) -> dict:
@@ -109,7 +108,7 @@ def trajectory_profile(project_dirs: Iterable[Path]) -> dict:
     }
 
 
-def findings(health: Optional[dict], prof: dict, bench: Optional[dict] = None) -> list[dict]:
+def findings(health: dict | None, prof: dict, bench: dict | None = None) -> list[dict]:
     """Ranked, human-readable problems with the evidence behind each."""
     out = []
     if health and not health["ok"]:
@@ -146,7 +145,7 @@ def findings(health: Optional[dict], prof: dict, bench: Optional[dict] = None) -
     return sorted(out, key=lambda f: order[f["severity"]])
 
 
-def doctor(code: Optional[Path], project_dirs: Iterable[Path], bench: Optional[dict] = None,
+def doctor(code: Path | None, project_dirs: Iterable[Path], bench: dict | None = None,
            run_tests: bool = True) -> dict:
     health = code_health(code) if code and run_tests else None
     prof = trajectory_profile(project_dirs)

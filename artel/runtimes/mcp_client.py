@@ -30,7 +30,7 @@ import subprocess
 import sys
 import threading
 import urllib.request
-from typing import Any, Optional
+from typing import Any
 
 PROTOCOL = "2025-06-18"
 TIMEOUT_S = 60.0
@@ -49,7 +49,7 @@ class McpError(Exception):
     pass
 
 
-def expand(value: Any, environ: Optional[dict] = None) -> Any:
+def expand(value: Any, environ: dict | None = None) -> Any:
     """``${VAR}`` / ``${VAR:-default}`` from the environment in strings, lists and dicts; unset -> empty."""
     env = os.environ if environ is None else environ
     if isinstance(value, str):
@@ -74,7 +74,7 @@ def force_headless(args: list) -> list:
 RESERVED = {"artel"}  # Artel's own bridge
 
 
-def parse_servers(config: Optional[dict], environ: Optional[dict] = None) -> dict[str, dict]:
+def parse_servers(config: dict | None, environ: dict | None = None) -> dict[str, dict]:
     """``config['mcp_servers']`` -> ``{name: {type, command, args, env | url, headers, allow}}`` (enabled ones only).
 
     Presets fill in what the entry leaves out; env and url/headers get ``${VAR}`` expansion; invalid entries are
@@ -124,7 +124,7 @@ def parse_servers(config: Optional[dict], environ: Optional[dict] = None) -> dic
     return out
 
 
-def servers_for_role(config: Optional[dict], role: str, environ: Optional[dict] = None) -> dict[str, dict]:
+def servers_for_role(config: dict | None, role: str, environ: dict | None = None) -> dict[str, dict]:
     """The servers a role may use: those whose ``allow`` list names it."""
     return {n: s for n, s in parse_servers(config, environ).items() if role in s["allow"]}
 
@@ -133,7 +133,7 @@ def tool_name(server: str, tool: str) -> str:
     return (PREFIX + server + "__" + re.sub(r"[^A-Za-z0-9_-]", "_", tool))[:64]
 
 
-def server_environ(config: Optional[dict] = None) -> dict:
+def server_environ(config: dict | None = None) -> dict:
     """The environment an external MCP server starts with: the agent allowlist (``agent_env("native", config)``) and
     nothing else from Artel's own environment; the secrets a server needs are the names/values its own ``env`` entry
     declares (added by the caller)."""
@@ -143,16 +143,16 @@ def server_environ(config: Optional[dict] = None) -> dict:
 
 
 class _Rpc:
-    def request(self, method: str, params: Optional[dict] = None) -> Any: ...
-    def notify(self, method: str, params: Optional[dict] = None) -> None: ...
+    def request(self, method: str, params: dict | None = None) -> Any: ...
+    def notify(self, method: str, params: dict | None = None) -> None: ...
     def close(self) -> None: ...
 
 
 class StdioClient(_Rpc):
     """JSON-RPC over a child process's stdin/stdout, one JSON message per line."""
 
-    def __init__(self, command: str, args: list, env: Optional[dict] = None, cwd: Optional[str] = None,
-                 config: Optional[dict] = None):
+    def __init__(self, command: str, args: list, env: dict | None = None, cwd: str | None = None,
+                 config: dict | None = None):
         from ..tools import resolve, shell_env
 
         try:
@@ -191,7 +191,7 @@ class StdioClient(_Rpc):
         except (OSError, ValueError) as exc:
             raise McpError(f"MCP server is gone: {exc}")
 
-    def request(self, method: str, params: Optional[dict] = None, timeout: float = TIMEOUT_S) -> Any:
+    def request(self, method: str, params: dict | None = None, timeout: float = TIMEOUT_S) -> Any:
         with self._lock:
             self._id += 1
             mid = self._id
@@ -204,7 +204,7 @@ class StdioClient(_Rpc):
             raise McpError(str(msg["error"].get("message", msg["error"])))
         return msg["result"]
 
-    def notify(self, method: str, params: Optional[dict] = None) -> None:
+    def notify(self, method: str, params: dict | None = None) -> None:
         self._send({"jsonrpc": "2.0", "method": method, "params": params or {}})
 
     def close(self) -> None:
@@ -213,7 +213,7 @@ class StdioClient(_Rpc):
 
         try:
             self.proc.stdin.close()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         try:
             if os.name == "posix":
@@ -223,21 +223,21 @@ class StdioClient(_Rpc):
 
                 terminate_tree(self.proc)
             self.proc.wait(timeout=5)
-        except Exception:  # noqa: BLE001
+        except Exception:
             try:
                 os.killpg(self.proc.pid, signal.SIGKILL) if os.name == "posix" else self.proc.kill()
-            except Exception:  # noqa: BLE001
+            except Exception:
                 pass
 
 
 class HttpClient(_Rpc):
     """Streamable http transport: POST each message, the reply is JSON or an SSE stream."""
 
-    def __init__(self, url: str, headers: Optional[dict] = None):
+    def __init__(self, url: str, headers: dict | None = None):
         self.url, self.headers, self.session, self._id = url, dict(headers or {}), None, 0
         self._lock = threading.Lock()
 
-    def _post(self, body: dict, timeout: float) -> Optional[dict]:
+    def _post(self, body: dict, timeout: float) -> dict | None:
         h = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream",
              "MCP-Protocol-Version": PROTOCOL, **self.headers}
         if self.session:
@@ -264,7 +264,7 @@ class HttpClient(_Rpc):
             raise McpError("no response in event stream")
         return json.loads(raw)
 
-    def request(self, method: str, params: Optional[dict] = None, timeout: float = TIMEOUT_S) -> Any:
+    def request(self, method: str, params: dict | None = None, timeout: float = TIMEOUT_S) -> Any:
         with self._lock:
             self._id += 1
             mid = self._id
@@ -273,7 +273,7 @@ class HttpClient(_Rpc):
             raise McpError(str((msg or {}).get("error", {}).get("message", "empty response")))
         return msg["result"]
 
-    def notify(self, method: str, params: Optional[dict] = None) -> None:
+    def notify(self, method: str, params: dict | None = None) -> None:
         self._post({"jsonrpc": "2.0", "method": method, "params": params or {}}, TIMEOUT_S)
 
     def close(self) -> None:
@@ -283,9 +283,9 @@ class HttpClient(_Rpc):
 class McpServer:
     """One configured server: connects lazily, initializes once, lists and calls tools."""
 
-    def __init__(self, name: str, spec: dict, cwd: Optional[str] = None, config: Optional[dict] = None):
+    def __init__(self, name: str, spec: dict, cwd: str | None = None, config: dict | None = None):
         self.name, self.spec, self.cwd, self.config = name, spec, cwd, config
-        self._rpc: Optional[_Rpc] = None
+        self._rpc: _Rpc | None = None
         self._lock = threading.Lock()
 
     def _connect(self) -> _Rpc:
@@ -329,7 +329,7 @@ class McpServer:
                 self._rpc = None
 
 
-def cli_config(config: Optional[dict], role: str) -> dict[str, dict]:
+def cli_config(config: dict | None, role: str) -> dict[str, dict]:
     """Servers for a role in the shape both CLI runtimes need (stdio: command/args/env; http: url/headers)."""
     out = {}
     for name, s in servers_for_role(config, role).items():
@@ -376,7 +376,7 @@ def register_tools(kernel) -> Any:
         srv = McpServer(name, spec, config=kernel.config)
         try:
             tools = srv.list_tools()
-        except Exception as exc:  # noqa: BLE001
+        except Exception as exc:
             kernel.failed[f"mcp:{name}"] = str(exc)
             srv.close()
             continue
@@ -409,7 +409,7 @@ def register_tools(kernel) -> Any:
     return close
 
 
-def _tool_fn(srv: "McpServer", tool: str, full: str):
+def _tool_fn(srv: McpServer, tool: str, full: str):
     """The Artel tool that calls one MCP tool (ctx is positional-only: a tool argument may be called anything)."""
     from .. import policy
     from ..tooling import ToolError
@@ -444,7 +444,7 @@ def _tool_fn(srv: "McpServer", tool: str, full: str):
 def _native(config: dict, role: str, runtime_for) -> bool:
     try:
         return runtime_for(config, role) == "native"
-    except Exception:  # noqa: BLE001 - routing errors surface elsewhere
+    except Exception:
         return False
 
 

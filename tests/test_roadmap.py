@@ -273,9 +273,8 @@ def test_core_priority_items_go_first_and_study_follows_significance(tmp_path):
 
 def test_evolve_items_picks_exact_items_and_rejects_unknown_ids(tmp_path, monkeypatch, capsys):
     from artel import cli
-    from artel.evolve.engine import Evolution
-
     from artel.evolve import supervisor
+    from artel.evolve.engine import Evolution
 
     # a real `artel evolve` may be running on this machine; the lock scan must not depend on it
     monkeypatch.setattr(supervisor, "evolve_process_running", lambda **kw: False)

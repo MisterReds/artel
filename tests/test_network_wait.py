@@ -218,7 +218,8 @@ def test_gate_is_held_while_the_loopback_proxy_is_down_and_rerun_when_it_is_back
 def test_dead_loopback_proxy_with_a_local_provider_holds_a_bounded_number_of_times(tmp_path, monkeypatch):
     """A provider that answers (local) must not clear a wait caused by the dead proxy: the wait ends when the
     proxy answers; after three holds the gates are judged with a note and the owner is told."""
-    from artel import manager as manager_mod, netprobe
+    from artel import manager as manager_mod
+    from artel import netprobe
     from artel.agent import Outcome
     from artel.analytics import project_stats
 

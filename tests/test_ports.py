@@ -5,10 +5,17 @@ import pytest
 
 import artel.contracts
 import artel.ports
-from artel.contracts import (ExecutorResult, Event, NormRequest, NormResponse, TaskContract, Usage)
-from artel.ports import (AgentPort, ClockPort, ConfigPort, EventPort, LLMPort, MemoryPort, ToolPort)
-from artel.ports.fakes import (DictConfig, DictMemory, FakeClock, ListEventLog, RecordingToolRunner, ScriptedAgent,
-                               ScriptedLLM)
+from artel.contracts import Event, ExecutorResult, NormRequest, NormResponse, TaskContract, Usage
+from artel.ports import AgentPort, ClockPort, ConfigPort, EventPort, LLMPort, MemoryPort, ToolPort
+from artel.ports.fakes import (
+    DictConfig,
+    DictMemory,
+    FakeClock,
+    ListEventLog,
+    RecordingToolRunner,
+    ScriptedAgent,
+    ScriptedLLM,
+)
 
 REQ = NormRequest.from_dict({"messages": [{"role": "user", "content": "a b c"}], "tools": [], "output_schema": None,
                              "max_tokens": 5, "cache_hint": None})

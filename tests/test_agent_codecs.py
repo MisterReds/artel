@@ -126,7 +126,7 @@ def test_codex_off_type_fields_never_escape_parse_unhandled(line):
     """Either parse copes, or it raises and the loop drops the line (tests/test_codex.py covers the loop path)."""
     try:
         codex.parse(line)
-    except Exception:  # noqa: BLE001
+    except Exception:
         pass
 
 
