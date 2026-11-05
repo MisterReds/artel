@@ -150,32 +150,53 @@ def _drop_heredoc_bodies(check: str) -> str:
     return "\n".join(out)
 
 
-def _command_words(check: str) -> list:
-    """Words of every simple command in a shell line, in order. Quoting is honoured, so code passed as a quoted
-    argument (``python3 -c "a; b | c"``) stays one word instead of being split at its own operators; command
-    substitutions inside words (``"$(cmd)"``) are commands of their own."""
+def _tokens(check: str) -> list:
+    """Shell tokens of ``check``: quoted text is one word, operators are tokens of their own."""
     lex = shlex.shlex(_drop_heredoc_bodies(check.replace("\\\n", " ")), posix=True, punctuation_chars=_OPERATORS)
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
     lex.commenters = ""
+    out: list = []
+    try:
+        for tok in lex:
+            out.append(tok)
+    except ValueError:  # unbalanced quote: the words read so far still name the program
+        pass
+    return out
+
+
+def _substituted(word: str) -> list:
+    """Commands run by ``$(...)`` and backtick substitutions inside one word."""
+    return [c for m in _SUBSTITUTION.finditer(word) for c in _command_words(m.group(1) or m.group(2) or "")]
+
+
+def _command_words(check: str) -> list:
+    """Words of every simple command in a shell line, in order. Quoting is honoured, so code passed as a quoted
+    argument (``python3 -c "a; b | c"``) stays one word instead of being split at its own operators; command
+    substitutions inside words (``"$(cmd)"``) are commands of their own."""
     commands: list = [[]]
     nested: list = []
     target = False  # the word after a redirect (``> out``, ``2>&1``, ``<<EOF``) is a file or tag, not a command
-    try:
-        for tok in lex:
-            if tok and set(tok) <= set(_OPERATORS):
-                target = ("<" in tok or ">" in tok) and "(" not in tok
-                if not target:
-                    commands.append([])
-            elif target:
-                target = False
-            else:
-                commands[-1].append(tok)
-                for m in _SUBSTITUTION.finditer(tok):
-                    nested.extend(_command_words(m.group(1) if m.group(1) is not None else m.group(2)))
-    except ValueError:  # unbalanced quote: the words read so far still name the program
-        pass
+    for tok in _tokens(check):
+        if set(tok) <= set(_OPERATORS):
+            target = ("<" in tok or ">" in tok) and "(" not in tok
+            if not target:
+                commands.append([])
+        elif target:
+            target = False
+        else:
+            commands[-1].append(tok)
+            nested.extend(_substituted(tok))
     return [c for c in commands if c] + nested
+
+
+def _program(words: list) -> str | None:
+    """The program a simple command runs, or None for builtins, keywords, paths and variables."""
+    while words and (words[0] in _PREFIX_WORDS or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0])):
+        words = words[1:]
+    if not words or words[0] in _NOT_PROGRAMS or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", words[0]):
+        return None
+    return words[0]
 
 
 def missing_programs(checks: list, config: dict | None = None) -> list:
@@ -185,14 +206,7 @@ def missing_programs(checks: list, config: dict | None = None) -> list:
     path = env.get(_path_key(env) or "PATH") or ""
     out: list = []
     for check in checks or []:
-        for words in _command_words(str(check)):
-            while words and (words[0] in _PREFIX_WORDS or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0])):
-                words = words[1:]
-            if not words:
-                continue
-            prog = words[0]
-            if prog in _NOT_PROGRAMS or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.+-]*", prog):
-                continue
+        for prog in filter(None, map(_program, _command_words(str(check)))):
             if not shutil.which(prog, path=path) and prog not in out:
                 out.append(prog)
     return out
