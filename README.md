@@ -1,4 +1,4 @@
-<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/artel-logo-dark.svg"><img src="docs/brand/artel-logo.svg" alt="Artel" height="72"></picture></p>
+<p align="center"><picture><source media="(prefers-color-scheme: dark)" srcset="docs/brand/arteliq-logo-dark.svg"><img src="docs/brand/arteliq-logo.svg" alt="Arteliq" height="72"></picture></p>
 
 Мультиагентный харнесс: цель → проект → канбан → команда воркеров с «душой» → менеджер, который не останавливается, пока аудит не подтвердит, что цель достигнута. Скиллы создаются и улучшаются сами. Каждое действие пишется в журнал и видно в дашборде.
 
