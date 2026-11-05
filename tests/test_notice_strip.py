@@ -17,13 +17,18 @@ def run(steps: str, storage_throws: bool = False):
     start = HTML.index("let isoReason=''")
     end = HTML.index("async function pollIso")
     code = HTML[start:end]
+    storage = (
+        "{getItem(){throw new Error('blocked')},setItem(){throw new Error('blocked')}}"
+        if storage_throws
+        else "{getItem:k=>store[k]??null,setItem:(k,v)=>{store[k]=v}}"
+    )
     src = f"""
 const els={{}};
 const mk=id=>els[id]=els[id]||{{id,hidden:true,innerHTML:'',onclick:null,setAttribute(){{}}}};
 const $=s=>mk(s.slice(1));['unisolated','isochip','iso-more','iso-x','iso-det'].forEach(mk);
 const icon=()=>'', esc=s=>String(s);
 const store={{}};
-global.sessionStorage={json.dumps(storage_throws)}?{{getItem(){{throw new Error('blocked')}},setItem(){{throw new Error('blocked')}}}}:{{getItem:k=>store[k]??null,setItem:(k,v)=>{{store[k]=v}}}};
+global.sessionStorage={storage};
 {code}
 $('#isochip').onclick=()=>isoHide(false);
 const out=[];const snap=()=>out.push([!els.unisolated.hidden,!els.isochip.hidden]);
