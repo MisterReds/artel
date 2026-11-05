@@ -1,4 +1,4 @@
-"""Plugin packages: install Artel plugins from a git URL, a pip spec (PyPI) or a local path.
+"""Plugin packages: install Arteliq plugins from a git URL, a pip spec (PyPI) or a local path.
 
 Layout (ARTEL_HOME, default ~/.artel)::
 
@@ -10,10 +10,10 @@ Safety rules
       The manifest shown before enabling is read statically: ``PLUGIN = {...}`` is parsed with ``ast`` and
       ``literal_eval``, never executed.
     * A package is installed disabled. Its plugins' ``setup`` runs only once it is enabled.
-    * The package directory joins ``sys.path`` only while the package is loaded, appended (it never shadows Artel
+    * The package directory joins ``sys.path`` only while the package is loaded, appended (it never shadows Arteliq
       or the standard library), and leaves it on detach together with the modules imported from it.
     * A plugin that fails to import or to set up is rolled back, the package is switched off and the error is
-      stored in the registry; Artel keeps running.
+      stored in the registry; Arteliq keeps running.
 
 Entry points
     A pip-installable package declares its plugin modules in ``pyproject.toml``::
@@ -343,7 +343,7 @@ def install(source: str, *, runner: Runner = _run, replace: bool = False) -> dic
             reg = load_registry()
             old = reg["packages"].get(name)
             if old and not replace:
-                raise PackageError(f"{name} уже установлен; обновление: artel plugins update {name}")
+                raise PackageError(f"{name} уже установлен; обновление: arteliq plugins update {name}")
             dest = plugins_dir() / name
             if dest.exists():
                 shutil.rmtree(dest)
@@ -521,7 +521,7 @@ def set_builtin(dotted: str, enabled: bool, *, kernel=None) -> dict:
     if dotted not in DEFAULT_PLUGINS:
         raise PackageError(f"{dotted} — не встроенный плагин")
     if dotted in CORE_PLUGINS and not enabled:
-        raise PackageError(f"{dotted} — ядро Artel, его нельзя выключить")
+        raise PackageError(f"{dotted} — ядро Arteliq, его нельзя выключить")
     with _lock:
         reg = load_registry()
         off = [d for d in reg["builtin_disabled"] if d != dotted] + ([] if enabled else [dotted])
@@ -538,7 +538,7 @@ def set_builtin(dotted: str, enabled: bool, *, kernel=None) -> dict:
 # --- overview ------------------------------------------------------------------------------------------
 
 def overview(config: dict | None = None, kernel=None) -> list[dict]:
-    """Built-in, configured and installed plugins with their state, for ``artel plugins list`` and the dashboard."""
+    """Built-in, configured and installed plugins with their state, for ``arteliq plugins list`` and the dashboard."""
     import importlib.util as iu
 
     from .kernel import CORE_PLUGINS, DEFAULT_PLUGINS

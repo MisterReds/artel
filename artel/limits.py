@@ -1,4 +1,4 @@
-"""Which runtimes are temporarily out (a provider's usage limit) — shared by every Artel process on this machine.
+"""Which runtimes are temporarily out (a provider's usage limit) — shared by every Arteliq process on this machine.
 
 `auto` skips a limited runtime until its reset, so work moves to the next connected executor instead of waiting.
 Stored in ARTEL_HOME/limits.json as {runtime: unix_time_until}.

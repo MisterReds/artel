@@ -62,7 +62,7 @@ def test_generation_merges_winner_and_keeps_loser_branch(repo, tmp_path):
     assert "evolve/g1-1-worse-idea" in branches and "evolve/g1-2-better-idea" in branches
     assert git(repo, "rev-parse", "HEAD") != before
     assert "evolve-gen-1" in git(repo, "tag")
-    # Artel (scripted team) actually wrote files into the candidate worktree, committed on its branch
+    # Arteliq (scripted team) actually wrote files into the candidate worktree, committed on its branch
     files = git(repo, "show", "--stat", "--format=", "evolve/g1-2-better-idea")
     assert "report.md" in files
     led = [e for e in ev.ledger() if e["kind"] == "candidate"]

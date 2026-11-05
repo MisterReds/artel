@@ -183,7 +183,7 @@ def test_bots_never_get_the_owners_apps_or_screen_and_have_network(env, tmp_path
 
 
 def test_a_sandbox_that_fails_mid_run_is_dropped_and_the_bot_continues(env, monkeypatch):
-    """The bot must not end up 'BLOCKED: commands are blocked by the sandbox' — Artel notices the failed command,
+    """The bot must not end up 'BLOCKED: commands are blocked by the sandbox' — Arteliq notices the failed command,
     switches the sandbox off for this machine and resumes the same thread."""
     cfg, project, tmp = env
     _reset_sandbox()
@@ -199,7 +199,7 @@ def test_a_sandbox_that_fails_mid_run_is_dropped_and_the_bot_continues(env, monk
 
 def test_a_judge_cannot_change_the_deliverables_even_without_a_sandbox(env, monkeypatch):
     """A reviewer runs from a scratch directory; if the sandbox is unusable and it writes into the deliverables
-    anyway, Artel restores them after the run and records the violation."""
+    anyway, Arteliq restores them after the run and records the violation."""
     from artel.adapters.agent import codex
 
     cfg, project, tmp = env
@@ -218,7 +218,7 @@ def test_a_judge_cannot_change_the_deliverables_even_without_a_sandbox(env, monk
 
 
 def test_artel_tools_reach_the_bridge_even_with_a_system_http_proxy(env, monkeypatch):
-    """With http_proxy set (offices, schools) the MCP proxy must still reach Artel's bridge on 127.0.0.1,
+    """With http_proxy set (offices, schools) the MCP proxy must still reach Arteliq's bridge on 127.0.0.1,
     otherwise a CLI bot cannot even submit its work."""
     cfg, project, _ = env
     monkeypatch.setenv("http_proxy", "http://127.0.0.1:9")
@@ -252,9 +252,9 @@ def test_codex_usage_arriving_after_the_terminal_tool_is_recorded(env, monkeypat
 
 
 def test_codex_submit_judged_before_artel_read_the_output_lines_still_counts_usage_once(env, monkeypatch):
-    """The CLI prints its command result and calls the terminal tool back to back; Artel's guard ("you ran nothing")
+    """The CLI prints its command result and calls the terminal tool back to back; Arteliq's guard ("you ran nothing")
     reads state fed by the stdout lines, so on a loaded machine the first submit can be judged before they are read.
-    Artel must wait until it has read everything the CLI already printed before judging the submit: it is accepted on
+    Arteliq must wait until it has read everything the CLI already printed before judging the submit: it is accepted on
     the FIRST call (the fake does not repeat a rejected one), the run is one attempt, its usage counted once."""
     from artel.adapters.agent import loop
 

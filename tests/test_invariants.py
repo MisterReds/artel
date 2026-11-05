@@ -1,4 +1,4 @@
-"""Architecture invariants — the pillars Artel is built on (docs/ARCHITECTURE.md).
+"""Architecture invariants — the pillars Arteliq is built on (docs/ARCHITECTURE.md).
 
 Evolution candidates must pass these. A change that removes or weakens a pillar fails here and is
 never merged, however good its benchmark looks. Change a pillar only by a deliberate design decision
@@ -91,7 +91,7 @@ def test_modularity_runtime_is_swappable_by_plugin(cfg):
 
 def test_modularity_failing_plugin_is_disabled_never_crashes(cfg, tmp_path):
     """A third-party plugin that fails to import or set up is rolled back and switched off with its error shown;
-    a crashing lifecycle observer never breaks the run. Artel keeps working."""
+    a crashing lifecycle observer never breaks the run. Arteliq keeps working."""
     from artel import packages
 
     pkg = tmp_path / "broken"

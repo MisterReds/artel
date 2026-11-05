@@ -1,7 +1,7 @@
 """Embeddings: meaning-based search for skills, project files and code — local and private by default.
 
 The default model is Google's EmbeddingGemma 2 (Apache-2.0, 740M parameters; text, code, images, video and audio in one
-768-dimensional space, Matryoshka-truncatable to 512/256/128). Artel runs its text part on the person's machine with
+768-dimensional space, Matryoshka-truncatable to 512/256/128). Arteliq runs its text part on the person's machine with
 llama.cpp's ``llama-server`` (GGUF from unsloth/embeddinggemma-2-GGUF, ~310 MB at Q8_0), installed on demand into
 ARTEL_HOME/tools like the agent CLIs — no Python ML stack, no data leaving the machine.
 
@@ -142,7 +142,7 @@ def _log_tail(n: int = 400) -> str:
 # --- the managed local server ----------------------------------------------------------------------------------------
 
 class LocalServer:
-    """One llama-server per Artel process, started on first use and stopped at exit."""
+    """One llama-server per Arteliq process, started on first use and stopped at exit."""
 
     _lock = threading.RLock()  # url() and stop() from any thread (dashboard requests, warming, uninstall, exit)
     _proc: subprocess.Popen | None = None

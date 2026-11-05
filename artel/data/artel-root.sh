@@ -1,5 +1,5 @@
 #!/bin/sh
-# artel-root: the only thing Artel may do as root. Installed by install.sh with the owner's consent as
+# artel-root: the only thing Arteliq may do as root. Installed by install.sh with the owner's consent as
 # /usr/local/sbin/artel-root (root:root 0755); /etc/sudoers.d/artel lets the installing user run exactly this file.
 #
 #   artel-root apt-install <package>...   apt-get install of signed-repository packages: names validated, only names

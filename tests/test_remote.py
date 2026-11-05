@@ -159,7 +159,7 @@ def test_session_expires_and_token_rotation_revokes(server):
     assert req(base + "/api/portfolio", cookie=sid)[0] == 401
     _, _, sid2 = login(base, token)
     assert req(base + "/api/portfolio", cookie=sid2)[0] == 200
-    new = Auth(home=auth.path.parent).rotate()  # e.g. `artel web token --new` from another process
+    new = Auth(home=auth.path.parent).rotate()  # e.g. `arteliq web token --new` from another process
     assert req(base + "/api/portfolio", cookie=sid2)[0] == 401
     assert login(base, token)[0] == 401 and login(base, new)[0] == 200
     assert req(base + "/api/portfolio", cookie="forged-session-id")[0] == 401
@@ -187,7 +187,7 @@ def test_localhost_mode_unchanged_without_login(server, tmp_path):
     base, _, _, _ = server(False)
     assert req(base + "/api/portfolio")[0] == 200
     code, h, body = req(base + "/")
-    assert code == 200 and b"<title>Artel</title>" in body
+    assert code == 200 and b"<title>Arteliq</title>" in body
     assert req(base + "/login")[0] == 302  # nothing to log into
     st = json.loads(req(base + "/api/auth/status")[2])
     assert st == {"remote": False, "authed": True, "secure": False, "insecure": False}
@@ -215,7 +215,7 @@ def test_pwa_files_served_with_correct_types(server):
     code, h, body = req(base + "/manifest.webmanifest")
     assert code == 200 and h["Content-Type"] == "application/manifest+json"
     m = json.loads(body)
-    assert m["name"] == m["short_name"] == "Artel" and m["display"] == "standalone"
+    assert m["name"] == m["short_name"] == "Arteliq" and m["display"] == "standalone"
     assert m["theme_color"].upper() == "#B5522B" and m["background_color"].upper() == "#F7F4EE"
     sizes = {(i["sizes"], i["purpose"]) for i in m["icons"]}
     assert {("192x192", "any"), ("512x512", "any"), ("512x512", "maskable")} <= sizes

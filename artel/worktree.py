@@ -19,7 +19,7 @@ Flow:
 
 Ideas from Qwen Code packages/core/src/services/gitWorktreeService.ts (Apache-2.0, Copyright Qwen Team): one
 worktree + branch per agent session under a dedicated directory, a baseline commit of the source tree before
-the agent starts, and a merge back into the source when the work is applied. Reimplemented here for Artel.
+the agent starts, and a merge back into the source when the work is applied. Reimplemented here for Arteliq.
 """
 
 from __future__ import annotations

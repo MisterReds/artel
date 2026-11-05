@@ -1,4 +1,4 @@
-/* Artel chat: a side panel on every dashboard page. Talks to POST /api/chat and GET /api/chat/history.
+/* Arteliq chat: a side panel on every dashboard page. Talks to POST /api/chat and GET /api/chat/history.
    All text from the server is put in with textContent; nothing from a model or a project becomes HTML. */
 (function () {
   'use strict';
@@ -72,7 +72,7 @@
     panel.setAttribute('aria-modal', 'true');
     panel.setAttribute('aria-labelledby', 'ac-title');
     var head = el('div', 'ac-head');
-    var h = el('h2', null, 'Спросить Artel'); h.id = 'ac-title';
+    var h = el('h2', null, 'Спросить Arteliq'); h.id = 'ac-title';
     closeBtn = el('button', null, '✕'); closeBtn.type = 'button'; closeBtn.setAttribute('aria-label', 'Закрыть чат');
     closeBtn.addEventListener('click', close);
     head.appendChild(h); head.appendChild(closeBtn);

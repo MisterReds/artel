@@ -86,7 +86,7 @@ def test_system_cli_is_used_not_reinstalled(home, monkeypatch):
     monkeypatch.setattr(tools, "resolve", lambda b: "/usr/local/bin/codex")
     res = tools.install("codex", log=lambda m: None)
     assert res["already"] and res["path"] == "/usr/local/bin/codex"
-    assert not tools.uninstall("codex")["ok"]  # never removes what Artel did not install
+    assert not tools.uninstall("codex")["ok"]  # never removes what Arteliq did not install
 
 
 def test_codex_runtime_explains_how_to_install_when_missing(home, monkeypatch):
@@ -101,7 +101,7 @@ def test_codex_runtime_explains_how_to_install_when_missing(home, monkeypatch):
     k = new_kernel(cfg)
     ctx = ToolContext(k, project, role="worker", workspace=project.shared, task={"id": "t"})
     out = run_agent(k, project, role="worker", system="s", first_user="u", ctx=ctx, max_turns=5, purpose="p")
-    assert out.status == "error" and "artel providers install codex" in out.error
+    assert out.status == "error" and "arteliq providers install codex" in out.error
 
 
 import subprocess as _sp

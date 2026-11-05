@@ -187,7 +187,7 @@ DEFAULT_RULES = [
                "git push --force-with-lease origin HEAD:main"],
      "not_match": ["git push origin main", "git push --force origin feature", "git push -f origin my-main-fix"]},
     {"id": "privilege-escalation", "regex": rf"{_AT_CMD}(?:sudo|doas|pkexec|su)(?=\s|$|[;&|)\"'`])",
-     "decision": "forbidden", "justification": "Agents never escalate privileges; Artel itself installs approved "
+     "decision": "forbidden", "justification": "Agents never escalate privileges; Arteliq itself installs approved "
      "tools through its own root wrapper.",
      "match": ["sudo -n /usr/local/sbin/artel-root apt-install x", "env sudo ls", "/usr/bin/sudo id", "doas id",
                "pkexec id", "ls && sudo id", "sh -c 'sudo id'", "env -i FOO=1 sudo -n id", "timeout 5 sudo id",
@@ -195,8 +195,8 @@ DEFAULT_RULES = [
      "not_match": ["echo use sudo here", "git commit -m 'fix sudo docs'", "ls sudoers.txt", "pseudo -x", "cat sudo.md",
                    "python -c 'import sudo'"]},
     {"id": "root-wrapper", "regex": r"(?<![\w.-])(?:\S*/)?artel-root(?!\.sh)(?=\s|$|[;&|)\"'`])",
-     "decision": "forbidden", "justification": "The root wrapper is called only by Artel's own harness process, never "
-     "from an agent's shell.",
+     "decision": "forbidden", "justification": "The root wrapper is called only by Arteliq's own harness process, "
+     "never from an agent's shell.",
      "match": ["/usr/local/sbin/artel-root apt-install x", "artel-root apparmor-bwrap", "ls && artel-root x"],
      "not_match": ["cat artel/data/artel-root.sh", "echo artel-rooted", "ls my-artel-root"]},
     {"id": "credential-files", "regex": _CRED, "decision": "prompt",

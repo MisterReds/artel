@@ -1,4 +1,4 @@
-/* Artel desktop helpers: what to tell the owner through system notifications and the app badge.
+/* Arteliq desktop helpers: what to tell the owner through system notifications and the app badge.
    Pure functions (no DOM, no network), so they are tested under node; index.html wires them to the Notification
    API. API: ArtelDesk.fresh(portfolio, shownIds) -> new notifications, .remember(ids, newIds, cap), .loadShown(raw),
    .badgeCount(portfolio). */
@@ -17,12 +17,12 @@
         const id = 'ask:' + p.slug + ':' + a.task_id + ':' + (a.asked != null ? a.asked : a.question || '');
         if (seen.has(id)) continue;
         const name = p.name || p.slug;
-        out.push({id, kind: 'ask', slug: p.slug, task_id: a.task_id, title: 'Artel: нужен ваш ответ',
+        out.push({id, kind: 'ask', slug: p.slug, task_id: a.task_id, title: 'Arteliq: нужен ваш ответ',
                   body: clip(a.question ? name + ': ' + a.question : name, MAX_BODY)});
       }
       if (p.status === 'done' || p.stage === 'done') {
         const id = 'done:' + p.slug;
-        if (!seen.has(id)) out.push({id, kind: 'done', slug: p.slug, title: 'Artel: готово', body: clip(p.name || p.slug, MAX_BODY)});
+        if (!seen.has(id)) out.push({id, kind: 'done', slug: p.slug, title: 'Arteliq: готово', body: clip(p.name || p.slug, MAX_BODY)});
       }
     }
     return out;

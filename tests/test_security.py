@@ -177,9 +177,9 @@ def test_a_planted_journal_branch_cannot_plant_a_heartbeat_or_change_the_reposit
 
 
 def test_the_mcp_proxy_works_from_a_workspace_that_is_another_artel_checkout(home, tmp_path):
-    """Evolution workers run inside a checkout of Artel. The CLI starts the MCP proxy in that workspace; started with
+    """Evolution workers run inside a checkout of Arteliq. The CLI starts the MCP proxy in that workspace; started with
     `-m artel.runtimes.mcp_proxy` it imported the checkout's (older) proxy, which did not understand the token file,
-    and the agents lost every Artel tool (generation 6: the auditor could not call audit_verdict)."""
+    and the agents lost every Arteliq tool (generation 6: the auditor could not call audit_verdict)."""
     import subprocess
 
     from artel.adapters.agent.claude_code import PROXY_SCRIPT

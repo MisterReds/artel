@@ -58,7 +58,7 @@ class Auth:
 
     # --- storage -----------------------------------------------------------
     def _load(self) -> dict:
-        """Re-read when the file changed, so `artel web token --new` in another process takes effect at once."""
+        """Re-read when the file changed, so `arteliq web token --new` in another process takes effect at once."""
         try:
             st = self.path.stat()
             m = (st.st_mtime_ns, st.st_ino, st.st_size)

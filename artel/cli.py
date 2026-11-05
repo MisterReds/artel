@@ -1,18 +1,18 @@
 """artel — command line.
 
-    artel run "<goal>" [--name N] [--provider P] [--web]   create a project and drive it to completion
-    artel resume <project>                                  continue a stopped / budget-paused project
-    artel status [<project>]                                projects, or one board
-    artel log <project> [--follow] [--kinds a,b]            the event trajectory
-    artel comment <project> <task> "<text>"                 message a task as the human (unblocks escalations)
-    artel metrics <project> [--json] [--scenario S|L]       acceptance metrics from the event log
-    artel acceptance run S|L | verify <project>             acceptance scenarios, independent final check
-    artel web [--port 8765] [--remote [--host H]]           live dashboard (remote: login, docs/REMOTE.md)
-    artel web token [--new]                                 remote-mode access token (--new rotates it)
-    artel app [--no-start] [--print] [--install-shortcut]   dashboard in its own app window
-    artel skills list|view|import|curate|pin|unpin|ledger|rollback|restore
-    artel refine history|rollback <project> [<edit>]
-    artel plugins list|install <git-url|pip-spec|path>|show|enable|disable|remove|update [<name>]
+    arteliq run "<goal>" [--name N] [--provider P] [--web]   create a project and drive it to completion
+    arteliq resume <project>                                  continue a stopped / budget-paused project
+    arteliq status [<project>]                                projects, or one board
+    arteliq log <project> [--follow] [--kinds a,b]            the event trajectory
+    arteliq comment <project> <task> "<text>"                 message a task as the human (unblocks escalations)
+    arteliq metrics <project> [--json] [--scenario S|L]       acceptance metrics from the event log
+    arteliq acceptance run S|L | verify <project>             acceptance scenarios, independent final check
+    arteliq web [--port 8765] [--remote [--host H]]           live dashboard (remote: login, docs/REMOTE.md)
+    arteliq web token [--new]                                 remote-mode access token (--new rotates it)
+    arteliq app [--no-start] [--print] [--install-shortcut]   dashboard in its own app window
+    arteliq skills list|view|import|curate|pin|unpin|ledger|rollback|restore
+    arteliq refine history|rollback <project> [<edit>]
+    arteliq plugins list|install <git-url|pip-spec|path>|show|enable|disable|remove|update [<name>]
 """
 
 from __future__ import annotations
@@ -101,7 +101,7 @@ def _note_owner_stop(result) -> None:
 
 
 def _run_goal_cli(args) -> tuple[Project, str]:
-    """Run ``args.goal`` to the end with the Ctrl+C handling of ``artel run``."""
+    """Run ``args.goal`` to the end with the Ctrl+C handling of ``arteliq run``."""
     cfg = _cfg(args)
     stop = threading.Event()
     if args.web:
@@ -327,7 +327,7 @@ def cmd_web(args) -> int:
         auth = Auth(session_days=(cfg.get("web") or {}).get("session_days", 30))
         if not args.new:
             print(("Токен выпущен; хранится только его хэш, показать его нельзя." if auth.has_token()
-                   else "Токена ещё нет.") + " Новый токен (все сессии закроются): artel web token --new")
+                   else "Токена ещё нет.") + " Новый токен (все сессии закроются): arteliq web token --new")
             return 0
         print("Новый токен доступа (показывается один раз; все прежние сессии закрыты):")
         print(f"  {auth.rotate()}")
@@ -348,12 +348,12 @@ def cmd_app(args) -> int:
     if args.install_shortcut or args.remove_shortcut:
         if args.remove_shortcut:
             desktop.remove_shortcut(system, home)
-            print("Ярлык Artel удалён.")
+            print("Ярлык Arteliq удалён.")
         else:
             made = desktop.install_shortcut(system, home)
             print(f"Ярлык создан: {made}")
             if made.suffix == ".cmd":
-                print("Обычный ярлык .lnk создать не удалось (PowerShell), создан запускающий файл Artel.cmd.")
+                print("Обычный ярлык .lnk создать не удалось (PowerShell), создан запускающий файл Arteliq.cmd.")
         return 0
     url = f"http://127.0.0.1:{args.port}/"
     if args.print:
@@ -365,8 +365,8 @@ def cmd_app(args) -> int:
             from .web.auth import Auth
 
             if not Auth().has_token():  # the first remote start prints the access token once - not into a log
-                print("Удалённый режим ещё не запускался: один раз выполните `artel web` в терминале, "
-                      "сохраните токен, затем `artel app`.", file=sys.stderr)
+                print("Удалённый режим ещё не запускался: один раз выполните `arteliq web` в терминале, "
+                      "сохраните токен, затем `arteliq app`.", file=sys.stderr)
                 return 2
         try:
             if desktop.ensure_server(args.port, home=artel_home(), config=getattr(args, "config", None)) == "started":
@@ -450,14 +450,14 @@ def cmd_plugins(args) -> int:
             kernel.shutdown(reason="cli")
             return 0
         if not args.target:
-            print(f"artel plugins {a}: укажите {'источник' if a == 'install' else 'имя плагина'}")
+            print(f"arteliq plugins {a}: укажите {'источник' if a == 'install' else 'имя плагина'}")
             return 2
         if a == "install":
             entry = P.install(args.target)
             print(f"установлен {entry['name']} {entry['version']} (выключен):")
             _print_manifest(entry)
             if not args.enable:
-                print(f"включить: artel plugins enable {entry['name']}")
+                print(f"включить: arteliq plugins enable {entry['name']}")
                 return 0
             a, args.target = "enable", entry["name"]
         if a == "show":
@@ -473,7 +473,7 @@ def cmd_plugins(args) -> int:
                 if not sys.stdin.isatty():
                     print("подтвердите включение флагом --yes")
                     return 2
-                answer = input("Включить? Плагин работает внутри Artel с его правами. [y/N] ").strip().lower()
+                answer = input("Включить? Плагин работает внутри Arteliq с его правами. [y/N] ").strip().lower()
                 if answer not in ("y", "yes", "д", "да"):
                     return 1
             entry = P.enable(args.target, config=cfg)
@@ -615,7 +615,7 @@ def _evolve_loop(args) -> int:
             return _evolve_once(args)
         except InfraError as e:
             if args.no_wait:
-                print(f"paused: {e}. Continue with `artel evolve --resume`.")
+                print(f"paused: {e}. Continue with `arteliq evolve --resume`.")
                 return 75
             wait = max(60.0, (e.retry_at or _time.time() + 900) - _time.time() + 60)
             print(f"paused: {e}. Resuming in {int(wait)} s (the earliest reset).", flush=True)
@@ -660,7 +660,7 @@ def _evolve_once(args) -> int:
 
 
 def cmd_tools(args) -> int:
-    """Programs Artel installed for the agents (artel/provision.py): list them, install one, or undo an install."""
+    """Programs Arteliq installed for the agents (artel/provision.py): list them, install one, or undo an install."""
     from . import provision
 
     if args.action == "remove":
@@ -668,14 +668,14 @@ def cmd_tools(args) -> int:
         print("removed" if res["ok"] else res["error"])
         return 0 if res["ok"] else 1
     if args.action == "install":
-        path = provision.ensure(args.name or "", why="requested with `artel tools install`")
+        path = provision.ensure(args.name or "", why="requested with `arteliq tools install`")
         print(path or f"not installed: {provision.last_reason(args.name or '')}")
         return 0 if path else 1
     rows = provision.installed()
     for name, r in sorted(rows.items()):
         print(f"{name}\t{r.get('method')}\t{r.get('version') or '-'}\t{r.get('path')}")
     if not rows:
-        print("nothing installed by Artel")
+        print("nothing installed by Arteliq")
     return 0
 
 
@@ -756,7 +756,7 @@ def cmd_providers(args) -> int:
             return 0 if res["ok"] else 1
         binary = resolve((cfg.get("claude_code") or {}).get("binary", "claude"))
         if not binary:
-            print("Claude Code CLI не установлен: artel providers install claude")
+            print("Claude Code CLI не установлен: arteliq providers install claude")
             return 1
         return subprocess.call([binary, "auth", "login", "--claudeai"], env=child_env(cfg))  # link, then paste the code
     if args.action == "login" and args.name == "codex":
@@ -776,7 +776,7 @@ def cmd_providers(args) -> int:
         print(f"  {k['label']:<14} {'задан' if k['set'] else 'не задан':<34} ${k['env']}")
     em = o["embeddings"]
     print(f"  {'Эмбеддинги':<14} {('включены: ' + em['active']) if em['active'] != 'off' else ('выключены' if em['installed'] else 'не установлены — поиск по словам'):<34} "
-          f"{'EmbeddingGemma 2 ' + em['quant'] + ', ' + str(em['dim']) + 'd' if em['installed'] else 'artel providers install embeddings'}")
+          f"{'EmbeddingGemma 2 ' + em['quant'] + ', ' + str(em['dim']) + 'd' if em['installed'] else 'arteliq providers install embeddings'}")
     print(f"  {'Изоляция':<14} {o['sandbox']['message']}")
     r = o["routing"]
     print(f"  рантайм по умолчанию: {r['runtime']}" + (f" (сейчас → {r['auto_resolves_to']})" if r["runtime"] == "auto" else "")
@@ -786,7 +786,7 @@ def cmd_providers(args) -> int:
         print(f"  отключены: {', '.join(r['disabled_runtimes'])}")
     for k, v in r["limited"].items():
         print(f"  лимит: {k} до {fmt_ts(v, config=cfg)} — работа идёт на других")
-    print("  настройка: artel providers use|models|model|disable|enable <рантайм> — подробнее: artel providers -h")
+    print("  настройка: arteliq providers use|models|model|disable|enable <рантайм> — подробнее: arteliq providers -h")
     return 0
 
 
@@ -803,7 +803,7 @@ def cmd_report(args) -> int:
                 print(f"            причина: {d['cause'][:110]}")
         return 0
     if not args.id:
-        print("укажите id отчёта: artel report list")
+        print("укажите id отчёта: arteliq report list")
         return 2
     rep = reports.get(args.id)
     if not rep:
@@ -826,7 +826,7 @@ def cmd_why(args) -> int:
     project = Project.open(args.project, cfg) if args.project else None
     problem = args.problem or (project.meta.get("blocked_reason") if project else "") or ""
     if not problem:
-        print("опишите проблему: artel why \"текст ошибки\" [--project slug] [--task id]")
+        print("опишите проблему: arteliq why \"текст ошибки\" [--project slug] [--task id]")
         return 2
     print(format_report(diagnose(cfg, problem, project, args.task, use_model=not args.no_model)))
     return 0
@@ -863,7 +863,7 @@ def cmd_update(args) -> int:
     try:
         if args.rollback:
             out = up.rollback()
-            print(f"rolled back {out['from'][:10]} -> {out['to'][:10]}; restart running Artel processes")
+            print(f"rolled back {out['from'][:10]} -> {out['to'][:10]}; restart running Arteliq processes")
             return 0
         st = up.status(fetch=True)
         if not st.get("available"):
@@ -884,7 +884,7 @@ def cmd_update(args) -> int:
             return 1
         out = up.apply(verify=not args.no_verify)
         print(f"updated {out['from'][:10]} -> {out['to'][:10]}" + (" (dependencies reinstalled)" if out.get("deps") else "")
-              + "; restart running Artel processes (the dashboard restarts itself)")
+              + "; restart running Arteliq processes (the dashboard restarts itself)")
         return 0
     except UpdateError as e:
         print(f"update failed: {e}")
@@ -960,7 +960,7 @@ def cmd_roadmap(args) -> int:
         target = repo / "docs" / "ROADMAP.md"
         if args.check:
             ok = target.exists() and target.read_text(encoding="utf-8") == md
-            print("docs/ROADMAP.md is up to date" if ok else "docs/ROADMAP.md is stale: run `artel roadmap render`")
+            print("docs/ROADMAP.md is up to date" if ok else "docs/ROADMAP.md is stale: run `arteliq roadmap render`")
             return 0 if ok else 1
         target.write_text(md, encoding="utf-8")
         print(f"wrote {target}")
@@ -971,7 +971,7 @@ def cmd_roadmap(args) -> int:
         target = repo / "docs" / "roadmap.html"
         if args.check:
             ok = target.exists() and target.read_text(encoding="utf-8") == page
-            print("docs/roadmap.html is up to date" if ok else "docs/roadmap.html is stale: run `artel roadmap html`")
+            print("docs/roadmap.html is up to date" if ok else "docs/roadmap.html is stale: run `arteliq roadmap html`")
             return 0 if ok else 1
         target.write_text(page, encoding="utf-8")
         print(f"wrote {target}")
@@ -1055,7 +1055,7 @@ def _robust_console() -> None:
 def main(argv=None) -> int:
     _robust_console()
     argv = sys.argv[1:] if argv is None else argv
-    ap = argparse.ArgumentParser(prog="artel", description="Artel — a self-improving multi-agent harness")
+    ap = argparse.ArgumentParser(prog="arteliq", description="Arteliq — a self-improving multi-agent harness")
     ap.add_argument("--config", help="extra YAML config merged over ~/.artel/artel.yaml")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
@@ -1131,11 +1131,11 @@ def main(argv=None) -> int:
     w.add_argument("--provider", choices=["anthropic", "openai_compat", "scripted"])
     w.set_defaults(fn=cmd_web)
 
-    ap_ = sub.add_parser("app", help="открыть панель в отдельном окне приложения (запускает artel web, если не запущен)")
+    ap_ = sub.add_parser("app", help="открыть панель в отдельном окне приложения (запускает arteliq web, если не запущен)")
     ap_.add_argument("--port", type=int, default=8765, help="порт панели (по умолчанию 8765)")
     ap_.add_argument("--no-start", action="store_true", help="не запускать панель, только открыть окно")
     ap_.add_argument("--print", action="store_true", help="только напечатать адрес панели")
-    ap_.add_argument("--install-shortcut", action="store_true", help="создать ярлык Artel в меню приложений")
+    ap_.add_argument("--install-shortcut", action="store_true", help="создать ярлык Arteliq в меню приложений")
     ap_.add_argument("--remove-shortcut", action="store_true", help="удалить ярлык")
     ap_.set_defaults(fn=cmd_app)
 
@@ -1149,7 +1149,7 @@ def main(argv=None) -> int:
     sk.set_defaults(fn=cmd_skills)
 
     def evo_common(p):
-        p.add_argument("--repo", help="Artel git repo to evolve (default: this installation)")
+        p.add_argument("--repo", help="Arteliq git repo to evolve (default: this installation)")
         p.add_argument("--tasks", help="comma-separated benchmark task ids")
         p.add_argument("--parallel-bench", type=int, default=2)
         p.add_argument("--runtime", choices=["native", "claude_code", "codex"])
@@ -1175,7 +1175,7 @@ def main(argv=None) -> int:
     evo_common(ev)
     ev.add_argument("--generations", type=int, default=1)
     ev.add_argument("--supervise", action="store_true",
-                    help="keep watching: a generation whose process died is resumed automatically (artel web does "
+                    help="keep watching: a generation whose process died is resumed automatically (arteliq web does "
                          "this too unless evolve.auto_resume is false)")
     ev.add_argument("--candidates", type=int, default=2, help="hypotheses per generation (10, 20, 100…)")
     ev.add_argument("--parallel-candidates", type=int, default=2, help="candidates implemented at the same time")
@@ -1200,7 +1200,7 @@ def main(argv=None) -> int:
                                        "moves the work to the next (overrides evolve.runtimes in the config)")
     ev.set_defaults(fn=cmd_evolve)
 
-    tl = sub.add_parser("tools", help="programs Artel installed for agents: list | install <name> | remove <name>")
+    tl = sub.add_parser("tools", help="programs Arteliq installed for agents: list | install <name> | remove <name>")
     tl.add_argument("action", nargs="?", default="list", choices=["list", "install", "remove"])
     tl.add_argument("name", nargs="?")
     tl.set_defaults(fn=cmd_tools)
@@ -1232,7 +1232,7 @@ def main(argv=None) -> int:
     wy.add_argument("--config")
     wy.set_defaults(fn=cmd_why)
 
-    tg = sub.add_parser("telegram", help="Telegram bot: control Artel and get notifications on the phone")
+    tg = sub.add_parser("telegram", help="Telegram bot: control Arteliq and get notifications on the phone")
     tg.add_argument("action", nargs="?", default="run", choices=["run", "pair"])
     tg.add_argument("--config")
     tg.set_defaults(fn=cmd_telegram)
@@ -1244,7 +1244,7 @@ def main(argv=None) -> int:
     upd.add_argument("--config")
     upd.set_defaults(fn=cmd_update)
 
-    rei = sub.add_parser("reinstall", help="переустановить Artel: свежая копия и окружение, данные сохраняются")
+    rei = sub.add_parser("reinstall", help="переустановить Arteliq: свежая копия и окружение, данные сохраняются")
     rei.add_argument("--yes", "-y", action="store_true", help="не спрашивать подтверждение")
     rei.add_argument("--force", action="store_true", help="разрешить из исходного checkout (не установленной копии)")
     rei.set_defaults(fn=cmd_reinstall)

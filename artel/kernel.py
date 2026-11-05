@@ -282,7 +282,7 @@ class Kernel:
 
     def load_plugin_safe(self, dotted: str, module: Any = None) -> PluginRecord | None:
         """Load a third-party plugin; a failure (import error, unmet requires, crash in ``setup``) is recorded
-        in :attr:`failed` and rolled back instead of crashing Artel."""
+        in :attr:`failed` and rolled back instead of crashing Arteliq."""
         try:
             record = self.load_plugin(dotted, module)
         except (Exception, SystemExit) as exc:
@@ -360,7 +360,7 @@ DEFAULT_PLUGINS = [
 ]
 
 
-# Built-ins Artel cannot work without: never disabled from the plugin manager.
+# Built-ins Arteliq cannot work without: never disabled from the plugin manager.
 CORE_PLUGINS = {"artel.plugins.llm_providers", "artel.plugins.runtimes", "artel.plugins.builtin_tools",
                 "artel.plugins.board_tools"}
 
@@ -368,8 +368,8 @@ CORE_PLUGINS = {"artel.plugins.llm_providers", "artel.plugins.runtimes", "artel.
 def build_kernel(config: dict) -> Kernel:
     """Built-ins, then ``plugins:`` from the config, then enabled plugin packages (ARTEL_HOME/plugins.json).
 
-    A built-in that fails is a bug in Artel and raises; a configured or installed plugin that fails is
-    recorded in ``kernel.failed`` (packages are also switched off with the error) and Artel keeps going.
+    A built-in that fails is a bug in Arteliq and raises; a configured or installed plugin that fails is
+    recorded in ``kernel.failed`` (packages are also switched off with the error) and Arteliq keeps going.
     """
     kernel = Kernel(config=config)
     use_packages = config.get("plugin_packages", True)

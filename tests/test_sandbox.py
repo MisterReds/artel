@@ -243,7 +243,7 @@ def test_cannot_start_is_fail_closed_with_an_environment_error(cfg, tmp_path, mo
     assert not marker.exists()
     from artel.failures import classify
     assert classify(str(exc.value)) == "setup"  # an environment failure, never the worker's fault
-    assert "uid map" in sandbox.status(cfg)["failure"]  # the dashboard and `artel providers` show why
+    assert "uid map" in sandbox.status(cfg)["failure"]  # the dashboard and `arteliq providers` show why
     # require: false is the explicit way back to running without isolation
     loose = deep_merge(cfg, {"sandbox": {"require": False}})
     k2, _, ctx2 = _ctx(loose, tmp_path / "loose")

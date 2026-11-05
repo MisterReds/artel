@@ -1,19 +1,19 @@
-"""Recursive self-improvement: Artel improves Artel.
+"""Recursive self-improvement: Arteliq improves Arteliq.
 
 One generation:
     1. baseline   — benchmark the champion commit (cached per commit)
     2. diagnose   — code health + trajectory profile + failing hidden checks
     3. propose    — the evolver agent proposes K hypotheses from the evidence and the
                     ledger of past experiments (what helped, what hurt, and why)
-    4. implement  — for each hypothesis: a git branch + worktree; the champion Artel runs a
-                    project with ``workdir=<worktree>`` and implements it (Artel editing Artel)
+    4. implement  — for each hypothesis: a git branch + worktree; the champion Arteliq runs a
+                    project with ``workdir=<worktree>`` and implements it (Arteliq editing Arteliq)
     5. verify     — the candidate's own test suite must pass
     6. measure    — benchmark the candidate's code; compare per metric and per task
     7. select     — the best candidate that beats the champion is merged (--no-ff) and
                     tagged; every other branch stays in git with its verdict in the ledger
 
 Absorb: point it at another harness (git URL or path). The absorber agent studies it
-next to Artel's own code and emits features worth porting; each becomes a hypothesis
+next to Arteliq's own code and emits features worth porting; each becomes a hypothesis
 whose implementing team gets the source as a read-only reference.
 
 The champion never edits itself in place: candidates live on branches until measured.
@@ -532,7 +532,7 @@ class Evolution:
                          f"{e.get('reason', '')}; delta {json.dumps(e.get('delta', {}))[:240]}" for e in rows)
 
     def propose(self, report: dict, n: int) -> list[Hypothesis]:
-        goal = (f"Propose {n} improvement hypotheses for Artel (the codebase at {self.repo}).\n\n"
+        goal = (f"Propose {n} improvement hypotheses for Arteliq (the codebase at {self.repo}).\n\n"
                 f"<diagnosis>\n{diag_mod.render_markdown(report)}\n</diagnosis>\n\n"
                 f"<code_map>\n{self.code_map()}\n</code_map>\n\n<past_experiments>\n{self.history_text()}\n"
                 f"</past_experiments>\n\nRead the relevant code before proposing. Finish with propose_hypotheses.")
@@ -542,14 +542,14 @@ class Evolution:
     # --- implementation -------------------------------------------------
     def implementation_goal(self, h: Hypothesis, wt: Path) -> str:
         refs = f"\nReference sources (read-only): {', '.join(h.refs)}. {h.license_note}" if h.refs else ""
-        return (f"Improve Artel — the multi-agent harness you are running in — by implementing one change in its "
+        return (f"Improve Arteliq — the multi-agent harness you are running in — by implementing one change in its "
                 f"codebase at {wt} (a git worktree; edit files there directly).\n\n"
                 f"Change: {h.title}\nWhy: {h.rationale}\nPlan: {h.plan}\nExpected effect: {h.expected}\n"
                 f"Likely files: {', '.join(h.files) or 'decide after reading the code'}{refs}\n\n"
                 "Constraints: keep the change focused; keep `python -m pytest -q` passing in the worktree and add "
-                "tests for new behavior; keep the CLI contract `artel run GOAL --name --seed --workdir --ref` and "
+                "tests for new behavior; keep the CLI contract `arteliq run GOAL --name --seed --workdir --ref` and "
                 "the `scripted` provider working; do not edit evals/tasks or roadmap.yaml (the orchestrator updates it). Do not add notes, summaries, scratch files or a "
-                "shared/ directory to the repository: only source, tests and docs that belong to Artel. Every task "
+                "shared/ directory to the repository: only source, tests and docs that belong to Arteliq. Every task "
                 "must include the check "
                 "`python -m pytest -q -x -p no:cacheprovider`.")
 
@@ -1341,7 +1341,7 @@ class Evolution:
             src = dest
         lic = detect_license(src)
         rm = Roadmap.of_repo(self.repo) if (self.repo / "roadmap.yaml").exists() else None
-        goal = (f"Study the harness at {src} completely and find features worth absorbing into Artel (codebase at "
+        goal = (f"Study the harness at {src} completely and find features worth absorbing into Arteliq (codebase at "
                 f"{self.repo}). {('Focus: ' + focus) if focus else ''}\n\nArtel today:\n<code_map>\n{self.code_map()}"
                 f"\n</code_map>\n\n<roadmap>\n{rm.text_for_agents() if rm else adopted_table(self.repo)}\n</roadmap>"
                 f"\n\nLicense of the source: {lic}. Finish with absorb_report.")

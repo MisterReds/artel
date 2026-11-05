@@ -30,7 +30,7 @@ def mark(stream=None) -> str:
 
 
 def banner(subtitle: str = "", stream=None) -> str:
-    head = f"{mark(stream)} {paint('Artel', COPPER, bold=True, stream=stream)}"
+    head = f"{mark(stream)} {paint('Arteliq', COPPER, bold=True, stream=stream)}"
     return head + (f"  {paint(subtitle, MUTED, stream=stream)}" if subtitle else "")
 
 

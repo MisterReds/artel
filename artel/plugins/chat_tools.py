@@ -1,7 +1,7 @@
 """Tools of the concierge chat (artel/chat.py): read-only views of the portfolio and the terminal chat_reply.
 
 Every view returns project data wrapped as untrusted text. Actions are not tools: the concierge lists them in
-chat_reply and Artel runs the ones on its short whitelist.
+chat_reply and Arteliq runs the ones on its short whitelist.
 """
 
 from __future__ import annotations

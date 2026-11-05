@@ -1,4 +1,4 @@
-"""`artel app`: finding a Chromium-family browser, starting/reusing the dashboard, shortcuts per OS."""
+"""`arteliq app`: finding a Chromium-family browser, starting/reusing the dashboard, shortcuts per OS."""
 import json
 import os
 import stat
@@ -65,7 +65,7 @@ def test_app_command_uses_separate_profile_and_no_token(tmp_path):
 
 class _Artel(BaseHTTPRequestHandler):
     def do_GET(self):
-        body = json.dumps({"name": "Artel"}).encode() if self.path == "/manifest.webmanifest" else b"{}"
+        body = json.dumps({"name": "Arteliq"}).encode() if self.path == "/manifest.webmanifest" else b"{}"
         self.send_response(200)
         self.end_headers()
         self.wfile.write(body)
@@ -192,7 +192,7 @@ def test_remote_mode_without_token_is_not_started_in_background(tmp_path, monkey
     monkeypatch.setattr(desktop, "server_alive", lambda p: False)
     monkeypatch.setattr(desktop, "launch", lambda argv: pytest.fail("must not open"))
     assert cli.main(["app"]) == 2
-    assert "artel web" in capsys.readouterr().err
+    assert "arteliq web" in capsys.readouterr().err
 
 
 # ---------- shortcuts ----------
@@ -205,7 +205,7 @@ def test_linux_shortcut_is_a_desktop_entry_with_icon(tmp_path):
     entry = tmp_path / ".local/share/applications/artel.desktop"
     assert made == entry
     text = entry.read_text()
-    assert "[Desktop Entry]" in text and "Name=Artel" in text and "Exec=/home/u/.local/bin/artel app" in text
+    assert "[Desktop Entry]" in text and "Name=Arteliq" in text and "Exec=/home/u/.local/bin/artel app" in text
     icon = tmp_path / ".local/share/icons/artel.png"
     assert icon.read_bytes() == ICON.read_bytes() and f"Icon={icon}" in text
     desktop.remove_shortcut("Linux", tmp_path, env={})
@@ -215,12 +215,12 @@ def test_linux_shortcut_is_a_desktop_entry_with_icon(tmp_path):
 
 def test_macos_shortcut_is_an_app_bundle_with_shell_launcher(tmp_path):
     app = desktop.install_shortcut("Darwin", tmp_path, env={}, launcher="/usr/local/bin/artel")
-    assert app == tmp_path / "Applications/Artel.app"
-    exe = app / "Contents/MacOS/Artel"
+    assert app == tmp_path / "Applications/Arteliq.app"
+    exe = app / "Contents/MacOS/Arteliq"
     assert exe.read_text().startswith("#!/bin/sh") and "/usr/local/bin/artel" in exe.read_text()
     assert os.name == "nt" or exe.stat().st_mode & stat.S_IXUSR  # Windows has no exec bit
     plist = (app / "Contents/Info.plist").read_text()
-    assert "<key>CFBundleExecutable</key>" in plist and "<string>Artel</string>" in plist
+    assert "<key>CFBundleExecutable</key>" in plist and "<string>Arteliq</string>" in plist
     desktop.remove_shortcut("Darwin", tmp_path, env={})
     assert not app.exists()
 
@@ -240,17 +240,17 @@ def test_windows_shortcut_passes_paths_only_through_environment(tmp_path):
 
     programs = tmp_path / PROGRAMS
     made = desktop.install_shortcut("Windows", tmp_path, env=env, launcher=WIN_LAUNCHER, run=run)
-    assert made == programs / "Artel.lnk"
+    assert made == programs / "Arteliq.lnk"
     argv, penv = seen[0]
     script = " ".join(argv)
     assert argv[0].lower().startswith("powershell") and "WScript.Shell" in script
     assert "$args" not in script  # -Command does not bind $args
-    assert penv["ARTEL_LNK"] == str(programs / "Artel.lnk") and penv["ARTEL_TARGET"] == WIN_LAUNCHER
+    assert penv["ARTEL_LNK"] == str(programs / "Arteliq.lnk") and penv["ARTEL_TARGET"] == WIN_LAUNCHER
     for text in (str(programs), WIN_LAUNCHER, "AppData", "artel.exe"):
         assert text not in script  # no path text inside the script: nothing to quote or inject
     ico = Path(penv["ARTEL_ICON"])
     assert ico.read_bytes()[:4] == b"\0\0\1\0" and "AppData" in str(ico)
-    assert not (programs / "Artel.cmd").exists()
+    assert not (programs / "Arteliq.cmd").exists()
 
 
 def test_windows_shortcut_falls_back_to_cmd_when_no_lnk_appears_or_powershell_is_missing(tmp_path):
@@ -258,11 +258,11 @@ def test_windows_shortcut_falls_back_to_cmd_when_no_lnk_appears_or_powershell_is
     programs = tmp_path / PROGRAMS
     silent = lambda argv, env=None: 0  # noqa: E731 - exit code 0 but no file was written
     made = desktop.install_shortcut("Windows", tmp_path, env=env, launcher="artel.exe", run=silent)
-    assert made == programs / "Artel.cmd" and "artel.exe" in made.read_text()
+    assert made == programs / "Arteliq.cmd" and "artel.exe" in made.read_text()
 
     broken = lambda argv, env=None: (_ for _ in ()).throw(FileNotFoundError("powershell"))  # noqa: E731
     made = desktop.install_shortcut("Windows", tmp_path, env=env, launcher="artel.exe", run=broken)
-    assert made == programs / "Artel.cmd"
+    assert made == programs / "Arteliq.cmd"
     desktop.remove_shortcut("Windows", tmp_path, env=env)
     assert not made.exists()
 
@@ -275,7 +275,7 @@ def test_install_reports_which_windows_launcher_it_made(tmp_path, monkeypatch, c
     monkeypatch.setattr(desktop.subprocess, "call", lambda *a, **k: 0)  # "succeeds" without a file
     assert cli.main(["app", "--install-shortcut"]) == 0
     out = capsys.readouterr().out
-    assert "Artel.cmd" in out and ".lnk" in out
+    assert "Arteliq.cmd" in out and ".lnk" in out
 
 
 def test_install_and_remove_shortcut_flags(tmp_path, monkeypatch, capsys):
@@ -366,21 +366,21 @@ def test_macos_launcher_script_is_shell_safe(tmp_path):
     import shlex
     for launcher in AWKWARD:
         app = desktop.install_shortcut("Darwin", tmp_path, env={}, launcher=launcher)
-        body = (app / "Contents/MacOS/Artel").read_text().splitlines()[1]
+        body = (app / "Contents/MacOS/Arteliq").read_text().splitlines()[1]
         assert shlex.split(body) == ["exec", launcher, "app"]
 
 
 def test_macos_bundle_has_a_real_icns_named_in_the_plist(tmp_path):
     app = desktop.install_shortcut("Darwin", tmp_path, env={}, launcher="artel")
-    assert "<key>CFBundleIconFile</key><string>Artel</string>" in (app / "Contents/Info.plist").read_text()
-    assert (app / "Contents/Resources/Artel.icns").read_bytes() == desktop.icns_from_png(ICON.read_bytes())
-    assert not (app / "Contents/Resources/Artel.png").exists()
+    assert "<key>CFBundleIconFile</key><string>Arteliq</string>" in (app / "Contents/Info.plist").read_text()
+    assert (app / "Contents/Resources/Arteliq.icns").read_bytes() == desktop.icns_from_png(ICON.read_bytes())
+    assert not (app / "Contents/Resources/Arteliq.png").exists()
 
 
 def test_windows_cmd_quotes_spaces_and_doubles_percent(tmp_path):
     env = {"APPDATA": str(tmp_path)}
     broken = lambda argv, env=None: 1  # noqa: E731
-    for launcher, want in [(r"C:\Program Files\Artel\artel.exe", r'"C:\Program Files\Artel\artel.exe"'),
+    for launcher, want in [(r"C:\Program Files\Arteliq\artel.exe", r'"C:\Program Files\Arteliq\artel.exe"'),
                            (r"C:\100%\artel.exe", r"C:\100%%\artel.exe"),
                            (r"C:\A&B\artel.exe", r'"C:\A&B\artel.exe"'),
                            (r"C:\My 50%\artel.exe", r'"C:\My 50%%\artel.exe"')]:
