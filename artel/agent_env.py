@@ -128,7 +128,31 @@ _NOT_PROGRAMS = {"if", "then", "else", "elif", "fi", "for", "while", "until", "d
                  "{", "}", "(", ")", "cd", "set", "export", "unset", "source", ".", ":", "[[", "exit", "return", "eval",
                  "exec", "alias", "type", "ulimit", "umask", "wait", "trap", "read", "shift", "true", "false", "echo",
                  "printf", "test", "[", "pwd", "command", "builtin", "local", "declare"}
-_SEGMENTS = re.compile(r"&&|\|\||;|\||\n|\(|\)|`|\$\(")
+_OPERATORS = "();<>|&`\n"
+
+
+def _command_words(check: str) -> list:
+    """Words of every simple command in a shell line, in order. Quoting is honoured, so code passed as a quoted
+    argument (``python3 -c "a; b | c"``) stays one word instead of being split at its own operators."""
+    lex = shlex.shlex(check, posix=True, punctuation_chars=_OPERATORS)
+    lex.whitespace = " \t\r"
+    lex.whitespace_split = True
+    lex.commenters = ""
+    commands: list = [[]]
+    target = False  # the word after a redirect (``> out``, ``2>&1``) is a file or descriptor, not a command
+    try:
+        for tok in lex:
+            if tok and set(tok) <= set(_OPERATORS):
+                target = "<" in tok or ">" in tok
+                if not target:
+                    commands.append([])
+            elif target:
+                target = False
+            else:
+                commands[-1].append(tok)
+    except ValueError:  # unbalanced quote: the words read so far still name the program
+        pass
+    return [c for c in commands if c]
 
 
 def missing_programs(checks: list, config: dict | None = None) -> list:
@@ -138,11 +162,7 @@ def missing_programs(checks: list, config: dict | None = None) -> list:
     path = env.get(_path_key(env) or "PATH") or ""
     out: list = []
     for check in checks or []:
-        for seg in _SEGMENTS.split(str(check)):
-            try:
-                words = shlex.split(seg, comments=False, posix=True)
-            except ValueError:
-                words = seg.split()
+        for words in _command_words(str(check)):
             while words and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[0]):
                 words = words[1:]
             if not words:
